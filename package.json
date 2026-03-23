@@ -4,6 +4,6 @@
   "version": "0.0.0",
   "scripts": {},
   "devDependencies": {
-    "typescript": "^5.4.0"
+    "typescript": "^6.0.2"
   }
 }
