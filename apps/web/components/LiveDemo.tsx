@@ -48,20 +48,42 @@ export default function LiveDemo() {
     }
   }
 
-  useEffect(() => () => { esRef.current?.close() }, [])
+  useEffect(() => {
+    return () => {
+      if (esRef.current) {
+        esRef.current.close()
+        esRef.current = null
+      }
+    }
+  }, [])
 
   return (
     <section style={{ padding: '120px 32px' }}>
+
+      {/* ✅ TESTNET NOTICE */}
+      <div
+        style={{
+          maxWidth: 'var(--max-width)',
+          margin: '0 auto 24px auto',
+          padding: '12px 16px',
+          background: '#2a2a00',
+          border: '1px solid #444400',
+          color: '#facc15',
+          fontSize: '13px',
+          fontFamily: 'var(--font-sans)',
+        }}
+      >
+        ⚠️ This demo streams <strong>Stellar testnet</strong> events only. Mainnet
+        addresses will not produce any events.
+      </div>
+
       <div
         style={{
           maxWidth: 'var(--max-width)',
           margin: '0 auto',
-          display: 'grid',
-          gridTemplateColumns: '1fr 1fr',
-          gap: '80px',
-          alignItems: 'start',
         }}
-        className="grid-cols-1 md:grid-cols-[1fr_1fr]"
+        className="grid grid-cols-1 md:grid-cols-2 gap-8 md:gap-20 items-start"
+      >
       >
         {/* Left — text */}
         <div>
@@ -224,9 +246,9 @@ export default function LiveDemo() {
               </p>
             )}
             <AnimatePresence initial={false}>
-              {events.map((ev, i) => (
+              {events.map((ev) => (
                 <motion.div
-                  key={i}
+                  key={`${ev.type}-${ev.timestamp}`}
                   initial={{ opacity: 0, x: -8 }}
                   animate={{ opacity: 1, x: 0 }}
                   transition={{ duration: 0.2 }}

@@ -31,7 +31,22 @@ export default function WebhookDemo() {
   const [loading, setLoading] = useState(false)
 
   async function handleRegister() {
-    if (!stellarAddress.trim() || !webhookUrl.trim()) return
+    if (!stellarAddress.trim() || !webhookUrl.trim()) {
+      setResponse({
+        ok: false,
+        body: 'Address and webhook URL are required',
+      })
+      return
+    }
+
+    if (!signingSecret.trim()) {
+      setResponse({
+        ok: false,
+        body: 'Signing secret is required',
+      })
+      return
+    }
+
     setLoading(true)
     setResponse(null)
 
@@ -39,15 +54,28 @@ export default function WebhookDemo() {
       const res = await fetch(`${SERVER}/webhooks/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+
+        // ✅ MUST match server contract (apps/server/src/routes.ts)
         body: JSON.stringify({
           address: stellarAddress.trim(),
-          webhookUrl: webhookUrl.trim(),
-          signingSecret: signingSecret.trim() || undefined,
+          url: webhookUrl.trim(),
+          secret: signingSecret.trim(),
         }),
       })
-      const data = await res.json()
+
+      const data = await res.json().catch(() => null)
+
+      if (!res.ok) {
+        setResponse({
+          ok: false,
+          status: res.status,
+          body: data?.error || 'Webhook registration failed',
+        })
+        return
+      }
+
       setResponse({
-        ok: res.ok,
+        ok: true,
         status: res.status,
         body: JSON.stringify(data, null, 2),
       })
@@ -60,7 +88,6 @@ export default function WebhookDemo() {
       setLoading(false)
     }
   }
-
   return (
     <section style={{ padding: '120px 32px' }}>
       <div
