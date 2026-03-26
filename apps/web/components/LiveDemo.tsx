@@ -84,7 +84,6 @@ export default function LiveDemo() {
         }}
         className="grid grid-cols-1 md:grid-cols-2 gap-8 md:gap-20 items-start"
       >
-      >
         {/* Left — text */}
         <div>
           <h2

@@ -44,7 +44,7 @@ updates:
     open-pull-requests-limit: 3
 
   # packages/pulse-notify — was missing
-  - package-ecosystem: npm
+  - package-ecosystem: pnpm
     directory: /packages/pulse-notify
     schedule:
       interval: weekly
