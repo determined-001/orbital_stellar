@@ -3,5 +3,5 @@ coverage
 dist
 build
 .next
-env.local
+.env.local
 .env.development.local
