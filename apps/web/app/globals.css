@@ -36,3 +36,129 @@ body {
 .fn { color: #82aaff; } /* function names */
 .p  { color: #f78c6c; } /* properties */
 .c  { color: #546e7a; } /* comments */
+
+/* ── Doc content typography ── */
+.doc-content {
+  color: #b0b0b0;
+  line-height: 1.75;
+  font-size: 0.9375rem;
+}
+.doc-content h2 {
+  font-size: 1.4rem;
+  font-weight: 700;
+  color: #ffffff;
+  margin-top: 2.5rem;
+  margin-bottom: 1rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  scroll-margin-top: 84px;
+}
+.doc-content h3 {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: #f2f2f2;
+  margin-top: 2rem;
+  margin-bottom: 0.75rem;
+  scroll-margin-top: 84px;
+}
+.doc-content h4 {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #e0e0e0;
+  margin-top: 1.5rem;
+  margin-bottom: 0.5rem;
+  scroll-margin-top: 84px;
+}
+.doc-content p {
+  margin-bottom: 1rem;
+}
+.doc-content a {
+  color: #e8ff47;
+  text-decoration: none;
+}
+.doc-content a:hover {
+  text-decoration: underline;
+}
+.doc-content code {
+  background: rgba(255, 255, 255, 0.06);
+  color: #e8ff47;
+  padding: 0.15em 0.45em;
+  border-radius: 4px;
+  font-size: 0.85em;
+  font-family: var(--font-mono);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+.doc-content pre {
+  background: #0d0d0d;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  padding: 1.1rem 1.25rem;
+  margin: 1.25rem 0;
+  overflow-x: auto;
+  font-size: 0.84rem;
+  line-height: 1.7;
+}
+.doc-content pre code {
+  background: transparent;
+  color: #d4d4d4;
+  padding: 0;
+  border: none;
+  font-size: inherit;
+}
+.doc-content ul,
+.doc-content ol {
+  margin-bottom: 1rem;
+  padding-left: 1.5rem;
+}
+.doc-content ul {
+  list-style-type: disc;
+}
+.doc-content ol {
+  list-style-type: decimal;
+}
+.doc-content li {
+  margin-bottom: 0.35rem;
+  line-height: 1.7;
+}
+.doc-content blockquote {
+  border-left: 3px solid rgba(232, 255, 71, 0.4);
+  padding: 0.5rem 1rem;
+  margin: 1.25rem 0;
+  color: #888;
+  font-style: italic;
+  background: rgba(232, 255, 71, 0.03);
+  border-radius: 0 6px 6px 0;
+}
+.doc-content blockquote > p {
+  margin-bottom: 0;
+}
+.doc-content hr {
+  border: none;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  margin: 2rem 0;
+}
+.doc-content table {
+  width: 100%;
+  margin-bottom: 1.25rem;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+.doc-content th {
+  text-align: left;
+  font-weight: 600;
+  color: #f2f2f2;
+  padding: 0.6rem 1rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+}
+.doc-content td {
+  padding: 0.55rem 1rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  color: #a0a0a0;
+}
+.doc-content tr:last-child td {
+  border-bottom: none;
+}
+.doc-content strong {
+  color: #f2f2f2;
+  font-weight: 600;
+}
