@@ -18,9 +18,39 @@ export type EventState = {
 };
 
 // --- useStellarEvent ---
-// Core hook — listens to any event on an address
+// Core hook — two call signatures:
+//
+//   useStellarEvent(config: UseEventConfig)
+//   useStellarEvent(serverUrl, address, options?)
+//
+// Prefer the primitives-first overload when writing inline call sites —
+// it is stable by construction and never needs useMemo.
 
-export function useStellarEvent(config: UseEventConfig): EventState {
+export function useStellarEvent(config: UseEventConfig): EventState;
+export function useStellarEvent(
+  serverUrl: string,
+  address: string,
+  options?: Pick<UseEventConfig, "event" | "token">
+): EventState;
+export function useStellarEvent(
+  configOrUrl: UseEventConfig | string,
+  address?: string,
+  options?: Pick<UseEventConfig, "event" | "token">
+): EventState {
+  // Normalise the two call signatures down to four primitives.
+  const serverUrl =
+    typeof configOrUrl === "string" ? configOrUrl : configOrUrl.serverUrl;
+  const addr =
+    typeof configOrUrl === "string" ? address! : configOrUrl.address;
+  const eventType =
+    typeof configOrUrl === "string"
+      ? options?.event ?? "*"
+      : configOrUrl.event ?? "*";
+  const token =
+    typeof configOrUrl === "string"
+      ? options?.token
+      : configOrUrl.token;
+
   const [state, setState] = useState<EventState>({
     event: null,
     connected: false,
@@ -28,8 +58,11 @@ export function useStellarEvent(config: UseEventConfig): EventState {
   });
 
   useEffect(() => {
-    const { serverUrl, address, event: eventType = "*", token } = config;
-    const base = `${serverUrl}/events/${address}`;
+    // Dep array references each primitive directly — object identity never
+    // matters here, so an inline `{ serverUrl, address }` literal at the
+    // call site is harmless for this hook (though the primitives overload
+    // below is still cleaner).
+    const base = `${serverUrl}/events/${addr}`;
     const url = token ? `${base}?token=${encodeURIComponent(token)}` : base;
 
     const source = new EventSource(url);
@@ -59,11 +92,11 @@ export function useStellarEvent(config: UseEventConfig): EventState {
       }));
     };
 
-    // Cleanup on unmount
     return () => {
       source.close();
     };
-  }, [config.serverUrl, config.address, config.event, config.token]);
+    // ✅ Each dep is a primitive — safe from object-identity churn.
+  }, [serverUrl, addr, eventType, token]);
 
   return state;
 }
@@ -72,20 +105,12 @@ export function useStellarEvent(config: UseEventConfig): EventState {
 // Convenience hook — only listens to payment events
 
 export function useStellarPayment(serverUrl: string, address: string) {
-  return useStellarEvent({
-    serverUrl,
-    address,
-    event: "payment.received",
-  });
+  return useStellarEvent(serverUrl, address, { event: "payment.received" });
 }
 
 // --- useStellarActivity ---
 // Convenience hook — listens to all events on an address
 
 export function useStellarActivity(serverUrl: string, address: string) {
-  return useStellarEvent({
-    serverUrl,
-    address,
-    event: "*",
-  });
+  return useStellarEvent(serverUrl, address, { event: "*" });
 }
