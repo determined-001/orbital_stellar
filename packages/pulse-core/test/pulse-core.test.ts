@@ -38,7 +38,7 @@ vi.mock("@stellar/stellar-sdk", () => {
   };
 });
 
-import { EventEngine } from "../src/EventEngine.js";
+import { EventEngine, EngineAlreadyStartedError } from "../src/index.js";
 
 function latestStream(): MockStreamInstance {
   const stream = streamInstances.at(-1);
@@ -122,13 +122,21 @@ describe("pulse-core EventEngine", () => {
   it("guards start() so duplicate live streams are not opened", () => {
     const engine = new EventEngine({ network: "testnet" });
 
-    engine.start();
-    engine.start();
+    expect(engine.start()).toBe(true);
+    expect(engine.start()).toBe(false);
 
     expect(streamInstances).toHaveLength(1);
     expect(console.warn).toHaveBeenCalledWith(
       "[pulse-core] EventEngine.start() called while the SSE stream is already active."
     );
+  });
+
+  it("throws EngineAlreadyStartedError in strict mode", () => {
+    const engine = new EventEngine({ network: "testnet" });
+
+    expect(engine.start()).toBe(true);
+    expect(() => engine.start({ strict: true })).toThrow(EngineAlreadyStartedError);
+    expect(streamInstances).toHaveLength(1);
   });
 
   it("reconnects with exponential backoff and emits watcher notifications", () => {

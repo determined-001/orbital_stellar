@@ -1,4 +1,4 @@
-export { EventEngine } from "./EventEngine.js";
+export { EventEngine, EngineAlreadyStartedError } from "./EventEngine.js";
 export { Watcher } from "./Watcher.js";
 export { StrKey } from "@stellar/stellar-sdk";
 

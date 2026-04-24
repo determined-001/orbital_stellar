@@ -32,6 +32,15 @@ const DEFAULT_RECONNECT: Required<ReconnectConfig> = {
   maxRetries: Number.POSITIVE_INFINITY,
 };
 
+export class EngineAlreadyStartedError extends Error {
+  constructor() {
+    super(
+      "[pulse-core] EventEngine.start() called while the SSE stream is already active."
+    );
+    this.name = "EngineAlreadyStartedError";
+  }
+}
+
 export class EventEngine {
   private server: Horizon.Server;
   private registry: Map<string, Watcher> = new Map();
@@ -68,15 +77,20 @@ export class EventEngine {
     this.registry.get(address)?.stop();
   }
 
-  start(): void {
+  start(options: { strict?: boolean } = {}): boolean {
     if (this.isRunning || this.reconnectTimer) {
+      if (options.strict) {
+        throw new EngineAlreadyStartedError();
+      }
+
       console.warn(
         "[pulse-core] EventEngine.start() called while the SSE stream is already active."
       );
-      return;
+      return false;
     }
 
     this.openStream(false);
+    return true;
   }
 
   stop(): void {

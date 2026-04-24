@@ -1,6 +1,6 @@
 // packages/pulse-core/src/Watcher.ts
 import { EventEmitter } from "events";
-import type { NormalizedEvent } from "./index.js";
+import type { NormalizedEvent, WatcherNotification } from "./index.js";
 
 export class Watcher extends EventEmitter {
   readonly address: string;
@@ -13,12 +13,18 @@ export class Watcher extends EventEmitter {
     this.address = address;
   }
 
-  on(eventType: string, handler: (event: NormalizedEvent) => void): this {
+  on(
+    eventType: string,
+    handler: (event: NormalizedEvent | WatcherNotification) => void
+  ): this {
     if (this._stopped) return this;
     return super.on(eventType, handler);
   }
 
-  emit(eventType: string, event: NormalizedEvent): boolean {
+  emit(
+    eventType: string,
+    event: NormalizedEvent | WatcherNotification
+  ): boolean {
     if (this._stopped) return false;
     return super.emit(eventType, event);
   }
