@@ -40,26 +40,42 @@ export function LiveBalance({ address }: { address: string }) {
 
 ## Hooks
 
-### `useStellarEvent(config)`
+### `useStellarEvent(serverUrl, address, options?)`
 
-The core hook. Subscribes to any event type on an address.
+The core hook. Subscribes to one event type, an allowlist of types, or all events on an address.
 
 ```ts
-const { event, connected, error } = useStellarEvent({
-  serverUrl: "https://events.example.com",
-  address: "GABC...",
-  event: "payment.received", // or "*" for all
-  token: "orb_live_abc...",  // optional API key
-});
+// Single type
+const { event, connected, error } = useStellarEvent(
+  "https://events.example.com",
+  "GABC...",
+  { event: "payment.received" }
+);
+
+// Multiple types — subscribe to both without opening two connections
+const { event } = useStellarEvent(
+  "https://events.example.com",
+  "GABC...",
+  { event: ["payment.received", "payment.sent"] }
+);
+
+// All events (default)
+const { event } = useStellarEvent(
+  "https://events.example.com",
+  "GABC...",
+  { event: "*", token: "orb_live_abc..." }
+);
 ```
+
+Also accepts a single config object — see [Stable config](#stable-config) for when that matters.
 
 ### `useStellarPayment(serverUrl, address)`
 
-Shorthand for payments received. Equivalent to `useStellarEvent({ ..., event: "payment.received" })`.
+Shorthand for payments received. Equivalent to `useStellarEvent(serverUrl, address, { event: "payment.received" })`.
 
 ### `useStellarActivity(serverUrl, address)`
 
-Shorthand for all events on an address. Equivalent to `useStellarEvent({ ..., event: "*" })`.
+Shorthand for all events on an address. Equivalent to `useStellarEvent(serverUrl, address, { event: "*" })`.
 
 ## Return shape
 
@@ -82,16 +98,78 @@ useEffect(() => {
 }, [event]);
 ```
 
+## Stable config
+
+`useStellarEvent`'s `useEffect` depends on each primitive field — `serverUrl`, `address`, `event`, `token` — not on the config object's identity. The hook itself is safe from reference-equality churn.
+
+That said, passing a fresh `{...}` literal to the object form of the hook is still a code smell: React recreates the object every render, which is wasteful and obscures what the hook actually depends on. Prefer the primitives-first signature at inline call sites — because you're passing scalars directly, there's nothing to stabilise:
+
+```tsx
+// ✅ Primitives-first — always stable, no extra work needed
+function MyComponent({ address }: { address: string }) {
+  const { event } = useStellarEvent(
+    "https://events.example.com",
+    address,
+    { event: "payment.received" }
+  );
+}
+```
+
+**Array literals need the same treatment.** `["payment.received", "payment.sent"]` is a new reference every render, just like an object literal. The hook serialises the array internally so the effect stays stable — but if you're passing the array from props or building it inline, hoist or memoize it so your component doesn't re-render unnecessarily:
+
+```tsx
+// ✅ Hoisted constant — created once
+const PAYMENT_EVENTS = ["payment.received", "payment.sent"];
+
+function MyComponent({ address }: { address: string }) {
+  const { event } = useStellarEvent(
+    "https://events.example.com",
+    address,
+    { event: PAYMENT_EVENTS }
+  );
+}
+
+// ✅ useMemo — when the list depends on props or state
+function MyComponent({ address, types }: { address: string; types: string[] }) {
+  const options = useMemo(() => ({ event: types }), [types]);
+  const { event } = useStellarEvent("https://events.example.com", address, options);
+}
+```
+
+If you need the object form and the config depends on props or state, wrap it in `useMemo`:
+
+```tsx
+// ✅ Object form with useMemo — recreated only when deps change
+function MyComponent({ address, token }: { address: string; token?: string }) {
+  const config = useMemo(
+    () => ({ serverUrl: "https://events.example.com", address, token }),
+    [address, token]
+  );
+
+  const { event } = useStellarEvent(config);
+}
+```
+
+```tsx
+// ❌ Inline object literal — new reference every render
+function MyComponent({ address }: { address: string }) {
+  const { event } = useStellarEvent({
+    serverUrl: "https://events.example.com",
+    address,
+  });
+}
+```
+
 ## Authentication
 
 If your Orbital server enforces API-key auth, pass `token` in the config. The hook forwards it as a `?token=` query parameter (since `EventSource` does not support custom headers in browsers).
 
 ```tsx
-useStellarEvent({
+useStellarEvent(
   serverUrl,
   address,
-  token: process.env.NEXT_PUBLIC_ORBITAL_TOKEN,
-});
+  { token: process.env.NEXT_PUBLIC_ORBITAL_TOKEN }
+);
 ```
 
 **Server-only tokens** (secrets) must never ship to the browser. Use a per-user short-lived token issued by your backend.
