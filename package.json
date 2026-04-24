@@ -7,6 +7,6 @@
     "test": "pnpm -r --if-present test"
   },
   "devDependencies": {
-    "typescript": "^6.0.2"
+    "typescript": "^6.0.3"
   }
 }
