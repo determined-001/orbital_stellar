@@ -36,7 +36,7 @@ console.log(`[server] Event engine started on ${NETWORK}`);
 const registry = new WebhookRegistry(engine);
 
 const app = express();
-app.use(express.json());
+app.use(express.json({ limit: "16kb" }));
 app.use(createRoutes(registry, engine));
 
 app.get("/health", (_req: Request, res: Response) => {

@@ -66,6 +66,7 @@ useStellarEvent({
 
 ## Security defaults
 
+- **Request body limit.** `express.json()` enforces a **16 kb** maximum body size. Webhook registration payloads are small by design; oversized requests are rejected with `413 Payload Too Large`.
 - **HTTPS enforcement.** The server rejects `http://`, `localhost`, and private-IP-range webhook URLs at registration time to prevent SSRF.
 - **Stellar key validation.** Registered addresses must pass `StrKey.isValidEd25519PublicKey` before they're accepted.
 - **Secrets are hashed.** Webhook secrets are HMAC-hashed before storage; the plaintext never persists beyond the request.
