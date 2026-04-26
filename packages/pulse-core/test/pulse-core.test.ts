@@ -377,4 +377,104 @@ describe("pulse-core EventEngine", () => {
       expect(otherHandler).not.toHaveBeenCalled();
     });
   });
+
+  describe("change_trust → trustline.*", () => {
+    function makeChangeTrustRecord(
+      overrides: Record<string, unknown>
+    ): Record<string, unknown> {
+      return {
+        type: "change_trust",
+        source_account: "GSRC",
+        asset_type: "credit_alphanum4",
+        asset_code: "USDC",
+        asset_issuer: "GISSUER",
+        limit: "922337203685.4775807",
+        created_at: "2026-04-24T10:00:00.000Z",
+        ...overrides,
+      };
+    }
+
+    it("emits trustline.added for max trustline limit", () => {
+      const engine = new EventEngine({ network: "testnet" });
+      const watcher = engine.subscribe("GSRC");
+      const handler = vi.fn();
+      watcher.on("trustline.added", handler);
+
+      engine.start();
+      latestStream().handlers.onmessage(makeChangeTrustRecord({}));
+
+      expect(handler).toHaveBeenCalledOnce();
+      expect(handler).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: "trustline.added",
+          account: "GSRC",
+          asset: "USDC:GISSUER",
+          limit: "922337203685.4775807",
+          timestamp: "2026-04-24T10:00:00.000Z",
+        })
+      );
+    });
+
+    it("emits trustline.removed when limit is zero", () => {
+      const engine = new EventEngine({ network: "testnet" });
+      const watcher = engine.subscribe("GSRC");
+      const handler = vi.fn();
+      watcher.on("trustline.removed", handler);
+
+      engine.start();
+      latestStream().handlers.onmessage(
+        makeChangeTrustRecord({ limit: "0.0000000" })
+      );
+
+      expect(handler).toHaveBeenCalledOnce();
+      expect(handler).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: "trustline.removed",
+          account: "GSRC",
+          asset: "USDC:GISSUER",
+          limit: "0.0000000",
+        })
+      );
+    });
+
+    it("emits trustline.updated when limit is non-zero and not max", () => {
+      const engine = new EventEngine({ network: "testnet" });
+      const watcher = engine.subscribe("GSRC");
+      const handler = vi.fn();
+      watcher.on("trustline.updated", handler);
+
+      engine.start();
+      latestStream().handlers.onmessage(
+        makeChangeTrustRecord({ limit: "2500.0000000" })
+      );
+
+      expect(handler).toHaveBeenCalledOnce();
+      expect(handler).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: "trustline.updated",
+          account: "GSRC",
+          asset: "USDC:GISSUER",
+          limit: "2500.0000000",
+        })
+      );
+    });
+
+    it("does not route trustline events to unrelated watchers", () => {
+      const engine = new EventEngine({ network: "testnet" });
+      const sourceWatcher = engine.subscribe("GSRC");
+      const otherWatcher = engine.subscribe("GOTHER");
+      const sourceHandler = vi.fn();
+      const otherHandler = vi.fn();
+      sourceWatcher.on("trustline.updated", sourceHandler);
+      otherWatcher.on("trustline.updated", otherHandler);
+
+      engine.start();
+      latestStream().handlers.onmessage(
+        makeChangeTrustRecord({ limit: "3000.0000000" })
+      );
+
+      expect(sourceHandler).toHaveBeenCalledOnce();
+      expect(otherHandler).not.toHaveBeenCalled();
+    });
+  });
 });

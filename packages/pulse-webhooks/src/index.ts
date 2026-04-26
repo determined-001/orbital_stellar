@@ -60,7 +60,6 @@ export class WebhookDelivery {
       } else {
         this.watcher.emit("webhook.failed", {
           ...event,
-          type: event.type,
           raw: {
             error: errorMessage,
             url: this.config.url,

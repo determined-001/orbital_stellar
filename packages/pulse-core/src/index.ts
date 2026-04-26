@@ -6,6 +6,10 @@ export type Network = "mainnet" | "testnet";
 
 export type PaymentEventType = "payment.received" | "payment.sent";
 export type AccountOptionsEventType = "account.options_changed";
+export type TrustlineEventType =
+  | "trustline.added"
+  | "trustline.removed"
+  | "trustline.updated";
 export type WatcherNotificationType =
   | "engine.reconnecting"
   | "engine.reconnected";
@@ -45,7 +49,19 @@ export type AccountOptionsEvent = {
   raw: unknown;
 };
 
-export type NormalizedEvent = PaymentEvent | AccountOptionsEvent;
+export type TrustlineEvent = {
+  type: TrustlineEventType;
+  account: string;
+  asset: string;
+  limit: string;
+  timestamp: string;
+  raw: unknown;
+};
+
+export type NormalizedEvent =
+  | PaymentEvent
+  | AccountOptionsEvent
+  | TrustlineEvent;
 
 export type WatcherNotification = {
   type: WatcherNotificationType;
