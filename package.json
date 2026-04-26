@@ -4,7 +4,8 @@
   "version": "0.0.0",
   "scripts": {
     "build": "pnpm -r --filter \"./packages/*\" run build",
-    "test": "pnpm -r --if-present test"
+    "test": "pnpm -r --if-present test",
+    "test:integration": "pnpm -r --if-present test:integration"
   },
   "devDependencies": {
     "typescript": "^6.0.3"
