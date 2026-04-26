@@ -213,6 +213,17 @@ export class EventEngine {
     const r = record as Record<string, unknown>;
 
     if (r.type === "payment") {
+      const requiredFields = ["to", "from", "amount", "created_at"] as const;
+      for (const field of requiredFields) {
+        if (typeof r[field] !== "string" || r[field] === "") {
+          console.warn(
+            `[pulse-core] normalize() dropping payment record: field "${field}" is missing or not a non-empty string.`,
+            { record }
+          );
+          return null;
+        }
+      }
+
       const asset =
         r.asset_type === "native"
           ? "XLM"

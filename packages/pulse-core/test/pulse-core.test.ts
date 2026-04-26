@@ -102,6 +102,55 @@ describe("pulse-core EventEngine", () => {
     });
   });
 
+  it("returns null and warns when a required payment field is missing", () => {
+    const engine = new EventEngine({ network: "testnet" });
+    const normalize = (
+      engine as unknown as {
+        normalize(record: unknown): unknown;
+      }
+    ).normalize.bind(engine);
+
+    // Missing `to`
+    const result = normalize({
+      type: "payment",
+      from: "GSRC",
+      amount: "42",
+      asset_type: "native",
+      created_at: "2026-03-26T20:00:00.000Z",
+    });
+
+    expect(result).toBeNull();
+    expect(console.warn).toHaveBeenCalledWith(
+      '[pulse-core] normalize() dropping payment record: field "to" is missing or not a non-empty string.',
+      expect.objectContaining({ record: expect.any(Object) })
+    );
+  });
+
+  it("returns null and warns for each missing required field individually", () => {
+    const engine = new EventEngine({ network: "testnet" });
+    const normalize = (
+      engine as unknown as {
+        normalize(record: unknown): unknown;
+      }
+    ).normalize.bind(engine);
+
+    const missingFieldCases: Array<[string, Record<string, unknown>]> = [
+      ["from",       { type: "payment", to: "GDEST", amount: "1", created_at: "2026-01-01T00:00:00Z" }],
+      ["amount",     { type: "payment", to: "GDEST", from: "GSRC", created_at: "2026-01-01T00:00:00Z" }],
+      ["created_at", { type: "payment", to: "GDEST", from: "GSRC", amount: "1" }],
+    ];
+
+    for (const [field, record] of missingFieldCases) {
+      vi.clearAllMocks();
+      const result = normalize(record);
+      expect(result).toBeNull();
+      expect(console.warn).toHaveBeenCalledWith(
+        `[pulse-core] normalize() dropping payment record: field "${field}" is missing or not a non-empty string.`,
+        expect.objectContaining({ record: expect.any(Object) })
+      );
+    }
+  });
+
   it("removes stopped watchers from the registry and keeps stop idempotent", () => {
     const engine = new EventEngine({ network: "testnet" });
     const watcher = engine.subscribe("GABC");
