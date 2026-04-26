@@ -66,7 +66,7 @@ export class WebhookDelivery {
             attempts: attempt,
             originalEvent: event,
           },
-        });
+        } as NormalizedEvent);
       }
     } finally {
       clearTimeout(abortTimer);

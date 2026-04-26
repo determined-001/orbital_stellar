@@ -76,7 +76,7 @@ export function createRoutes(registry: WebhookRegistry, engine: EventEngine): Ro
   });
 
   // Unregister a webhook
-  router.delete("/webhooks/:address", (req: Request, res: Response) => {
+  router.delete("/webhooks/:address", (req: Request<{ address: string }>, res: Response) => {
     const { address } = req.params;
     const removed = registry.unregister(address);
 
@@ -94,7 +94,7 @@ export function createRoutes(registry: WebhookRegistry, engine: EventEngine): Ro
   });
 
   // Get a single registration
-  router.get("/webhooks/:address", (req: Request, res: Response) => {
+  router.get("/webhooks/:address", (req: Request<{ address: string }>, res: Response) => {
     const { address } = req.params;
     if (!registry.has(address)) {
       res.status(404).json({ error: "Address not registered" });
@@ -106,7 +106,7 @@ export function createRoutes(registry: WebhookRegistry, engine: EventEngine): Ro
   });
 
   // SSE endpoint — browser connects here to receive live events
-  router.get("/events/:address", (req: Request, res: Response) => {
+  router.get("/events/:address", (req: Request<{ address: string }>, res: Response) => {
     const { address } = req.params;
 
     res.setHeader("Content-Type", "text/event-stream");
