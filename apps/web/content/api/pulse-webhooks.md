@@ -5,7 +5,7 @@ description: HMAC-signed webhook delivery with automatic retry.
 
 ## Overview
 
-`@orbital/pulse-webhooks` wraps a `Watcher` and delivers events to an HTTP endpoint. Each delivery is signed with HMAC-SHA256 so your server can verify authenticity.
+`@orbital/pulse-webhooks` wraps a `Watcher` and delivers events to one or more HTTP endpoints. Each delivery is signed with HMAC-SHA256 so your server can verify authenticity.
 
 ## Installation
 
@@ -21,7 +21,10 @@ npm install @orbital/pulse-webhooks
 import { WebhookDelivery } from '@orbital/pulse-webhooks'
 
 const delivery = new WebhookDelivery(watcher, {
-  url: 'https://your-app.com/webhook',
+  url: [
+    'https://your-app.com/webhook',
+    'https://staging.your-app.com/webhook',
+  ],
   secret: 'my-signing-secret',
   retries: 3,               // optional, default: 3
   deliveryTimeoutMs: 10000, // optional, default: 10000
@@ -32,7 +35,7 @@ const delivery = new WebhookDelivery(watcher, {
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `url` | `string` | — | Endpoint to POST events to |
+| `url` | `string \| string[]` | — | Endpoint to POST events to, or a list of endpoints for fan-out |
 | `secret` | `string` | — | HMAC signing secret |
 | `retries` | `number` | `3` | Max delivery attempts |
 | `deliveryTimeoutMs` | `number` | `10000` | Per-attempt timeout in ms |
@@ -40,8 +43,8 @@ const delivery = new WebhookDelivery(watcher, {
 ### Events
 
 ```typescript
-delivery.on('webhook.failed', ({ event, error }) => {
-  console.error(`Delivery failed after all retries: ${error.message}`)
+watcher.on('webhook.failed', (event) => {
+  console.error(`Delivery failed for ${event.raw.url}: ${event.raw.error}`)
 })
 ```
 
@@ -86,3 +89,5 @@ Every webhook POST includes:
 | `X-Orbital-Signature` | HMAC-SHA256 hex digest of the body |
 | `X-Orbital-Event` | Event type (e.g. `payment.received`) |
 | `X-Orbital-Timestamp` | ISO 8601 delivery time |
+
+When `url` is an array, each URL is delivered in parallel and retried independently.

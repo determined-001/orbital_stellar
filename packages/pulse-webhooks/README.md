@@ -1,6 +1,6 @@
 # @orbital/pulse-webhooks
 
-**HMAC-signed webhook delivery for Stellar events.** Attach to a `pulse-core` watcher and every event becomes an outbound HTTPS POST with a verifiable signature, retry on failure, and configurable timeout.
+**HMAC-signed webhook delivery for Stellar events.** Attach to a `pulse-core` watcher and every event becomes one or more outbound HTTPS POSTs with a verifiable signature, retry on failure, and configurable timeout.
 
 ```bash
 pnpm add @orbital/pulse-webhooks @orbital/pulse-core
@@ -8,7 +8,7 @@ pnpm add @orbital/pulse-webhooks @orbital/pulse-core
 
 ## What it does
 
-`pulse-webhooks` is the "push" side of Orbital. It listens to a `Watcher`, serializes events to JSON, signs the payload with HMAC-SHA256, and POSTs to your endpoint. On transient failure it retries with exponential backoff; on permanent failure it emits a `webhook.failed` event you can catch and route to a dead-letter queue.
+`pulse-webhooks` is the "push" side of Orbital. It listens to a `Watcher`, serializes events to JSON, signs the payload with HMAC-SHA256, and POSTs to one or more endpoints. On transient failure it retries each URL independently with exponential backoff; on permanent failure it emits a `webhook.failed` event you can catch and route to a dead-letter queue.
 
 Consumers verify the signature using the shared secret you provisioned — `verifyWebhook` is exported for that purpose.
 
@@ -24,7 +24,10 @@ engine.start();
 const watcher = engine.subscribe("GABC...");
 
 new WebhookDelivery(watcher, {
-  url: "https://your-app.com/hooks/stellar",
+  url: [
+    "https://your-app.com/hooks/stellar",
+    "https://staging.your-app.com/hooks/stellar",
+  ],
   secret: process.env.WEBHOOK_SECRET!,
   retries: 3,
   deliveryTimeoutMs: 10_000,
@@ -56,11 +59,11 @@ app.post("/hooks/stellar", express.text({ type: "*/*" }), (req, res) => {
 
 ### `new WebhookDelivery(watcher, config)`
 
-Attaches a delivery driver to a `Watcher`. Every event the watcher emits is delivered to `config.url`.
+Attaches a delivery driver to a `Watcher`. Every event the watcher emits is delivered to each URL in `config.url`.
 
 | Field | Type | Default | Description |
 |---|---|---|---|
-| `config.url` | `string` | — | Destination endpoint. Must be HTTPS in production. |
+| `config.url` | `string \| string[]` | — | One destination endpoint or a fan-out list of endpoints. Must be HTTPS in production. |
 | `config.secret` | `string` | — | Shared secret used to sign payloads |
 | `config.retries` | `number` | `3` | Number of retry attempts before emitting `webhook.failed` |
 | `config.deliveryTimeoutMs` | `number` | `10_000` | Abort threshold for each HTTP attempt |
@@ -82,7 +85,7 @@ Uses `crypto.timingSafeEqual` under the hood — do not roll your own comparison
   - `x-orbital-attempt`: `1`, `2`, … up to `retries`
 - **Success:** Any 2xx response
 - **Retry:** Any non-2xx, network error, or timeout. Backoff is exponential: `2^(attempt-1) × 1000 ms`.
-- **Failure:** After `retries` unsuccessful attempts, the watcher emits `webhook.failed` with the original event in `raw.originalEvent`.
+- **Failure:** After `retries` unsuccessful attempts for a given URL, the watcher emits `webhook.failed` with the original event in `raw.originalEvent` and the failed target in `raw.url`.
 
 ## Security
 
@@ -102,7 +105,6 @@ Uses `crypto.timingSafeEqual` under the hood — do not roll your own comparison
 ## Current limitations
 
 - Retries live in-process. Restarting the process loses pending retries. Persistent retry queues are tracked in [`webhooks`](https://github.com/orbital/orbital/labels/webhooks).
-- Single endpoint per watcher. Fan-out to multiple destinations is a planned enhancement.
 - Exponential backoff is hard-coded. Configurable strategies (linear, jittered, capped-at-N-hours) are open issues.
 
 ## License
