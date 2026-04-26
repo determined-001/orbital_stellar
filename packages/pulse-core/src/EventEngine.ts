@@ -19,7 +19,9 @@ type StreamCallbacks = {
   onerror: (error: unknown) => void;
 };
 
-type StreamStopper = () => void;
+type HorizonStreamStopper = ReturnType<
+  ReturnType<Horizon.Server["payments"]>["stream"]
+>;
 
 const HORIZON_URLS: Record<Network, string> = {
   mainnet: "https://horizon.stellar.org",
@@ -35,7 +37,7 @@ const DEFAULT_RECONNECT: Required<ReconnectConfig> = {
 export class EventEngine {
   private server: Horizon.Server;
   private registry: Map<string, Watcher> = new Map();
-  private stopStream: StreamStopper | null = null;
+  private stopStream: HorizonStreamStopper | null = null;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private reconnectAttempt = 0;
   private pendingReconnectSuccessAttempt: number | null = null;
@@ -133,7 +135,7 @@ export class EventEngine {
     this.stopStream = this.server
       .payments()
       .cursor("now")
-      .stream(callbacks) as StreamStopper;
+      .stream(callbacks);
   }
 
   private handleStreamError(): void {
