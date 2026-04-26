@@ -94,8 +94,6 @@ export class EventEngine {
     for (const watcher of this.registry.values()) {
       watcher.stop();
     }
-
-    this.registry.clear();
   }
 
   private openStream(isReconnect: boolean): void {
