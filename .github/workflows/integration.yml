@@ -11,45 +11,44 @@ jobs:
   integration:
     name: Horizon Integration Tests
     runs-on: ubuntu-latest
-    
+
     strategy:
       matrix:
-        node-version: [18, 20]
-    
+        node-version: [20, 22]
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-        
+
       - name: Setup pnpm
-        uses: pnpm/action-setup@v3
+        uses: pnpm/action-setup@v4
         with:
-          version: 8
-          
+          version: 10
+
       - name: Setup Node.js ${{ matrix.node-version }}
         uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node-version }}
           cache: 'pnpm'
-          
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
-        
+
       - name: Build packages
         run: pnpm build
-        
+
       - name: Run integration tests
         env:
           INTEGRATION_TESTS: true
-          NODE_OPTIONS: --max-old-space-size=4096
         run: pnpm test:integration
         timeout-minutes: 10
-        
+
       - name: Report integration test status
         if: always()
         run: |
-          if [ ${{ job.status }} == "success" ]; then
-            echo "✅ Integration tests passed successfully"
+          if [ "${{ job.status }}" == "success" ]; then
+            echo "Integration tests passed successfully"
           else
-            echo "❌ Integration tests failed"
+            echo "Integration tests failed"
             echo "Check the logs above for details about the failure"
           fi

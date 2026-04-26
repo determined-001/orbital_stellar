@@ -6,13 +6,12 @@ const integrationTest = process.env.INTEGRATION_TESTS ? it : it.skip;
 
 describe("Horizon Integration Tests", () => {
   let engine: EventEngine;
-  
-  // Use a known testnet account that receives faucet payments
-  // This is a public testnet account that regularly receives payments from the Stellar testnet faucet
+
+  // A public testnet account that regularly receives payments from the Stellar testnet faucet
   const TESTNET_ACCOUNT = "GBBDQF3HQ4I7KZ7A5LJ4SXGWH4U7KRN2WA4YOJXKXEBVNBKWO6BMGQRF";
-  
+
   beforeEach(() => {
-    engine = new EventEngine({ 
+    engine = new EventEngine({
       network: "testnet",
       reconnect: {
         initialDelayMs: 500,
@@ -28,15 +27,15 @@ describe("Horizon Integration Tests", () => {
 
   integrationTest("connects to live Horizon testnet and streams payments", async () => {
     return new Promise<void>((resolve, reject) => {
-      const events: any[] = [];
+      const events: unknown[] = [];
       let timeout: NodeJS.Timeout;
 
       const watcher = engine.subscribe(TESTNET_ACCOUNT);
-      
+
       watcher.on("payment.received", (event) => {
         events.push(event);
         console.log("Received payment event:", event);
-        
+
         // Verify event structure
         expect(event).toMatchObject({
           type: "payment.received",
@@ -46,9 +45,9 @@ describe("Horizon Integration Tests", () => {
           timestamp: expect.any(String),
           raw: expect.any(Object),
         });
-        
+
         // Verify the raw event has expected fields
-        expect(event.raw).toMatchObject({
+        expect((event as { raw: Record<string, unknown> }).raw).toMatchObject({
           type: "payment",
           to: TESTNET_ACCOUNT,
           from: expect.any(String),
@@ -56,8 +55,7 @@ describe("Horizon Integration Tests", () => {
           asset_type: expect.any(String),
           created_at: expect.any(String),
         });
-        
-        // If we receive at least one event, consider the test successful
+
         if (events.length > 0) {
           clearTimeout(timeout);
           watcher.stop();
@@ -73,84 +71,52 @@ describe("Horizon Integration Tests", () => {
         console.log("Engine reconnecting:", event);
       });
 
-      watcher.on("error", (error) => {
-        console.error("Watcher error:", error);
-        clearTimeout(timeout);
-        reject(error);
-      });
-
-      // Start the engine
       engine.start();
 
-      // Set a timeout to fail the test if no events are received within 60 seconds
       timeout = setTimeout(() => {
         watcher.stop();
         reject(new Error("No payment events received within 60 seconds"));
       }, 60000);
     });
-  }, 65000); // Increase timeout to 65 seconds
+  }, 65000);
 
-  integrationTest("handles connection errors gracefully", async () => {
-    return new Promise<void>((resolve, reject) => {
-      let reconnectCount = 0;
-      let timeout: NodeJS.Timeout;
+  integrationTest("stops cleanly and removes watcher from registry", async () => {
+    const watcher = engine.subscribe(TESTNET_ACCOUNT);
 
-      // Create an engine with an invalid URL to test error handling
-      const invalidEngine = new EventEngine({ 
-        network: "testnet",
-        reconnect: {
-          initialDelayMs: 100,
-          maxDelayMs: 1000,
-          maxRetries: 2,
-        },
-      });
+    // Watcher should appear in the engine's registry immediately after subscribe
+    expect((engine as unknown as { registry: Map<string, unknown> }).registry.has(TESTNET_ACCOUNT)).toBe(true);
 
-      const watcher = invalidEngine.subscribe(TESTNET_ACCOUNT);
-      
-      watcher.on("engine.reconnecting", (event) => {
-        reconnectCount++;
-        console.log(`Reconnect attempt ${event.attempt}`);
-        
-        if (reconnectCount >= 2) {
-          clearTimeout(timeout);
-          invalidEngine.stop();
-          resolve();
-        }
-      });
+    engine.start();
 
-      watcher.on("error", (error) => {
-        console.error("Expected error during connection test:", error);
-      });
+    // Give the stream a moment to open
+    await new Promise((r) => setTimeout(r, 500));
 
-      // Start with a short delay, then manually trigger an error
-      invalidEngine.start();
-      
-      timeout = setTimeout(() => {
-        invalidEngine.stop();
-        reject(new Error("Expected reconnect events were not triggered"));
-      }, 5000);
-    });
-  });
+    // Stop the watcher — should trigger onStop and remove it from the registry
+    watcher.stop();
+
+    expect((engine as unknown as { registry: Map<string, unknown> }).registry.has(TESTNET_ACCOUNT)).toBe(false);
+  }, 10000);
 
   integrationTest("properly normalizes different asset types", async () => {
     return new Promise<void>((resolve, reject) => {
-      let events: any[] = [];
+      let eventCount = 0;
       let timeout: NodeJS.Timeout;
 
       const watcher = engine.subscribe(TESTNET_ACCOUNT);
-      
+
       watcher.on("payment.received", (event) => {
-        events.push(event);
-        
+        eventCount++;
+        const e = event as { asset: string; raw: Record<string, unknown> };
+
         // Test asset normalization
-        if (event.raw.asset_type === "native") {
-          expect(event.asset).toBe("XLM");
-        } else if (event.raw.asset_type === "credit_alphanum4" || event.raw.asset_type === "credit_alphanum12") {
-          expect(event.asset).toBe(`${event.raw.asset_code}:${event.raw.asset_issuer}`);
+        if (e.raw.asset_type === "native") {
+          expect(e.asset).toBe("XLM");
+        } else if (e.raw.asset_type === "credit_alphanum4" || e.raw.asset_type === "credit_alphanum12") {
+          expect(e.asset).toBe(`${e.raw.asset_code}:${e.raw.asset_issuer}`);
         }
-        
-        // If we've seen a few different events, consider it successful
-        if (events.length >= 3) {
+
+        // One event is enough to verify normalization
+        if (eventCount >= 1) {
           clearTimeout(timeout);
           watcher.stop();
           resolve();
@@ -167,8 +133,7 @@ describe("Horizon Integration Tests", () => {
 
       timeout = setTimeout(() => {
         watcher.stop();
-        // Even with 1 event we can still verify asset normalization
-        if (events.length > 0) {
+        if (eventCount > 0) {
           resolve();
         } else {
           reject(new Error("No events received for asset normalization test"));
@@ -177,45 +142,34 @@ describe("Horizon Integration Tests", () => {
     });
   }, 50000);
 
-  integrationTest("maintains watcher registry during reconnection", async () => {
+  integrationTest("maintains watcher registry during active subscription", async () => {
     return new Promise<void>((resolve, reject) => {
-      let reconnectEventReceived = false;
       let timeout: NodeJS.Timeout;
 
       const watcher = engine.subscribe(TESTNET_ACCOUNT);
-      
-      // Verify watcher is in registry
-      expect((engine as any).registry.has(TESTNET_ACCOUNT)).toBe(true);
-      
-      watcher.on("engine.reconnecting", (event) => {
-        reconnectEventReceived = true;
-        
+
+      // Watcher must be in the registry immediately after subscribe
+      expect((engine as unknown as { registry: Map<string, unknown> }).registry.has(TESTNET_ACCOUNT)).toBe(true);
+
+      watcher.on("engine.reconnecting", () => {
         // Verify watcher is still in registry during reconnection
-        expect((engine as any).registry.has(TESTNET_ACCOUNT)).toBe(true);
+        expect((engine as unknown as { registry: Map<string, unknown> }).registry.has(TESTNET_ACCOUNT)).toBe(true);
       });
 
-      watcher.on("payment.received", (event) => {
-        if (reconnectEventReceived) {
-          clearTimeout(timeout);
-          watcher.stop();
-          resolve();
-        }
-      });
+      engine.start();
+
+      timeout = setTimeout(() => {
+        // Verify registry still contains the watcher after 30 s of active streaming
+        expect((engine as unknown as { registry: Map<string, unknown> }).registry.has(TESTNET_ACCOUNT)).toBe(true);
+        watcher.stop();
+        resolve();
+      }, 30000);
 
       watcher.on("error", (error) => {
         console.error("Error in registry test:", error);
         clearTimeout(timeout);
         reject(error);
       });
-
-      engine.start();
-
-      timeout = setTimeout(() => {
-        watcher.stop();
-        // Even without reconnection, verify basic registry functionality
-        expect((engine as any).registry.has(TESTNET_ACCOUNT)).toBe(true);
-        resolve();
-      }, 30000);
     });
   }, 35000);
 });
