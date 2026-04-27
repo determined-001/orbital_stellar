@@ -87,6 +87,28 @@ type NormalizedEvent = {
 - **Cleanup is mandatory.** Always call `engine.stop()` in your shutdown path. Watchers clean themselves up via `addStopHandler`.
 - **The raw record is preserved.** `event.raw` contains the original Horizon payload. If Orbital's normalization loses information you need, it's still there.
 
+## Benchmark
+
+`pulse-core` includes a reproducible throughput benchmark at `bench/throughput.ts`.
+
+Run it with:
+
+```bash
+pnpm --filter @orbital/pulse-core exec node --expose-gc --import tsx bench/throughput.ts --records=100000
+```
+
+The harness subscribes `N` watchers and replays `M` synthetic payment records through the engine's normalize + route path, then reports memory and routed events/sec.
+
+### Headline numbers (Node v25.1.0, `M=100000`)
+
+| Watchers (`N`) | Routed events | Duration (ms) | Events/sec | Subscribed heap (MB) | Post-replay heap (MB) | Post-replay RSS (MB) |
+|---|---:|---:|---:|---:|---:|---:|
+| 1,000 | 400,000 | 258.05 | 1,550,110.02 | 17.56 | 17.44 | 144.13 |
+| 5,000 | 400,000 | 246.09 | 1,625,418.95 | 21.04 | 20.29 | 148.28 |
+| 10,000 | 400,000 | 254.38 | 1,572,441.39 | 25.36 | 23.85 | 160.80 |
+
+Results vary by CPU, Node version, and runtime load; rerun locally to compare changes over time.
+
 ## Current limitations
 
 - Classic payment operations only. Other operation types (path payments, offers, trustlines, account management, Soroban invocations) are in-progress — see open issues tagged [`core-engine`](https://github.com/orbital/orbital/labels/core-engine).
