@@ -151,8 +151,8 @@ export type WatcherNotification = {
   attempt: number;
   /** The delay in milliseconds before the next reconnection attempt (for "engine.reconnecting" events). */
   delayMs?: number;
-  /** ISO 8601 timestamp of the notification. */
-  timestamp: string;
+  /** ISO 8601 timestamp of when this notification was emitted. */
+  emittedAt: string;
 };
 
 /**

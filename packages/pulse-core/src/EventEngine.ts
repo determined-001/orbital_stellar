@@ -165,7 +165,7 @@ export class EventEngine {
           this.notifyWatchers("engine.reconnected", {
             type: "engine.reconnected",
             attempt,
-            timestamp: new Date().toISOString(),
+            emittedAt: new Date().toISOString(),
           });
         }
 
@@ -216,7 +216,7 @@ export class EventEngine {
       type: "engine.reconnecting",
       attempt: nextAttempt,
       delayMs,
-      timestamp: new Date().toISOString(),
+      emittedAt: new Date().toISOString(),
     });
 
     this.reconnectTimer = setTimeout(() => {
