@@ -5,6 +5,7 @@ import type {
   AccountOptionsChanges,
   AccountOptionsEvent,
   CoreConfig,
+  EngineStatus,
   Network,
   NormalizedEvent,
   PaymentEvent,
@@ -58,6 +59,7 @@ export class EventEngine {
   private readonly reconnectConfig: Required<ReconnectConfig>;
   private isRunning = false;
   private log: Required<NonNullable<CoreConfig["logger"]>>;
+  private lastEventAt: string | null = null;
 
   /**
    * Creates a new EventEngine instance.
@@ -131,6 +133,15 @@ export class EventEngine {
     this.openStream(false);
   }
 
+  status(): EngineStatus {
+    return {
+      running: this.isRunning,
+      watcherCount: this.registry.size,
+      lastEventAt: this.lastEventAt,
+      reconnectAttempt: this.reconnectAttempt,
+    };
+  }
+
   /**
    * Stops the SSE stream and all active watchers.
    * Cleans up all resources and resets reconnection state.
@@ -139,6 +150,7 @@ export class EventEngine {
     this.clearReconnectTimer();
     this.pendingReconnectSuccessAttempt = null;
     this.reconnectAttempt = 0;
+    this.lastEventAt = null;
     this.closeStream();
     this.isRunning = false;
 
@@ -157,6 +169,7 @@ export class EventEngine {
 
     const callbacks: StreamCallbacks = {
       onmessage: (record) => {
+        this.lastEventAt = new Date().toISOString();
         if (this.pendingReconnectSuccessAttempt !== null) {
           const attempt = this.pendingReconnectSuccessAttempt;
           this.pendingReconnectSuccessAttempt = null;

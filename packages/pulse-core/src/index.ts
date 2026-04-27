@@ -198,3 +198,10 @@ export class UnknownNetworkError extends Error {
     this.name = "UnknownNetworkError";
   }
 }
+
+export type EngineStatus = {
+  running: boolean;
+  watcherCount: number;
+  lastEventAt: string | null;
+  reconnectAttempt: number;
+};

@@ -861,4 +861,74 @@ describe("pulse-core EventEngine", () => {
       expect(otherHandler).not.toHaveBeenCalled();
     });
   });
+
+  describe("status()", () => {
+    it("returns accurate snapshot in initial state", () => {
+      const engine = new EventEngine({ network: "testnet" });
+      expect(engine.status()).toEqual({
+        running: false,
+        watcherCount: 0,
+        lastEventAt: null,
+        reconnectAttempt: 0,
+      });
+    });
+
+    it("returns accurate snapshot after start()", () => {
+      const engine = new EventEngine({ network: "testnet" });
+      engine.subscribe("GABC");
+      engine.start();
+
+      expect(engine.status()).toEqual({
+        running: true,
+        watcherCount: 1,
+        lastEventAt: null,
+        reconnectAttempt: 0,
+      });
+    });
+
+    it("updates lastEventAt after a message", () => {
+      const engine = new EventEngine({ network: "testnet" });
+      engine.start();
+
+      const now = "2026-04-27T10:00:00.000Z";
+      vi.setSystemTime(new Date(now));
+
+      latestStream().handlers.onmessage({});
+
+      expect(engine.status().lastEventAt).toBe(now);
+    });
+
+    it("reflects reconnect attempts and running: false during backoff", () => {
+      const engine = new EventEngine({
+        network: "testnet",
+        reconnect: { initialDelayMs: 1000 },
+      });
+      engine.start();
+
+      latestStream().handlers.onerror(new Error("disconnect"));
+
+      expect(engine.status()).toEqual({
+        running: false,
+        watcherCount: 0,
+        lastEventAt: null,
+        reconnectAttempt: 1,
+      });
+    });
+
+    it("resets state when stop() is called", () => {
+      const engine = new EventEngine({ network: "testnet" });
+      engine.subscribe("GABC");
+      engine.start();
+      latestStream().handlers.onmessage({});
+
+      engine.stop();
+
+      expect(engine.status()).toEqual({
+        running: false,
+        watcherCount: 0,
+        lastEventAt: null,
+        reconnectAttempt: 0,
+      });
+    });
+  });
 });
