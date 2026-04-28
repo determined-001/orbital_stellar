@@ -440,4 +440,19 @@ describe("pulse-core EventEngine", () => {
       expect(otherHandler).not.toHaveBeenCalled();
     });
   });
+
+  describe("EventEngine constructor network validation", () => {
+    it("throws error with helpful message when network is invalid", () => {
+      expect(() => new EventEngine({ network: "invalid_network" as any }))
+        .toThrow('Unknown network: "invalid_network". Valid networks: mainnet, testnet');
+    });
+
+    it("does not throw when network is mainnet", () => {
+      expect(() => new EventEngine({ network: "mainnet" })).not.toThrow();
+    });
+
+    it("does not throw when network is testnet", () => {
+      expect(() => new EventEngine({ network: "testnet" })).not.toThrow();
+    });
+  });
 });

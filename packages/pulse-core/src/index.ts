@@ -64,3 +64,12 @@ export type CoreConfig = {
   network: Network;
   reconnect?: ReconnectConfig;
 };
+
+// Error class for invalid network validation
+export class UnknownNetworkError extends Error {
+  constructor(network: string) {
+    const validNetworks = ["mainnet", "testnet"].join(", ");
+    super(`Unknown network: "${network}". Valid networks: ${validNetworks}`);
+    this.name = "UnknownNetworkError";
+  }
+}

@@ -13,6 +13,7 @@ import type {
   WatcherNotification,
   WatcherNotificationType,
 } from "./index.js";
+import { UnknownNetworkError } from "./index.js";
 
 type PendingPaymentEvent = Omit<PaymentEvent, "type"> & { type: "unknown" };
 type NormalizedEventOrPending = PendingPaymentEvent | AccountOptionsEvent;
@@ -48,7 +49,11 @@ export class EventEngine {
   private isRunning = false;
 
   constructor(config: CoreConfig) {
-    this.server = new Horizon.Server(HORIZON_URLS[config.network]);
+    const horizonUrl = HORIZON_URLS[config.network];
+    if (!horizonUrl) {
+      throw new UnknownNetworkError(config.network);
+    }
+    this.server = new Horizon.Server(horizonUrl);
     this.reconnectConfig = {
       ...DEFAULT_RECONNECT,
       ...config.reconnect,
