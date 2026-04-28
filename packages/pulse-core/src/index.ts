@@ -6,6 +6,7 @@ export type Network = "mainnet" | "testnet";
 
 export type PaymentEventType = "payment.received" | "payment.sent";
 export type AccountOptionsEventType = "account.options_changed";
+export type DataEventType = "data.set" | "data.cleared";
 export type WatcherNotificationType =
   | "engine.reconnecting"
   | "engine.reconnected";
@@ -45,7 +46,16 @@ export type AccountOptionsEvent = {
   raw: unknown;
 };
 
-export type NormalizedEvent = PaymentEvent | AccountOptionsEvent;
+export type DataEvent = {
+  type: DataEventType;
+  source: string;
+  name: string;
+  value: string | null; // base64 string when set, null when cleared
+  timestamp: string;
+  raw: unknown;
+};
+
+export type NormalizedEvent = PaymentEvent | AccountOptionsEvent | DataEvent;
 
 export type WatcherNotification = {
   type: WatcherNotificationType;

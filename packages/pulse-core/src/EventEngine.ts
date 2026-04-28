@@ -12,10 +12,12 @@ import type {
   ReconnectConfig,
   WatcherNotification,
   WatcherNotificationType,
+  DataEvent,
+  DataEventType,
 } from "./index.js";
 
 type PendingPaymentEvent = Omit<PaymentEvent, "type"> & { type: "unknown" };
-type NormalizedEventOrPending = PendingPaymentEvent | AccountOptionsEvent;
+type NormalizedEventOrPending = PendingPaymentEvent | AccountOptionsEvent | DataEvent;
 
 type StreamCallbacks = {
   onmessage: (record: unknown) => void;
@@ -243,6 +245,10 @@ export class EventEngine {
       return this.normalizeSetOptions(r, record);
     }
 
+    if (r.type === "manage_data") {
+      return this.normalizeManageData(r, record);
+    }
+
     return null;
   }
 
@@ -290,13 +296,64 @@ export class EventEngine {
     };
   }
 
+  private normalizeManageData(
+    r: Record<string, unknown>,
+    raw: unknown
+  ): DataEvent | null {
+    if (typeof r.source_account !== "string" || r.source_account === "") {
+      console.warn(
+        "[pulse-core] normalize() dropping manage_data record: source_account is missing.",
+        { record: raw }
+      );
+      return null;
+    }
+
+    if (typeof r.data_name !== "string" || r.data_name === "") {
+      console.warn(
+        "[pulse-core] normalize() dropping manage_data record: data_name is missing.",
+        { record: raw }
+      );
+      return null;
+    }
+
+    // Horizon represents the value as a base64 string, or omits the field entirely
+    // when the entry is being deleted. Treat both null and undefined as "cleared".
+    const value =
+      r.data_value == null ? null : String(r.data_value);
+
+    const type: DataEventType = value !== null ? "data.set" : "data.cleared";
+
+    return {
+      type,
+      source: r.source_account,
+      name: r.data_name,
+      value,
+      timestamp: typeof r.created_at === "string" ? r.created_at : "",
+      raw,
+    };
+  }
+
   private route(event: NormalizedEventOrPending): void {
+    if (event.type === "data.set" || event.type === "data.cleared") {
+      const watcher = this.registry.get(event.source);
+      if (watcher) {
+        watcher.emit(event.type, event);
+        watcher.emit("*", event);
+      }
+      return;
+    }
+
     if (event.type === "account.options_changed") {
       const watcher = this.registry.get(event.source);
       if (watcher) {
         watcher.emit("account.options_changed", event);
         watcher.emit("*", event);
       }
+      return;
+    }
+
+    // At this point, event must be a PendingPaymentEvent
+    if (!("to" in event) || !("from" in event)) {
       return;
     }
 
