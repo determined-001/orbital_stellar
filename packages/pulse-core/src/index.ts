@@ -62,5 +62,6 @@ export type ReconnectConfig = {
 
 export type CoreConfig = {
   network: Network;
+  horizonUrl?: string;
   reconnect?: ReconnectConfig;
 };

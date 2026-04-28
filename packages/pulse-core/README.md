@@ -40,6 +40,7 @@ watcher.on("payment.sent", (event) => {
 | Field | Type | Description |
 |---|---|---|
 | `config.network` | `"mainnet" \| "testnet"` | Which Stellar network to connect to |
+| `config.horizonUrl` | `string` | Override the Horizon server URL (e.g. private node, regional mirror, futurenet). When set, `network` is still used for chain context but the connection is made to this URL |
 | `config.reconnect.initialDelayMs` | `number` | First retry delay (default `1000`) |
 | `config.reconnect.maxDelayMs` | `number` | Backoff ceiling (default `30_000`) |
 | `config.reconnect.maxRetries` | `number` | Retry budget (default `Infinity`) |

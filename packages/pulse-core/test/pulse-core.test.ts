@@ -11,10 +11,13 @@ type MockStreamInstance = {
 };
 
 const streamInstances: MockStreamInstance[] = [];
+const serverUrls: string[] = [];
 
 vi.mock("@stellar/stellar-sdk", () => {
   class MockServer {
-    constructor(_url: string) {}
+    constructor(url: string) {
+      serverUrls.push(url);
+    }
 
     operations() {
       return {
@@ -52,6 +55,7 @@ function latestStream(): MockStreamInstance {
 describe("pulse-core EventEngine", () => {
   beforeEach(() => {
     streamInstances.length = 0;
+    serverUrls.length = 0;
     vi.useFakeTimers();
     vi.spyOn(console, "error").mockImplementation(() => undefined);
     vi.spyOn(console, "info").mockImplementation(() => undefined);
@@ -180,6 +184,49 @@ describe("pulse-core EventEngine", () => {
       (engine as unknown as { registry: Map<string, unknown> }).registry.has("GABC")
     ).toBe(false);
     expect(engine.subscribe("GABC")).not.toBe(watcher);
+  });
+
+  describe("horizonUrl override", () => {
+    it("uses a custom horizon URL when provided in config", () => {
+      new EventEngine({
+        network: "testnet",
+        horizonUrl: "https://custom-horizon.example.com",
+      });
+      expect(serverUrls[0]).toBe("https://custom-horizon.example.com");
+    });
+
+    it("throws on an invalid horizon URL", () => {
+      expect(
+        () =>
+          new EventEngine({
+            network: "testnet",
+            horizonUrl: "not-a-url",
+          })
+      ).toThrow("Invalid horizonUrl");
+    });
+
+    it("throws on a non-http(s) horizon URL", () => {
+      expect(
+        () =>
+          new EventEngine({
+            network: "testnet",
+            horizonUrl: "ftp://horizon.example.com",
+          })
+      ).toThrow("Invalid horizonUrl");
+    });
+
+    it("falls back to network-derived URL when horizonUrl is not set", () => {
+      new EventEngine({ network: "testnet" });
+      expect(serverUrls[0]).toBe("https://horizon-testnet.stellar.org");
+    });
+
+    it("falls back to network-derived URL when horizonUrl is explicitly undefined", () => {
+      new EventEngine({
+        network: "testnet",
+        horizonUrl: undefined,
+      });
+      expect(serverUrls[0]).toBe("https://horizon-testnet.stellar.org");
+    });
   });
 
   it("guards start() so duplicate live streams are not opened", () => {

@@ -48,7 +48,21 @@ export class EventEngine {
   private isRunning = false;
 
   constructor(config: CoreConfig) {
-    this.server = new Horizon.Server(HORIZON_URLS[config.network]);
+    const horizonUrl = config.horizonUrl ?? HORIZON_URLS[config.network];
+    if (config.horizonUrl !== undefined) {
+      try {
+        const parsed = new URL(horizonUrl);
+        if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+          throw new Error("must be an http or https URL");
+        }
+      } catch (err) {
+        throw new Error(
+          `Invalid horizonUrl: ${(err as Error).message}`
+        );
+      }
+    }
+
+    this.server = new Horizon.Server(horizonUrl);
     this.reconnectConfig = {
       ...DEFAULT_RECONNECT,
       ...config.reconnect,
