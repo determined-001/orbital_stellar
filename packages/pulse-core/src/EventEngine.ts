@@ -158,10 +158,11 @@ export class EventEngine {
 
     this.reconnectAttempt = nextAttempt;
 
-    const delayMs = Math.min(
+    const exponentialDelayMs = Math.min(
       this.reconnectConfig.initialDelayMs * 2 ** (nextAttempt - 1),
       this.reconnectConfig.maxDelayMs
     );
+    const delayMs = Math.floor(Math.random() * (exponentialDelayMs + 1));
 
     console.warn(
       `[pulse-core] SSE reconnect attempt ${nextAttempt} scheduled in ${delayMs}ms.`

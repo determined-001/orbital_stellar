@@ -44,6 +44,8 @@ watcher.on("payment.sent", (event) => {
 | `config.reconnect.maxDelayMs` | `number` | Backoff ceiling (default `30_000`) |
 | `config.reconnect.maxRetries` | `number` | Retry budget (default `Infinity`) |
 
+Reconnect scheduling uses AWS-style full jitter: each retry computes `baseDelay = min(initialDelayMs * 2^(attempt-1), maxDelayMs)` and schedules a random delay in the inclusive range `0..baseDelay`.
+
 ### `engine.start()` / `engine.stop()`
 
 Open or close the SSE stream. Idempotent — calling `start()` twice logs a warning and returns.

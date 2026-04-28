@@ -53,6 +53,7 @@ describe("pulse-core EventEngine", () => {
   beforeEach(() => {
     streamInstances.length = 0;
     vi.useFakeTimers();
+    vi.spyOn(Math, "random").mockReturnValue(0.5);
     vi.spyOn(console, "error").mockImplementation(() => undefined);
     vi.spyOn(console, "info").mockImplementation(() => undefined);
     vi.spyOn(console, "warn").mockImplementation(() => undefined);
@@ -194,7 +195,7 @@ describe("pulse-core EventEngine", () => {
     );
   });
 
-  it("reconnects with exponential backoff and emits watcher notifications", () => {
+  it("reconnects with full-jitter exponential backoff and emits watcher notifications", () => {
     const engine = new EventEngine({
       network: "testnet",
       reconnect: {
@@ -218,15 +219,15 @@ describe("pulse-core EventEngine", () => {
       expect.objectContaining({
         type: "engine.reconnecting",
         attempt: 1,
-        delayMs: 1000,
+        delayMs: 500,
       })
     );
     expect(console.warn).toHaveBeenCalledWith(
-      "[pulse-core] SSE reconnect attempt 1 scheduled in 1000ms."
+      "[pulse-core] SSE reconnect attempt 1 scheduled in 500ms."
     );
     expect(streamInstances).toHaveLength(1);
 
-    vi.advanceTimersByTime(1000);
+    vi.advanceTimersByTime(500);
 
     expect(streamInstances).toHaveLength(2);
 
@@ -237,14 +238,14 @@ describe("pulse-core EventEngine", () => {
       expect.objectContaining({
         type: "engine.reconnecting",
         attempt: 2,
-        delayMs: 2000,
+        delayMs: 1000,
       })
     );
     expect(console.warn).toHaveBeenLastCalledWith(
-      "[pulse-core] SSE reconnect attempt 2 scheduled in 2000ms."
+      "[pulse-core] SSE reconnect attempt 2 scheduled in 1000ms."
     );
 
-    vi.advanceTimersByTime(2000);
+    vi.advanceTimersByTime(1000);
 
     expect(streamInstances).toHaveLength(3);
 
@@ -273,7 +274,7 @@ describe("pulse-core EventEngine", () => {
       expect.objectContaining({
         type: "engine.reconnecting",
         attempt: 1,
-        delayMs: 1000,
+        delayMs: 500,
       })
     );
   });
