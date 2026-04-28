@@ -8,11 +8,11 @@ export type { WebhookConfig } from "./types.js";
 export class WebhookDelivery {
   private config: Required<WebhookConfig>;
   private watcher: Watcher;
-  private retryTimers: Set<ReturnType<typeof setTimeout>> = new Set();
+  private retryTimers: Map<ReturnType<typeof setTimeout>, NormalizedEvent> = new Map();
 
   constructor(watcher: Watcher, config: WebhookConfig) {
     this.watcher = watcher;
-    this.config = { retries: 3, deliveryTimeoutMs: 10000, ...config };
+    this.config = { retries: 3, deliveryTimeoutMs: 10000, maxConcurrentRetries: 100, ...config };
 
     this.watcher.addStopHandler(() => {
       this.clearRetryTimers();
@@ -51,12 +51,29 @@ export class WebhookDelivery {
       const errorMessage = this.getErrorMessage(err);
 
       if (attempt < this.config.retries) {
+        // Enforce the retry cap — drop the oldest pending retry if at limit
+        if (this.retryTimers.size >= this.config.maxConcurrentRetries) {
+          const [oldestTimer, oldestEvent] = this.retryTimers.entries().next().value as [ReturnType<typeof setTimeout>, NormalizedEvent];
+          clearTimeout(oldestTimer);
+          this.retryTimers.delete(oldestTimer);
+          this.watcher.emit("webhook.dropped", {
+            ...oldestEvent,
+            type: oldestEvent.type,
+            raw: {
+              reason: "retry_cap_exceeded",
+              url: this.config.url,
+              maxConcurrentRetries: this.config.maxConcurrentRetries,
+              originalEvent: oldestEvent,
+            },
+          });
+        }
+
         const delay = Math.pow(2, attempt - 1) * 1000;
         const retryTimer = setTimeout(() => {
           this.retryTimers.delete(retryTimer);
           void this.deliver(event, attempt + 1);
         }, delay);
-        this.retryTimers.add(retryTimer);
+        this.retryTimers.set(retryTimer, event);
       } else {
         this.watcher.emit("webhook.failed", {
           ...event,
@@ -75,7 +92,7 @@ export class WebhookDelivery {
   }
 
   private clearRetryTimers(): void {
-    for (const retryTimer of this.retryTimers) {
+    for (const retryTimer of this.retryTimers.keys()) {
       clearTimeout(retryTimer);
     }
     this.retryTimers.clear();
