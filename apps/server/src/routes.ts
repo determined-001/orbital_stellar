@@ -33,7 +33,7 @@ function validateWebhookUrl(raw: string): string | null {
 
 // --- Routes ---
 
-export function createRoutes(registry: WebhookRegistry, engine: EventEngine): Router {
+export function createRoutes(registry: WebhookRegistry, engine: EventEngine, activeSSEConnections: Set<import("http").ServerResponse>): Router {
   const router = Router();
 
   // Apply auth to every route in this router
@@ -114,6 +114,9 @@ export function createRoutes(registry: WebhookRegistry, engine: EventEngine): Ro
     res.setHeader("Connection", "keep-alive");
     res.flushHeaders();
 
+    // Track this connection for clean shutdown
+    activeSSEConnections.add(res);
+
     const watcher = engine.subscribe(address);
 
     const handler = (event: unknown) => {
@@ -131,6 +134,8 @@ export function createRoutes(registry: WebhookRegistry, engine: EventEngine): Ro
       watcher.removeListener("*", handler);
       // Fully remove the watcher from the engine so no dead watchers remain
       engine.unsubscribe(address);
+      // Remove from active connections tracking
+      activeSSEConnections.delete(res);
       console.log(`[sse] Client disconnected from ${address}`);
     });
 

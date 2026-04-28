@@ -2,6 +2,7 @@ import express, { type Request, type Response } from "express";
 import { EventEngine } from "@orbital/pulse-core";
 import { WebhookRegistry } from "./registry.js";
 import { createRoutes } from "./routes.js";
+import type { ServerResponse } from "http";
 
 // --- Environment validation ---
 
@@ -29,6 +30,9 @@ if (!rawPort || isNaN(parsedPort) || parsedPort <= 0 || parsedPort > 65535) {
 
 // --- Bootstrap ---
 
+// Track active SSE connections for clean shutdown
+const activeSSEConnections = new Set<ServerResponse>();
+
 const engine = new EventEngine({ network: NETWORK });
 engine.start();
 console.log(`[server] Event engine started on ${NETWORK}`);
@@ -37,7 +41,7 @@ const registry = new WebhookRegistry(engine);
 
 const app = express();
 app.use(express.json({ limit: "16kb" }));
-app.use(createRoutes(registry, engine));
+app.use(createRoutes(registry, engine, activeSSEConnections));
 
 app.get("/health", (_req: Request, res: Response) => {
   res.json({ status: "ok", network: NETWORK });
@@ -53,6 +57,17 @@ const SHUTDOWN_TIMEOUT_MS = 5000;
 
 function shutdown(signal: string): void {
   console.log(`[server] Received ${signal}, shutting down...`);
+
+  // Send shutdown event to all active SSE connections
+  for (const res of activeSSEConnections) {
+    try {
+      res.write("event: shutdown\ndata: {}\n\n");
+      res.end();
+    } catch (error) {
+      console.error("[server] Error sending shutdown event to SSE client:", error);
+    }
+  }
+  activeSSEConnections.clear();
 
   // Hard-exit if graceful shutdown takes too long
   const forceExit = setTimeout(() => {
