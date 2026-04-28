@@ -13,14 +13,15 @@ type ResolvedWebhookConfig = Omit<Required<WebhookConfig>, "url"> & {
 export class WebhookDelivery {
   private config: ResolvedWebhookConfig;
   private watcher: Watcher;
-  // Shared across URLs so watcher.stop() can cancel every pending retry in one pass.
-  private retryTimers: Set<ReturnType<typeof setTimeout>> = new Set();
+  // Map of timer -> event so we can evict the oldest entry when the cap is hit.
+  private retryTimers: Map<ReturnType<typeof setTimeout>, { event: NormalizedEvent; url: string }> = new Map();
 
   constructor(watcher: Watcher, config: WebhookConfig) {
     this.watcher = watcher;
     this.config = {
       retries: 3,
       deliveryTimeoutMs: 10000,
+      maxConcurrentRetries: 100,
       ...config,
       urls: Array.isArray(config.url) ? [...config.url] : [config.url],
     };
@@ -29,7 +30,7 @@ export class WebhookDelivery {
       this.clearRetryTimers();
     });
 
-    this.watcher.on("*", (event) => {
+    this.watcher.on("*", (event: NormalizedEvent) => {
       if ("raw" in event) {
         for (const url of this.config.urls) {
           void this.deliverToUrl(event, url);
@@ -38,7 +39,7 @@ export class WebhookDelivery {
     });
   }
 
-  private async deliverToUrl (
+  private async deliverToUrl(
     event: NormalizedEvent,
     url: string,
     attempt = 1
@@ -70,21 +71,20 @@ export class WebhookDelivery {
       const errorMessage = this.getErrorMessage(err);
 
       if (attempt < this.config.retries) {
-        // Enforce the retry cap — drop the oldest pending retry if at limit
+        // Enforce the retry cap — evict the oldest pending retry when at limit.
         if (this.retryTimers.size >= this.config.maxConcurrentRetries) {
-          const [oldestTimer, oldestEvent] = this.retryTimers.entries().next().value as [ReturnType<typeof setTimeout>, NormalizedEvent];
+          const [oldestTimer, oldest] = this.retryTimers.entries().next().value as [ReturnType<typeof setTimeout>, { event: NormalizedEvent; url: string }];
           clearTimeout(oldestTimer);
           this.retryTimers.delete(oldestTimer);
           this.watcher.emit("webhook.dropped", {
-            ...oldestEvent,
-            type: oldestEvent.type,
+            ...oldest.event,
             raw: {
               reason: "retry_cap_exceeded",
-              url: this.config.url,
+              url: oldest.url,
               maxConcurrentRetries: this.config.maxConcurrentRetries,
-              originalEvent: oldestEvent,
+              originalEvent: oldest.event,
             },
-          });
+          } as unknown as NormalizedEvent);
         }
 
         const delay = Math.pow(2, attempt - 1) * 1000;
@@ -92,7 +92,7 @@ export class WebhookDelivery {
           this.retryTimers.delete(retryTimer);
           void this.deliverToUrl(event, url, attempt + 1);
         }, delay);
-        this.retryTimers.set(retryTimer, event);
+        this.retryTimers.set(retryTimer, { event, url });
       } else {
         this.watcher.emit("webhook.failed", {
           ...event,
@@ -102,7 +102,7 @@ export class WebhookDelivery {
             attempts: attempt,
             originalEvent: event,
           },
-        } as NormalizedEvent);
+        } as unknown as NormalizedEvent);
       }
     } finally {
       clearTimeout(abortTimer);
@@ -110,13 +110,13 @@ export class WebhookDelivery {
   }
 
   private clearRetryTimers(): void {
-    for (const retryTimer of this.retryTimers.keys()) {
-      clearTimeout(retryTimer);
+    for (const timer of this.retryTimers.keys()) {
+      clearTimeout(timer);
     }
     this.retryTimers.clear();
   }
 
-  private getErrorMessage (err: unknown): string {
+  private getErrorMessage(err: unknown): string {
     if (err instanceof Error && err.name === "AbortError") {
       return `Delivery timed out after ${this.config.deliveryTimeoutMs}ms`;
     }
@@ -124,7 +124,7 @@ export class WebhookDelivery {
     return err instanceof Error ? err.message : "Unknown error";
   }
 
-  private sign (payload: string): string {
+  private sign(payload: string): string {
     return createHmac("sha256", this.config.secret)
       .update(payload)
       .digest("hex");
@@ -133,7 +133,7 @@ export class WebhookDelivery {
 
 // --- verifyWebhook ---
 
-export function verifyWebhook (
+export function verifyWebhook(
   payload: string,
   signature: string,
   secret: string
