@@ -278,6 +278,64 @@ describe("pulse-core EventEngine", () => {
     );
   });
 
+  it("emits matching attempt numbers in reconnecting and reconnected events", () => {
+    const engine = new EventEngine({
+      network: "testnet",
+      reconnect: {
+        initialDelayMs: 500,
+        maxDelayMs: 10000,
+      },
+    });
+
+    const watcher = engine.subscribe("GTEST");
+    const reconnecting = vi.fn();
+    const reconnected = vi.fn();
+    watcher.on("engine.reconnecting", reconnecting);
+    watcher.on("engine.reconnected", reconnected);
+
+    engine.start();
+
+    // Trigger first reconnect
+    latestStream().handlers.onerror(new Error("connection lost"));
+
+    expect(reconnecting).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "engine.reconnecting",
+        attempt: 1,
+        delayMs: 500,
+      })
+    );
+
+    // Advance timer to trigger reconnect
+    vi.advanceTimersByTime(500);
+
+    // Simulate successful reconnection with a message
+    latestStream().handlers.onmessage({
+      type: "payment",
+      to: "GTEST",
+      from: "GSRC",
+      amount: "5",
+      asset_type: "native",
+      created_at: "2026-04-28T12:00:00.000Z",
+    });
+
+    // Verify reconnected event has the same attempt number
+    expect(reconnected).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "engine.reconnected",
+        attempt: 1,
+      })
+    );
+
+    // Verify console logs also match
+    expect(console.warn).toHaveBeenCalledWith(
+      "[pulse-core] SSE reconnect attempt 1 scheduled in 500ms."
+    );
+    expect(console.info).toHaveBeenCalledWith(
+      "[pulse-core] SSE reconnect succeeded on attempt 1."
+    );
+  });
+
   describe("set_options → account.options_changed", () => {
     function makeSetOptionsRecord(
       overrides: Record<string, unknown>

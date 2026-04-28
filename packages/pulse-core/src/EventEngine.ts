@@ -100,6 +100,8 @@ export class EventEngine {
     this.closeStream();
     this.clearReconnectTimer();
     this.isRunning = true;
+    // Capture the current attempt number for the reconnect success notification.
+    // This value matches the attempt number emitted in engine.reconnecting.
     this.pendingReconnectSuccessAttempt = isReconnect
       ? this.reconnectAttempt
       : null;
@@ -107,6 +109,7 @@ export class EventEngine {
     const callbacks: StreamCallbacks = {
       onmessage: (record) => {
         if (this.pendingReconnectSuccessAttempt !== null) {
+          // Report the same attempt number that was emitted in engine.reconnecting.
           const attempt = this.pendingReconnectSuccessAttempt;
           this.pendingReconnectSuccessAttempt = null;
           this.reconnectAttempt = 0;
@@ -163,6 +166,8 @@ export class EventEngine {
       this.reconnectConfig.maxDelayMs
     );
 
+    // Log and emit the attempt number that will be used for this reconnect cycle.
+    // This same number will appear in the engine.reconnected notification if successful.
     console.warn(
       `[pulse-core] SSE reconnect attempt ${nextAttempt} scheduled in ${delayMs}ms.`
     );
