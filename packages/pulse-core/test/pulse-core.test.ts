@@ -440,4 +440,79 @@ describe("pulse-core EventEngine", () => {
       expect(otherHandler).not.toHaveBeenCalled();
     });
   });
+
+  describe("create_account → account.created", () => {
+    function makeCreateAccountRecord(
+      overrides: Record<string, unknown>
+    ): Record<string, unknown> {
+      return {
+        type: "create_account",
+        funder: "GFUNDER",
+        account: "GNEW",
+        starting_balance: "10.0000000",
+        created_at: "2026-04-24T10:00:00.000Z",
+        ...overrides,
+      };
+    }
+
+    it("emits account.created and routes to both funder and account watchers", () => {
+      const engine = new EventEngine({ network: "testnet" });
+      const funderWatcher = engine.subscribe("GFUNDER");
+      const accountWatcher = engine.subscribe("GNEW");
+      const otherWatcher = engine.subscribe("GOTHER");
+      
+      const funderHandler = vi.fn();
+      const accountHandler = vi.fn();
+      const otherHandler = vi.fn();
+
+      funderWatcher.on("account.created", funderHandler);
+      accountWatcher.on("account.created", accountHandler);
+      otherWatcher.on("account.created", otherHandler);
+
+      engine.start();
+      latestStream().handlers.onmessage(makeCreateAccountRecord({}));
+
+      expect(funderHandler).toHaveBeenCalledOnce();
+      expect(funderHandler).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: "account.created",
+          funder: "GFUNDER",
+          account: "GNEW",
+          starting_balance: "10.0000000",
+          timestamp: "2026-04-24T10:00:00.000Z",
+        })
+      );
+
+      expect(accountHandler).toHaveBeenCalledOnce();
+      expect(accountHandler).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: "account.created",
+          funder: "GFUNDER",
+          account: "GNEW",
+          starting_balance: "10.0000000",
+          timestamp: "2026-04-24T10:00:00.000Z",
+        })
+      );
+
+      expect(otherHandler).not.toHaveBeenCalled();
+    });
+
+    it("does not emit account.created if required fields are missing", () => {
+      const engine = new EventEngine({ network: "testnet" });
+      const funderWatcher = engine.subscribe("GFUNDER");
+      const funderHandler = vi.fn();
+      funderWatcher.on("account.created", funderHandler);
+
+      engine.start();
+      latestStream().handlers.onmessage({
+        type: "create_account",
+        funder: "GFUNDER",
+        account: "GNEW",
+        // missing starting_balance
+        created_at: "2026-04-24T10:00:00.000Z",
+      });
+
+      expect(funderHandler).not.toHaveBeenCalled();
+    });
+  });
 });

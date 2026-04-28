@@ -12,10 +12,12 @@ import type {
   ReconnectConfig,
   WatcherNotification,
   WatcherNotificationType,
+  AccountEventType,
+  AccountCreatedEvent,
 } from "./index.js";
 
 type PendingPaymentEvent = Omit<PaymentEvent, "type"> & { type: "unknown" };
-type NormalizedEventOrPending = PendingPaymentEvent | AccountOptionsEvent;
+type NormalizedEventOrPending = PendingPaymentEvent | AccountOptionsEvent | AccountCreatedEvent;
 
 type StreamCallbacks = {
   onmessage: (record: unknown) => void;
@@ -243,6 +245,10 @@ export class EventEngine {
       return this.normalizeSetOptions(r, record);
     }
 
+    if (r.type === "create_account") {
+      return this.normalizeCreateAccount(r, record);
+    }
+
     return null;
   }
 
@@ -290,7 +296,39 @@ export class EventEngine {
     };
   }
 
+  private normalizeCreateAccount(
+    r: Record<string, unknown>,
+    raw: unknown
+  ): AccountCreatedEvent | null {
+    if (typeof r.funder !== "string" || typeof r.account !== "string" || typeof r.starting_balance !== "string") {
+      return null;
+    }
+    return {
+      type: "account.created",
+      funder: r.funder,
+      account: r.account,
+      starting_balance: r.starting_balance,
+      timestamp: r.created_at as string,
+      raw,
+    };
+  }
+
   private route(event: NormalizedEventOrPending): void {
+    if (event.type === "account.created") {
+      const funderWatcher = this.registry.get(event.funder);
+      if (funderWatcher) {
+        funderWatcher.emit("account.created", event);
+        funderWatcher.emit("*", event);
+      }
+      
+      const accountWatcher = this.registry.get(event.account);
+      if (accountWatcher && event.account !== event.funder) {
+        accountWatcher.emit("account.created", event);
+        accountWatcher.emit("*", event);
+      }
+      return;
+    }
+
     if (event.type === "account.options_changed") {
       const watcher = this.registry.get(event.source);
       if (watcher) {
