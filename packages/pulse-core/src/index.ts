@@ -6,6 +6,8 @@ export type Network = "mainnet" | "testnet";
 
 export type PaymentEventType = "payment.received" | "payment.sent";
 export type AccountOptionsEventType = "account.options_changed";
+export type ClaimableCreatedEventType = "claimable.created";
+export type ClaimableClaimedEventType = "claimable.claimed";
 export type WatcherNotificationType =
   | "engine.reconnecting"
   | "engine.reconnected";
@@ -45,7 +47,35 @@ export type AccountOptionsEvent = {
   raw: unknown;
 };
 
-export type NormalizedEvent = PaymentEvent | AccountOptionsEvent;
+export type ClaimableBalanceClaimant = {
+  destination: string;
+  predicate: unknown;
+};
+
+export type ClaimableCreatedEvent = {
+  type: ClaimableCreatedEventType;
+  sponsor: string;
+  balanceId: string;
+  claimants: ClaimableBalanceClaimant[];
+  asset: string;
+  amount: string;
+  timestamp: string;
+  raw: unknown;
+};
+
+export type ClaimableClaimedEvent = {
+  type: ClaimableClaimedEventType;
+  claimant: string;
+  balanceId: string;
+  timestamp: string;
+  raw: unknown;
+};
+
+export type NormalizedEvent =
+  | PaymentEvent
+  | AccountOptionsEvent
+  | ClaimableCreatedEvent
+  | ClaimableClaimedEvent;
 
 export type WatcherNotification = {
   type: WatcherNotificationType;

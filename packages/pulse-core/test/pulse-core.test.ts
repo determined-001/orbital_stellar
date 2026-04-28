@@ -440,4 +440,323 @@ describe("pulse-core EventEngine", () => {
       expect(otherHandler).not.toHaveBeenCalled();
     });
   });
+
+  describe("create_claimable_balance → claimable.created", () => {
+    function makeCreateClaimableRecord(
+      overrides: Record<string, unknown> = {}
+    ): Record<string, unknown> {
+      return {
+        type: "create_claimable_balance",
+        source_account: "GSPONSOR",
+        created_at: "2026-04-28T12:00:00.000Z",
+        amount: "100",
+        asset_type: "native",
+        balance_id: "00000000abc123",
+        claimants: [
+          { destination: "GCLAIMANT1", predicate: { unconditional: true } },
+        ],
+        ...overrides,
+      };
+    }
+
+    it("normalizes create_claimable_balance with native asset", () => {
+      const engine = new EventEngine({ network: "testnet" });
+      const normalize = (
+        engine as unknown as {
+          normalize(record: unknown): unknown;
+        }
+      ).normalize.bind(engine);
+
+      const result = normalize(makeCreateClaimableRecord());
+
+      expect(result).toEqual({
+        type: "claimable.created",
+        sponsor: "GSPONSOR",
+        balanceId: "00000000abc123",
+        claimants: [
+          { destination: "GCLAIMANT1", predicate: { unconditional: true } },
+        ],
+        asset: "XLM",
+        amount: "100",
+        timestamp: "2026-04-28T12:00:00.000Z",
+        raw: expect.any(Object),
+      });
+    });
+
+    it("normalizes create_claimable_balance with credit asset", () => {
+      const engine = new EventEngine({ network: "testnet" });
+      const normalize = (
+        engine as unknown as {
+          normalize(record: unknown): unknown;
+        }
+      ).normalize.bind(engine);
+
+      const result = normalize(
+        makeCreateClaimableRecord({
+          asset_type: "credit_alphanum4",
+          asset_code: "USDC",
+          asset_issuer: "GISSUER",
+        })
+      );
+
+      expect(result).toEqual(
+        expect.objectContaining({
+          type: "claimable.created",
+          asset: "USDC:GISSUER",
+        })
+      );
+    });
+
+    it("routes claimable.created to each claimant watcher (fan-out)", () => {
+      const engine = new EventEngine({ network: "testnet" });
+      const w1 = engine.subscribe("GCLAIMANT1");
+      const w2 = engine.subscribe("GCLAIMANT2");
+      const w3 = engine.subscribe("GCLAIMANT3");
+      const h1 = vi.fn();
+      const h2 = vi.fn();
+      const h3 = vi.fn();
+      w1.on("claimable.created", h1);
+      w2.on("claimable.created", h2);
+      // GCLAIMANT3 is subscribed but NOT in the claimants list
+      w3.on("claimable.created", h3);
+
+      engine.start();
+      latestStream().handlers.onmessage(
+        makeCreateClaimableRecord({
+          claimants: [
+            { destination: "GCLAIMANT1", predicate: { unconditional: true } },
+            { destination: "GCLAIMANT2", predicate: { unconditional: true } },
+          ],
+        })
+      );
+
+      expect(h1).toHaveBeenCalledOnce();
+      expect(h2).toHaveBeenCalledOnce();
+      expect(h3).not.toHaveBeenCalled();
+    });
+
+    it("routes claimable.created to the sponsor watcher", () => {
+      const engine = new EventEngine({ network: "testnet" });
+      const sponsorWatcher = engine.subscribe("GSPONSOR");
+      const handler = vi.fn();
+      sponsorWatcher.on("claimable.created", handler);
+
+      engine.start();
+      latestStream().handlers.onmessage(makeCreateClaimableRecord());
+
+      expect(handler).toHaveBeenCalledOnce();
+      expect(handler).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: "claimable.created",
+          sponsor: "GSPONSOR",
+        })
+      );
+    });
+
+    it("does not emit duplicate to sponsor when sponsor is also a claimant", () => {
+      const engine = new EventEngine({ network: "testnet" });
+      const watcher = engine.subscribe("GSPONSOR");
+      const handler = vi.fn();
+      watcher.on("claimable.created", handler);
+
+      engine.start();
+      latestStream().handlers.onmessage(
+        makeCreateClaimableRecord({
+          claimants: [
+            { destination: "GSPONSOR", predicate: { unconditional: true } },
+          ],
+        })
+      );
+
+      expect(handler).toHaveBeenCalledOnce();
+    });
+
+    it("does not route to unrelated watchers", () => {
+      const engine = new EventEngine({ network: "testnet" });
+      const unrelated = engine.subscribe("GUNRELATED");
+      const handler = vi.fn();
+      unrelated.on("claimable.created", handler);
+
+      engine.start();
+      latestStream().handlers.onmessage(makeCreateClaimableRecord());
+
+      expect(handler).not.toHaveBeenCalled();
+    });
+
+    it("drops record and warns when a required string field is missing", () => {
+      const engine = new EventEngine({ network: "testnet" });
+      const normalize = (
+        engine as unknown as {
+          normalize(record: unknown): unknown;
+        }
+      ).normalize.bind(engine);
+
+      const result = normalize(
+        makeCreateClaimableRecord({ balance_id: undefined })
+      );
+
+      expect(result).toBeNull();
+      expect(console.warn).toHaveBeenCalledWith(
+        '[pulse-core] normalize() dropping create_claimable_balance record: field "balance_id" is missing or not a non-empty string.',
+        expect.objectContaining({ record: expect.any(Object) })
+      );
+    });
+
+    it("drops record and warns when claimants array is missing", () => {
+      const engine = new EventEngine({ network: "testnet" });
+      const normalize = (
+        engine as unknown as {
+          normalize(record: unknown): unknown;
+        }
+      ).normalize.bind(engine);
+
+      const result = normalize(
+        makeCreateClaimableRecord({ claimants: undefined })
+      );
+
+      expect(result).toBeNull();
+      expect(console.warn).toHaveBeenCalledWith(
+        '[pulse-core] normalize() dropping create_claimable_balance record: field "claimants" is missing or invalid.',
+        expect.objectContaining({ record: expect.any(Object) })
+      );
+    });
+
+    it("drops record when claimants array is empty", () => {
+      const engine = new EventEngine({ network: "testnet" });
+      const normalize = (
+        engine as unknown as {
+          normalize(record: unknown): unknown;
+        }
+      ).normalize.bind(engine);
+
+      const result = normalize(makeCreateClaimableRecord({ claimants: [] }));
+
+      expect(result).toBeNull();
+    });
+
+    it("emits to the wildcard listener alongside claimable.created", () => {
+      const engine = new EventEngine({ network: "testnet" });
+      const watcher = engine.subscribe("GCLAIMANT1");
+      const specific = vi.fn();
+      const wildcard = vi.fn();
+      watcher.on("claimable.created", specific);
+      watcher.on("*", wildcard);
+
+      engine.start();
+      latestStream().handlers.onmessage(makeCreateClaimableRecord());
+
+      expect(specific).toHaveBeenCalledOnce();
+      expect(wildcard).toHaveBeenCalledOnce();
+      expect(wildcard).toHaveBeenCalledWith(
+        expect.objectContaining({ type: "claimable.created" })
+      );
+    });
+  });
+
+  describe("claim_claimable_balance → claimable.claimed", () => {
+    function makeClaimClaimableRecord(
+      overrides: Record<string, unknown> = {}
+    ): Record<string, unknown> {
+      return {
+        type: "claim_claimable_balance",
+        source_account: "GCLAIMANT",
+        created_at: "2026-04-28T13:00:00.000Z",
+        balance_id: "00000000abc123",
+        ...overrides,
+      };
+    }
+
+    it("normalizes claim_claimable_balance correctly", () => {
+      const engine = new EventEngine({ network: "testnet" });
+      const normalize = (
+        engine as unknown as {
+          normalize(record: unknown): unknown;
+        }
+      ).normalize.bind(engine);
+
+      const result = normalize(makeClaimClaimableRecord());
+
+      expect(result).toEqual({
+        type: "claimable.claimed",
+        claimant: "GCLAIMANT",
+        balanceId: "00000000abc123",
+        timestamp: "2026-04-28T13:00:00.000Z",
+        raw: expect.any(Object),
+      });
+    });
+
+    it("routes claimable.claimed to the claimant watcher", () => {
+      const engine = new EventEngine({ network: "testnet" });
+      const watcher = engine.subscribe("GCLAIMANT");
+      const handler = vi.fn();
+      watcher.on("claimable.claimed", handler);
+
+      engine.start();
+      latestStream().handlers.onmessage(makeClaimClaimableRecord());
+
+      expect(handler).toHaveBeenCalledOnce();
+      expect(handler).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: "claimable.claimed",
+          claimant: "GCLAIMANT",
+          balanceId: "00000000abc123",
+        })
+      );
+    });
+
+    it("does not route to unrelated watchers", () => {
+      const engine = new EventEngine({ network: "testnet" });
+      const unrelated = engine.subscribe("GUNRELATED");
+      const handler = vi.fn();
+      unrelated.on("claimable.claimed", handler);
+
+      engine.start();
+      latestStream().handlers.onmessage(makeClaimClaimableRecord());
+
+      expect(handler).not.toHaveBeenCalled();
+    });
+
+    it("drops record and warns when a required field is missing", () => {
+      const engine = new EventEngine({ network: "testnet" });
+      const normalize = (
+        engine as unknown as {
+          normalize(record: unknown): unknown;
+        }
+      ).normalize.bind(engine);
+
+      const missingFieldCases: Array<[string, Record<string, unknown>]> = [
+        ["source_account", makeClaimClaimableRecord({ source_account: undefined })],
+        ["created_at", makeClaimClaimableRecord({ created_at: undefined })],
+        ["balance_id", makeClaimClaimableRecord({ balance_id: undefined })],
+      ];
+
+      for (const [field, record] of missingFieldCases) {
+        vi.clearAllMocks();
+        const result = normalize(record);
+        expect(result).toBeNull();
+        expect(console.warn).toHaveBeenCalledWith(
+          `[pulse-core] normalize() dropping claim_claimable_balance record: field "${field}" is missing or not a non-empty string.`,
+          expect.objectContaining({ record: expect.any(Object) })
+        );
+      }
+    });
+
+    it("emits to the wildcard listener alongside claimable.claimed", () => {
+      const engine = new EventEngine({ network: "testnet" });
+      const watcher = engine.subscribe("GCLAIMANT");
+      const specific = vi.fn();
+      const wildcard = vi.fn();
+      watcher.on("claimable.claimed", specific);
+      watcher.on("*", wildcard);
+
+      engine.start();
+      latestStream().handlers.onmessage(makeClaimClaimableRecord());
+
+      expect(specific).toHaveBeenCalledOnce();
+      expect(wildcard).toHaveBeenCalledOnce();
+      expect(wildcard).toHaveBeenCalledWith(
+        expect.objectContaining({ type: "claimable.claimed" })
+      );
+    });
+  });
 });
