@@ -31,6 +31,9 @@ watcher.on("payment.received", (event) => {
 watcher.on("payment.sent", (event) => {
   console.log(`Sent ${event.amount} ${event.asset} to ${event.to}`);
 });
+watcher.on("payment.self", (event) => {
+  console.log(`Self-payment of ${event.amount} ${event.asset}`);
+});
 ```
 
 ## API
@@ -62,6 +65,7 @@ Stops and removes the watcher for the given address.
 |---|---|---|
 | `payment.received` | `NormalizedEvent` | The address is the recipient of a payment |
 | `payment.sent` | `NormalizedEvent` | The address is the sender of a payment |
+| `payment.self` | `NormalizedEvent` | The address is both sender and recipient of a payment |
 | `*` | `NormalizedEvent` | Any event on this address |
 | `engine.reconnecting` | `WatcherNotification` | The engine is retrying its upstream connection |
 | `engine.reconnected` | `WatcherNotification` | Reconnect succeeded |
@@ -70,7 +74,7 @@ Stops and removes the watcher for the given address.
 
 ```ts
 type NormalizedEvent = {
-  type: "payment.received" | "payment.sent";
+  type: "payment.received" | "payment.sent" | "payment.self";
   to: string;       // Stellar public key
   from: string;     // Stellar public key
   amount: string;   // Decimal string (never a JS number)

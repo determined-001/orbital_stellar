@@ -315,6 +315,16 @@ export class EventEngine {
       return;
     }
 
+    if (event.from === event.to) {
+      const watcher = this.registry.get(event.to);
+      if (watcher) {
+        const selfPayment = this.withResolvedType(event, "payment.self");
+        watcher.emit("payment.self", selfPayment);
+        watcher.emit("*", selfPayment);
+      }
+      return;
+    }
+
     const toWatcher = this.registry.get(event.to);
     if (toWatcher) {
       toWatcher.emit(

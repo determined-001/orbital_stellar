@@ -5,8 +5,11 @@ export { StrKey } from "@stellar/stellar-sdk";
 /** The Stellar network to connect to. */
 export type Network = "mainnet" | "testnet";
 
-/** Event types for payment-related events (received or sent). */
-export type PaymentEventType = "payment.received" | "payment.sent";
+/** Event types for payment-related events (received, sent, or self-payment). */
+export type PaymentEventType =
+  | "payment.received"
+  | "payment.sent"
+  | "payment.self";
 /** Event type for account options changes. */
 export type AccountOptionsEventType = "account.options_changed";
 /** Notification types emitted by the EventEngine during reconnection. */

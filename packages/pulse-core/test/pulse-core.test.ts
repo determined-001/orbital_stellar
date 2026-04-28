@@ -198,6 +198,46 @@ describe("pulse-core EventEngine", () => {
     );
   });
 
+  it("routes self-payments as payment.self exactly once", () => {
+    const engine = new EventEngine({ network: "testnet" });
+    const watcher = engine.subscribe("GSELF");
+    const selfHandler = vi.fn();
+    const receivedHandler = vi.fn();
+    const sentHandler = vi.fn();
+    const wildcardHandler = vi.fn();
+
+    watcher.on("payment.self", selfHandler);
+    watcher.on("payment.received", receivedHandler);
+    watcher.on("payment.sent", sentHandler);
+    watcher.on("*", wildcardHandler);
+
+    engine.start();
+    latestStream().handlers.onmessage({
+      type: "payment",
+      to: "GSELF",
+      from: "GSELF",
+      amount: "25",
+      asset_type: "native",
+      created_at: "2026-04-28T13:00:00.000Z",
+    });
+
+    expect(selfHandler).toHaveBeenCalledOnce();
+    expect(selfHandler).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "payment.self",
+        to: "GSELF",
+        from: "GSELF",
+        amount: "25",
+      })
+    );
+    expect(receivedHandler).not.toHaveBeenCalled();
+    expect(sentHandler).not.toHaveBeenCalled();
+    expect(wildcardHandler).toHaveBeenCalledOnce();
+    expect(wildcardHandler).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "payment.self" })
+    );
+  });
+
   it("reconnects with exponential backoff and emits watcher notifications", () => {
     const engine = new EventEngine({
       network: "testnet",
