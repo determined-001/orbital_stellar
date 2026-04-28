@@ -2,7 +2,6 @@ import express, { type Request, type Response } from "express";
 import { EventEngine } from "@orbital/pulse-core";
 import { WebhookRegistry } from "./registry.js";
 import { createRoutes } from "./routes.js";
-import type { ServerResponse } from "http";
 
 // --- Environment validation ---
 
@@ -31,7 +30,7 @@ if (!rawPort || isNaN(parsedPort) || parsedPort <= 0 || parsedPort > 65535) {
 // --- Bootstrap ---
 
 // Track active SSE connections for clean shutdown
-const activeSSEConnections = new Set<ServerResponse>();
+const activeSSEConnections = new Set<Response>();
 
 const engine = new EventEngine({ network: NETWORK });
 engine.start();
@@ -59,29 +58,74 @@ function shutdown(signal: string): void {
   console.log(`[server] Received ${signal}, shutting down...`);
 
   // Send shutdown event to all active SSE connections
-  for (const res of activeSSEConnections) {
+  const connections = Array.from(activeSSEConnections);
+  console.log(`[server] Notifying ${connections.length} SSE clients about shutdown`);
+  
+  let completed = 0;
+  const totalConnections = connections.length;
+
+  if (totalConnections === 0) {
+    proceedWithShutdown();
+    return;
+  }
+
+  for (const res of connections) {
     try {
-      res.write("event: shutdown\ndata: {}\n\n");
-      res.end();
+      // Check if response is still writable before attempting to write
+      if (!res.destroyed && !res.finished) {
+        res.write("event: shutdown\ndata: {}\n\n");
+        res.end(() => {
+          completed++;
+          activeSSEConnections.delete(res);
+          if (completed === totalConnections) {
+            proceedWithShutdown();
+          }
+        });
+      } else {
+        // Connection already closed/destroyed
+        activeSSEConnections.delete(res);
+        completed++;
+        if (completed === totalConnections) {
+          proceedWithShutdown();
+        }
+      }
     } catch (error) {
       console.error("[server] Error sending shutdown event to SSE client:", error);
+      activeSSEConnections.delete(res);
+      completed++;
+      if (completed === totalConnections) {
+        proceedWithShutdown();
+      }
     }
   }
-  activeSSEConnections.clear();
 
-  // Hard-exit if graceful shutdown takes too long
-  const forceExit = setTimeout(() => {
-    console.error("[server] Graceful shutdown timed out, forcing exit.");
-    process.exit(1);
-  }, SHUTDOWN_TIMEOUT_MS) as unknown as NodeJS.Timeout;
-  // Don't let this timer keep the process alive on its own
-  forceExit.unref();
-  engine.stop();
+  // Fallback timeout in case some connections don't respond
+  setTimeout(() => {
+    if (activeSSEConnections.size > 0) {
+      console.log(`[server] ${activeSSEConnections.size} connections didn't respond to shutdown, proceeding anyway`);
+      activeSSEConnections.clear();
+    }
+    proceedWithShutdown();
+  }, 2000);
 
-  server.close(() => {
-    console.log("[server] HTTP server closed. Exiting.");
-    process.exit(0);
-  });
+  function proceedWithShutdown(): void {
+    console.log("[server] All SSE connections notified, proceeding with shutdown");
+    
+    // Hard-exit if graceful shutdown takes too long
+    const forceExit = setTimeout(() => {
+      console.error("[server] Graceful shutdown timed out, forcing exit.");
+      process.exit(1);
+    }, SHUTDOWN_TIMEOUT_MS) as unknown as NodeJS.Timeout;
+    // Don't let this timer keep the process alive on its own
+    forceExit.unref();
+    
+    engine.stop();
+
+    server.close(() => {
+      console.log("[server] HTTP server closed. Exiting.");
+      process.exit(0);
+    });
+  }
 }
 
 process.on("SIGTERM", () => shutdown("SIGTERM"));
