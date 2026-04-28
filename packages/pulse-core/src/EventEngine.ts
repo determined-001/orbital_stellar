@@ -4,6 +4,8 @@ import type {
   AccountOptionsChanges,
   AccountOptionsEvent,
   AccountOptionsEventType,
+  BumpSequenceEvent,
+  BumpSequenceEventType,
   CoreConfig,
   Network,
   NormalizedEvent,
@@ -20,7 +22,8 @@ type PendingPaymentEvent = Omit<PaymentEvent, "type"> & { type: "unknown" };
 type NormalizedEventOrPending =
   | PendingPaymentEvent
   | AccountOptionsEvent
-  | OfferEvent;
+  | OfferEvent
+  | BumpSequenceEvent;
 
 type StreamCallbacks = {
   onmessage: (record: unknown) => void;
@@ -252,7 +255,24 @@ export class EventEngine {
       return this.normalizeOffer(r, record);
     }
 
+    if (r.type === "bump_sequence") {
+      return this.normalizeBumpSequence(r, record);
+    }
+
     return null;
+  }
+
+  private normalizeBumpSequence(
+    r: Record<string, unknown>,
+    raw: unknown
+  ): BumpSequenceEvent | null {
+    return {
+      type: "account.bump_sequence",
+      source: r.source_account as string,
+      bump_to: r.bump_to as string,
+      timestamp: r.created_at as string,
+      raw,
+    };
   }
 
   private normalizeOffer(
@@ -356,6 +376,15 @@ export class EventEngine {
       const watcher = this.registry.get(event.source);
       if (watcher) {
         watcher.emit(event.type, event);
+        watcher.emit("*", event);
+      }
+      return;
+    }
+
+    if (event.type === "account.bump_sequence") {
+      const watcher = this.registry.get(event.source);
+      if (watcher) {
+        watcher.emit("account.bump_sequence", event);
         watcher.emit("*", event);
       }
       return;

@@ -11,6 +11,7 @@ export type WatcherNotificationType =
   | "engine.reconnected";
 
 export type OfferEventType = "offer.created" | "offer.updated" | "offer.deleted";
+export type BumpSequenceEventType = "account.bump_sequence";
 
 export type SetOptionsSigner = {
   key: string;
@@ -59,7 +60,19 @@ export type OfferEvent = {
   raw: unknown;
 };
 
-export type NormalizedEvent = PaymentEvent | AccountOptionsEvent | OfferEvent;
+export type BumpSequenceEvent = {
+  type: BumpSequenceEventType;
+  source: string;
+  bump_to: string;
+  timestamp: string;
+  raw: unknown;
+};
+
+export type NormalizedEvent =
+  | PaymentEvent
+  | AccountOptionsEvent
+  | OfferEvent
+  | BumpSequenceEvent;
 
 export type WatcherNotification = {
   type: WatcherNotificationType;
