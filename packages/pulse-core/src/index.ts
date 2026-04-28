@@ -8,7 +8,8 @@ export type PaymentEventType = "payment.received" | "payment.sent";
 export type AccountOptionsEventType = "account.options_changed";
 export type WatcherNotificationType =
   | "engine.reconnecting"
-  | "engine.reconnected";
+  | "engine.reconnected"
+  | "engine.rate_limited";
 
 export type SetOptionsSigner = {
   key: string;

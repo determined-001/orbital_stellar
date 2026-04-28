@@ -278,6 +278,69 @@ describe("pulse-core EventEngine", () => {
     );
   });
 
+  it("honors 429 Retry-After and emits engine.rate_limited", () => {
+    const engine = new EventEngine({ network: "testnet" });
+    const watcher = engine.subscribe("GABC");
+    const rateLimited = vi.fn();
+    const reconnecting = vi.fn();
+
+    watcher.on("engine.rate_limited", rateLimited);
+    watcher.on("engine.reconnecting", reconnecting);
+
+    engine.start();
+
+    latestStream().handlers.onerror({
+      status: 429,
+      headers: {
+        get: (name: string) =>
+          name.toLowerCase() === "retry-after" ? "5" : null,
+      },
+    });
+
+    expect(rateLimited).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "engine.rate_limited",
+        attempt: 1,
+        delayMs: 5000,
+      })
+    );
+    expect(reconnecting).not.toHaveBeenCalled();
+    expect(console.warn).toHaveBeenCalledWith(
+      "[pulse-core] SSE rate limited by Horizon, reconnect scheduled in 5000ms."
+    );
+
+    vi.advanceTimersByTime(5000);
+    expect(streamInstances).toHaveLength(2);
+  });
+
+  it("backs off at least 60 seconds when Horizon returns 429 without Retry-After", () => {
+    const engine = new EventEngine({ network: "testnet" });
+    const watcher = engine.subscribe("GABC");
+    const rateLimited = vi.fn();
+
+    watcher.on("engine.rate_limited", rateLimited);
+
+    engine.start();
+
+    latestStream().handlers.onerror({
+      status: 429,
+      headers: {
+        get: () => null,
+      },
+    });
+
+    expect(rateLimited).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "engine.rate_limited",
+        attempt: 1,
+        delayMs: 60000,
+      })
+    );
+    expect(console.warn).toHaveBeenCalledWith(
+      "[pulse-core] SSE rate limited by Horizon, reconnect scheduled in 60000ms."
+    );
+  });
+
   describe("set_options → account.options_changed", () => {
     function makeSetOptionsRecord(
       overrides: Record<string, unknown>
