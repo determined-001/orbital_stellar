@@ -10,6 +10,8 @@ export type WatcherNotificationType =
   | "engine.reconnecting"
   | "engine.reconnected";
 
+export type OfferEventType = "offer.created" | "offer.updated" | "offer.deleted";
+
 export type SetOptionsSigner = {
   key: string;
   weight: number;
@@ -45,7 +47,19 @@ export type AccountOptionsEvent = {
   raw: unknown;
 };
 
-export type NormalizedEvent = PaymentEvent | AccountOptionsEvent;
+export type OfferEvent = {
+  type: OfferEventType;
+  offer_id: string;
+  source: string;
+  buying_asset: string;
+  selling_asset: string;
+  amount: string;
+  price: string;
+  timestamp: string;
+  raw: unknown;
+};
+
+export type NormalizedEvent = PaymentEvent | AccountOptionsEvent | OfferEvent;
 
 export type WatcherNotification = {
   type: WatcherNotificationType;

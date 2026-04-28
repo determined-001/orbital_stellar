@@ -440,4 +440,110 @@ describe("pulse-core EventEngine", () => {
       expect(otherHandler).not.toHaveBeenCalled();
     });
   });
+
+  describe("manage_sell_offer / manage_buy_offer → offer.*", () => {
+    function makeOfferRecord(
+      overrides: Record<string, unknown>
+    ): Record<string, unknown> {
+      return {
+        type: "manage_sell_offer",
+        source_account: "GSRC",
+        offer_id: "0",
+        amount: "100.0000000",
+        buying_asset_type: "native",
+        selling_asset_type: "credit_alphanum4",
+        selling_asset_code: "USDC",
+        selling_asset_issuer: "GISSUER",
+        price: "0.5",
+        created_at: "2026-04-28T14:00:00.000Z",
+        ...overrides,
+      };
+    }
+
+    it("emits offer.created when offer_id is 0 and amount > 0", () => {
+      const engine = new EventEngine({ network: "testnet" });
+      const watcher = engine.subscribe("GSRC");
+      const handler = vi.fn();
+      watcher.on("offer.created", handler);
+
+      engine.start();
+      latestStream().handlers.onmessage(
+        makeOfferRecord({ offer_id: "0", amount: "100" })
+      );
+
+      expect(handler).toHaveBeenCalledOnce();
+      expect(handler).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: "offer.created",
+          offer_id: "0",
+          source: "GSRC",
+          buying_asset: "XLM",
+          selling_asset: "USDC:GISSUER",
+          amount: "100",
+        })
+      );
+    });
+
+    it("emits offer.updated when offer_id > 0 and amount > 0", () => {
+      const engine = new EventEngine({ network: "testnet" });
+      const watcher = engine.subscribe("GSRC");
+      const handler = vi.fn();
+      watcher.on("offer.updated", handler);
+
+      engine.start();
+      latestStream().handlers.onmessage(
+        makeOfferRecord({ offer_id: "12345", amount: "200" })
+      );
+
+      expect(handler).toHaveBeenCalledOnce();
+      expect(handler).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: "offer.updated",
+          offer_id: "12345",
+          amount: "200",
+        })
+      );
+    });
+
+    it("emits offer.deleted when amount is 0", () => {
+      const engine = new EventEngine({ network: "testnet" });
+      const watcher = engine.subscribe("GSRC");
+      const handler = vi.fn();
+      watcher.on("offer.deleted", handler);
+
+      engine.start();
+      latestStream().handlers.onmessage(
+        makeOfferRecord({ offer_id: "12345", amount: "0" })
+      );
+
+      expect(handler).toHaveBeenCalledOnce();
+      expect(handler).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: "offer.deleted",
+          offer_id: "12345",
+          amount: "0",
+        })
+      );
+    });
+
+    it("works for manage_buy_offer as well", () => {
+      const engine = new EventEngine({ network: "testnet" });
+      const watcher = engine.subscribe("GSRC");
+      const handler = vi.fn();
+      watcher.on("offer.created", handler);
+
+      engine.start();
+      latestStream().handlers.onmessage(
+        makeOfferRecord({ type: "manage_buy_offer", offer_id: "0", amount: "50" })
+      );
+
+      expect(handler).toHaveBeenCalledOnce();
+      expect(handler).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: "offer.created",
+          amount: "50",
+        })
+      );
+    });
+  });
 });

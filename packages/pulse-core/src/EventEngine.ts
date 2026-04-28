@@ -7,6 +7,8 @@ import type {
   CoreConfig,
   Network,
   NormalizedEvent,
+  OfferEvent,
+  OfferEventType,
   PaymentEvent,
   PaymentEventType,
   ReconnectConfig,
@@ -15,7 +17,10 @@ import type {
 } from "./index.js";
 
 type PendingPaymentEvent = Omit<PaymentEvent, "type"> & { type: "unknown" };
-type NormalizedEventOrPending = PendingPaymentEvent | AccountOptionsEvent;
+type NormalizedEventOrPending =
+  | PendingPaymentEvent
+  | AccountOptionsEvent
+  | OfferEvent;
 
 type StreamCallbacks = {
   onmessage: (record: unknown) => void;
@@ -243,7 +248,50 @@ export class EventEngine {
       return this.normalizeSetOptions(r, record);
     }
 
+    if (r.type === "manage_sell_offer" || r.type === "manage_buy_offer") {
+      return this.normalizeOffer(r, record);
+    }
+
     return null;
+  }
+
+  private normalizeOffer(
+    r: Record<string, unknown>,
+    raw: unknown
+  ): OfferEvent | null {
+    const offer_id = String(r.offer_id ?? "0");
+    const amount = String(r.amount ?? "0");
+
+    let type: OfferEventType;
+    if (amount === "0" || amount === "0.0000000") {
+      type = "offer.deleted";
+    } else if (offer_id === "0") {
+      type = "offer.created";
+    } else {
+      type = "offer.updated";
+    }
+
+    const buying_asset =
+      r.buying_asset_type === "native"
+        ? "XLM"
+        : `${r.buying_asset_code}:${r.buying_asset_issuer}`;
+
+    const selling_asset =
+      r.selling_asset_type === "native"
+        ? "XLM"
+        : `${r.selling_asset_code}:${r.selling_asset_issuer}`;
+
+    return {
+      type,
+      offer_id,
+      source: r.source_account as string,
+      buying_asset,
+      selling_asset,
+      amount,
+      price: r.price as string,
+      timestamp: r.created_at as string,
+      raw,
+    };
   }
 
   private normalizeSetOptions(
@@ -295,6 +343,19 @@ export class EventEngine {
       const watcher = this.registry.get(event.source);
       if (watcher) {
         watcher.emit("account.options_changed", event);
+        watcher.emit("*", event);
+      }
+      return;
+    }
+
+    if (
+      event.type === "offer.created" ||
+      event.type === "offer.updated" ||
+      event.type === "offer.deleted"
+    ) {
+      const watcher = this.registry.get(event.source);
+      if (watcher) {
+        watcher.emit(event.type, event);
         watcher.emit("*", event);
       }
       return;
