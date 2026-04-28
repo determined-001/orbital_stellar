@@ -102,6 +102,20 @@ describe("pulse-core EventEngine", () => {
     });
   });
 
+  it("empties the registry via stop handlers when stop() is called", () => {
+    const engine = new EventEngine({ network: "testnet" });
+    engine.subscribe("GABC");
+    engine.subscribe("GDEF");
+
+    const registry = (engine as unknown as { registry: Map<string, unknown> })
+      .registry;
+    expect(registry.size).toBe(2);
+
+    engine.stop();
+
+    expect(registry.size).toBe(0);
+  });
+
   it("returns null and warns when a required payment field is missing", () => {
     const engine = new EventEngine({ network: "testnet" });
     const normalize = (
