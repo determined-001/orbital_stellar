@@ -81,6 +81,16 @@ export class EventEngine {
       return;
     }
 
+stop(): void {
+
+  this.watchers.forEach(watcher => {
+    watcher.notify('engine.stopped');
+  });
+
+  this.iterateAndClearWatchers(); 
+  
+                        }
+
     this.openStream(false);
   }
 
