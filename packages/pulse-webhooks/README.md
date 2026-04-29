@@ -47,7 +47,12 @@ app.post("/hooks/stellar", express.text({ type: "*/*" }), (req, res) => {
   const timestamp = req.header("x-orbital-timestamp");
   if (!signature || !timestamp) return res.sendStatus(400);
 
-  const event = verifyWebhook(req.body, signature, process.env.WEBHOOK_SECRET!, timestamp);
+  const event = verifyWebhook(
+    req.body,
+    signature,
+    process.env.WEBHOOK_SECRET!,
+    timestamp,
+  );
   if (!event) return res.sendStatus(401);
 
   // event is a verified NormalizedEvent
@@ -56,25 +61,79 @@ app.post("/hooks/stellar", express.text({ type: "*/*" }), (req, res) => {
 });
 ```
 
+## Verifying in Cloudflare Workers
+
+Cloudflare Workers don't have Node.js crypto — they use Web Crypto API. Use `verifyWebhookEdge` for edge runtime compatibility:
+
+```js
+import { verifyWebhookEdge } from "@orbital/pulse-webhooks";
+
+export default {
+  async fetch(request, env, ctx) {
+    if (request.method !== "POST") {
+      return new Response("Method not allowed", { status: 405 });
+    }
+
+    const signature = request.headers.get("x-orbital-signature");
+    const timestamp = request.headers.get("x-orbital-timestamp");
+
+    if (!signature || !timestamp) {
+      return new Response("Missing headers", { status: 400 });
+    }
+
+    const payload = await request.text();
+    const event = await verifyWebhookEdge(
+      payload,
+      signature,
+      env.WEBHOOK_SECRET,
+      timestamp,
+    );
+
+    if (!event) {
+      return new Response("Invalid signature", { status: 401 });
+    }
+
+    // event is a verified NormalizedEvent
+    console.log(`Verified payment: ${event.amount} ${event.asset}`);
+
+    // Process the webhook...
+    return new Response("Webhook processed", { status: 200 });
+  },
+};
+```
+
+**Key differences for Workers:**
+
+- Use `verifyWebhookEdge` instead of `verifyWebhook`
+- Function is async (returns Promise)
+- Uses Web Crypto API instead of Node.js crypto
+- Works in Cloudflare Workers, Deno, and browsers
+
 ## API
 
 ### `new WebhookDelivery(watcher, config)`
 
 Attaches a delivery driver to a `Watcher`. Every event the watcher emits is delivered to each URL in `config.url`.
 
-| Field | Type | Default | Description |
-|---|---|---|---|
-| `config.url` | `string \| string[]` | — | One destination endpoint or a fan-out list of endpoints. Must be HTTPS in production. |
-| `config.secret` | `string` | — | Shared secret used to sign payloads |
-| `config.retries` | `number` | `3` | Number of retry attempts before emitting `webhook.failed` |
-| `config.deliveryTimeoutMs` | `number` | `10_000` | Abort threshold for each HTTP attempt |
-| `config.allowPrivateNetworks` | `boolean` | `false` | If true, bypass SSRF checks for local/private IP ranges |
+| Field                         | Type                 | Default  | Description                                                                           |
+| ----------------------------- | -------------------- | -------- | ------------------------------------------------------------------------------------- |
+| `config.url`                  | `string \| string[]` | —        | One destination endpoint or a fan-out list of endpoints. Must be HTTPS in production. |
+| `config.secret`               | `string`             | —        | Shared secret used to sign payloads                                                   |
+| `config.retries`              | `number`             | `3`      | Number of retry attempts before emitting `webhook.failed`                             |
+| `config.deliveryTimeoutMs`    | `number`             | `10_000` | Abort threshold for each HTTP attempt                                                 |
+| `config.allowPrivateNetworks` | `boolean`            | `false`  | If true, bypass SSRF checks for local/private IP ranges                               |
 
 ### `verifyWebhook(payload, signature, secret, timestamp)` → `NormalizedEvent | null`
 
 Verifies that `payload` was signed with `secret` using `timestamp + "." + payload`. Returns the parsed event on success, `null` on any failure (bad signature, malformed JSON, invalid timestamp, length mismatch).
 
 Uses `crypto.timingSafeEqual` under the hood — do not roll your own comparison.
+
+### `verifyWebhookEdge(payload, signature, secret, timestamp)` → `Promise<NormalizedEvent | null>`
+
+Edge-compatible version of `verifyWebhook` using Web Crypto API. Works in Cloudflare Workers, Deno, and browsers. Returns a Promise that resolves to the parsed event on success, `null` on any failure.
+
+Uses constant-time comparison and Web Crypto for HMAC-SHA256 verification.
 
 ## Delivery contract
 

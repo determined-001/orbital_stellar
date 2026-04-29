@@ -2,6 +2,7 @@ import type { NormalizedEvent, Watcher } from "@orbital/pulse-core";
 import { createHmac, timingSafeEqual } from "crypto";
 
 import type { WebhookConfig } from "./types.js";
+export { verifyWebhookEdge } from "./edge.js";
 export type { WebhookConfig } from "./types.js";
 
 type ResolvedWebhookConfig = Omit<Required<WebhookConfig>, "url"> & {
@@ -38,10 +39,10 @@ export class WebhookDelivery {
     });
   }
 
-  private async deliverToUrl (
+  private async deliverToUrl(
     event: NormalizedEvent,
     url: string,
-    attempt = 1
+    attempt = 1,
   ): Promise<void> {
     if (this.watcher.stopped) return;
 
@@ -94,14 +95,14 @@ export class WebhookDelivery {
     }
   }
 
-  private clearRetryTimers (): void {
+  private clearRetryTimers(): void {
     for (const retryTimer of this.retryTimers) {
       clearTimeout(retryTimer);
     }
     this.retryTimers.clear();
   }
 
-  private getErrorMessage (err: unknown): string {
+  private getErrorMessage(err: unknown): string {
     if (err instanceof Error && err.name === "AbortError") {
       return `Delivery timed out after ${this.config.deliveryTimeoutMs}ms`;
     }
@@ -109,7 +110,7 @@ export class WebhookDelivery {
     return err instanceof Error ? err.message : "Unknown error";
   }
 
-  private sign (payload: string, timestamp: string): string {
+  private sign(payload: string, timestamp: string): string {
     const signedPayload = `${timestamp}.${payload}`;
 
     return createHmac("sha256", this.config.secret)
@@ -120,11 +121,11 @@ export class WebhookDelivery {
 
 // --- verifyWebhook ---
 
-export function verifyWebhook (
+export function verifyWebhook(
   payload: string,
   signature: string,
   secret: string,
-  timestamp: string
+  timestamp: string,
 ): NormalizedEvent | null {
   if (!/^\d+$/.test(timestamp)) return null;
 
