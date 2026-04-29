@@ -1,5 +1,6 @@
 export { EventEngine } from "./EventEngine.js";
 export { Watcher } from "./Watcher.js";
+export { EngineAlreadyStartedError } from "./errors.js";
 export { StrKey } from "@stellar/stellar-sdk";
 
 export type Network = "mainnet" | "testnet";
