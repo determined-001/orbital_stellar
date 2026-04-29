@@ -2,6 +2,17 @@ export { EventEngine } from "./EventEngine.js";
 export { Watcher } from "./Watcher.js";
 export { StrKey } from "@stellar/stellar-sdk";
 
+export class EngineAlreadyStartedError extends Error {
+  constructor() {
+    super("[pulse-core] EventEngine.start() called while the SSE stream is already active.");
+    this.name = "EngineAlreadyStartedError";
+  }
+}
+
+export type StartOptions = {
+  strict?: boolean;
+};
+
 export type Network = "mainnet" | "testnet";
 
 export type PaymentEventType = "payment.received" | "payment.sent";

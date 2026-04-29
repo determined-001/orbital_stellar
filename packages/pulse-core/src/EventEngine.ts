@@ -1,5 +1,8 @@
 import { Horizon } from "@stellar/stellar-sdk";
 import { Watcher } from "./Watcher.js";
+import {
+  EngineAlreadyStartedError,
+} from "./index.js";
 import type {
   AccountOptionsChanges,
   AccountOptionsEvent,
@@ -10,6 +13,7 @@ import type {
   PaymentEvent,
   PaymentEventType,
   ReconnectConfig,
+  StartOptions,
   WatcherNotification,
   WatcherNotificationType,
 } from "./index.js";
@@ -73,15 +77,19 @@ export class EventEngine {
     this.registry.get(address)?.stop();
   }
 
-  start(): void {
+  start(options?: StartOptions): boolean {
     if (this.isRunning || this.reconnectTimer) {
+      if (options?.strict) {
+        throw new EngineAlreadyStartedError();
+      }
       console.warn(
         "[pulse-core] EventEngine.start() called while the SSE stream is already active."
       );
-      return;
+      return false;
     }
 
     this.openStream(false);
+    return true;
   }
 
   stop(): void {
