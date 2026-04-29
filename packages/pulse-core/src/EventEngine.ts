@@ -5,6 +5,8 @@ import type {
   AccountOptionsEvent,
   AccountOptionsEventType,
   CoreConfig,
+  LiquidityPoolDepositEvent,
+  LiquidityPoolWithdrawEvent,
   Network,
   NormalizedEvent,
   PaymentEvent,
@@ -15,7 +17,11 @@ import type {
 } from "./index.js";
 
 type PendingPaymentEvent = Omit<PaymentEvent, "type"> & { type: "unknown" };
-type NormalizedEventOrPending = PendingPaymentEvent | AccountOptionsEvent;
+type NormalizedEventOrPending =
+  | PendingPaymentEvent
+  | AccountOptionsEvent
+  | LiquidityPoolDepositEvent
+  | LiquidityPoolWithdrawEvent;
 
 type StreamCallbacks = {
   onmessage: (record: unknown) => void;
@@ -243,6 +249,14 @@ export class EventEngine {
       return this.normalizeSetOptions(r, record);
     }
 
+    if (r.type === "liquidity_pool_deposit") {
+      return this.normalizeLiquidityPoolDeposit(r, record);
+    }
+
+    if (r.type === "liquidity_pool_withdraw") {
+      return this.normalizeLiquidityPoolWithdraw(r, record);
+    }
+
     return null;
   }
 
@@ -290,11 +304,119 @@ export class EventEngine {
     };
   }
 
+  private normalizeLiquidityPoolDeposit(
+    r: Record<string, unknown>,
+    raw: unknown
+  ): LiquidityPoolDepositEvent | null {
+    const requiredFields = [
+      "liquidity_pool_id",
+      "reserves_deposited",
+      "shares_received",
+      "source_account",
+      "created_at",
+    ] as const;
+
+    for (const field of requiredFields) {
+      if (r[field] === undefined || r[field] === null) {
+        console.warn(
+          `[pulse-core] normalize() dropping liquidity_pool_deposit record: field "${field}" is missing.`,
+          { record }
+        );
+        return null;
+      }
+    }
+
+    const reservesDeposited = r.reserves_deposited as Array<unknown>;
+    if (!Array.isArray(reservesDeposited)) {
+      console.warn(
+        `[pulse-core] normalize() dropping liquidity_pool_deposit record: reserves_deposited is not an array.`,
+        { record }
+      );
+      return null;
+    }
+
+    return {
+      type: "lp.deposited",
+      source: r.source_account as string,
+      pool_id: r.liquidity_pool_id as string,
+      reserves_deposited: reservesDeposited as Array<{
+        asset: string;
+        amount: string;
+      }>,
+      shares_received: r.shares_received as string,
+      timestamp: r.created_at as string,
+      raw,
+    };
+  }
+
+  private normalizeLiquidityPoolWithdraw(
+    r: Record<string, unknown>,
+    raw: unknown
+  ): LiquidityPoolWithdrawEvent | null {
+    const requiredFields = [
+      "liquidity_pool_id",
+      "reserves_received",
+      "shares",
+      "source_account",
+      "created_at",
+    ] as const;
+
+    for (const field of requiredFields) {
+      if (r[field] === undefined || r[field] === null) {
+        console.warn(
+          `[pulse-core] normalize() dropping liquidity_pool_withdraw record: field "${field}" is missing.`,
+          { record }
+        );
+        return null;
+      }
+    }
+
+    const reservesReceived = r.reserves_received as Array<unknown>;
+    if (!Array.isArray(reservesReceived)) {
+      console.warn(
+        `[pulse-core] normalize() dropping liquidity_pool_withdraw record: reserves_received is not an array.`,
+        { record }
+      );
+      return null;
+    }
+
+    return {
+      type: "lp.withdrawn",
+      source: r.source_account as string,
+      pool_id: r.liquidity_pool_id as string,
+      reserves_received: reservesReceived as Array<{
+        asset: string;
+        amount: string;
+      }>,
+      shares_redeemed: r.shares as string,
+      timestamp: r.created_at as string,
+      raw,
+    };
+  }
+
   private route(event: NormalizedEventOrPending): void {
     if (event.type === "account.options_changed") {
       const watcher = this.registry.get(event.source);
       if (watcher) {
         watcher.emit("account.options_changed", event);
+        watcher.emit("*", event);
+      }
+      return;
+    }
+
+    if (event.type === "lp.deposited") {
+      const watcher = this.registry.get(event.source);
+      if (watcher) {
+        watcher.emit("lp.deposited", event);
+        watcher.emit("*", event);
+      }
+      return;
+    }
+
+    if (event.type === "lp.withdrawn") {
+      const watcher = this.registry.get(event.source);
+      if (watcher) {
+        watcher.emit("lp.withdrawn", event);
         watcher.emit("*", event);
       }
       return;

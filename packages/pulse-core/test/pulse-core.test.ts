@@ -14,7 +14,7 @@ const streamInstances: MockStreamInstance[] = [];
 
 vi.mock("@stellar/stellar-sdk", () => {
   class MockServer {
-    constructor(_url: string) {}
+    constructor(_url: string) { }
 
     operations() {
       return {
@@ -149,8 +149,8 @@ describe("pulse-core EventEngine", () => {
     ).normalize.bind(engine);
 
     const missingFieldCases: Array<[string, Record<string, unknown>]> = [
-      ["from",       { type: "payment", to: "GDEST", amount: "1", created_at: "2026-01-01T00:00:00Z" }],
-      ["amount",     { type: "payment", to: "GDEST", from: "GSRC", created_at: "2026-01-01T00:00:00Z" }],
+      ["from", { type: "payment", to: "GDEST", amount: "1", created_at: "2026-01-01T00:00:00Z" }],
+      ["amount", { type: "payment", to: "GDEST", from: "GSRC", created_at: "2026-01-01T00:00:00Z" }],
       ["created_at", { type: "payment", to: "GDEST", from: "GSRC", amount: "1" }],
     ];
 
@@ -435,6 +435,278 @@ describe("pulse-core EventEngine", () => {
       latestStream().handlers.onmessage(
         makeSetOptionsRecord({ home_domain: "example.com" })
       );
+
+      expect(srcHandler).toHaveBeenCalledOnce();
+      expect(otherHandler).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("liquidity_pool_deposit → lp.deposited", () => {
+    function makeLiquidityPoolDepositRecord(
+      overrides: Record<string, unknown>
+    ): Record<string, unknown> {
+      return {
+        type: "liquidity_pool_deposit",
+        source_account: "GSRC",
+        liquidity_pool_id: "abcdef123456",
+        reserves_deposited: [
+          { asset: "JPY:GBVAOIACNSB7OVUXJYC5UE2D4YK2F7A24T7EE5YOMN4CE6GCHUTOUQXM", amount: "983.0000005" },
+          { asset: "EURT:GAP5LETOV6YIE62YAM56STDANPRDO7ZFDBGSNHJQIYGGKSMOZAHOOS2S", amount: "2378.0000005" },
+        ],
+        shares_received: "1000",
+        created_at: "2026-04-24T10:00:00.000Z",
+        ...overrides,
+      };
+    }
+
+    it("emits lp.deposited with pool_id, reserves_deposited, and shares_received", () => {
+      const engine = new EventEngine({ network: "testnet" });
+      const watcher = engine.subscribe("GSRC");
+      const handler = vi.fn();
+      watcher.on("lp.deposited", handler);
+
+      engine.start();
+      latestStream().handlers.onmessage(makeLiquidityPoolDepositRecord({}));
+
+      expect(handler).toHaveBeenCalledOnce();
+      expect(handler).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: "lp.deposited",
+          source: "GSRC",
+          pool_id: "abcdef123456",
+          reserves_deposited: [
+            { asset: "JPY:GBVAOIACNSB7OVUXJYC5UE2D4YK2F7A24T7EE5YOMN4CE6GCHUTOUQXM", amount: "983.0000005" },
+            { asset: "EURT:GAP5LETOV6YIE62YAM56STDANPRDO7ZFDBGSNHJQIYGGKSMOZAHOOS2S", amount: "2378.0000005" },
+          ],
+          shares_received: "1000",
+          timestamp: "2026-04-24T10:00:00.000Z",
+        })
+      );
+    });
+
+    it("returns null and warns when liquidity_pool_id is missing", () => {
+      const engine = new EventEngine({ network: "testnet" });
+      const normalize = (
+        engine as unknown as {
+          normalize(record: unknown): unknown;
+        }
+      ).normalize.bind(engine);
+
+      const result = normalize(
+        makeLiquidityPoolDepositRecord({ liquidity_pool_id: undefined })
+      );
+
+      expect(result).toBeNull();
+      expect(console.warn).toHaveBeenCalledWith(
+        '[pulse-core] normalize() dropping liquidity_pool_deposit record: field "liquidity_pool_id" is missing.',
+        expect.objectContaining({ record: expect.any(Object) })
+      );
+    });
+
+    it("returns null and warns when reserves_deposited is missing", () => {
+      const engine = new EventEngine({ network: "testnet" });
+      const normalize = (
+        engine as unknown as {
+          normalize(record: unknown): unknown;
+        }
+      ).normalize.bind(engine);
+
+      const result = normalize(
+        makeLiquidityPoolDepositRecord({ reserves_deposited: undefined })
+      );
+
+      expect(result).toBeNull();
+      expect(console.warn).toHaveBeenCalledWith(
+        '[pulse-core] normalize() dropping liquidity_pool_deposit record: field "reserves_deposited" is missing.',
+        expect.objectContaining({ record: expect.any(Object) })
+      );
+    });
+
+    it("returns null and warns when reserves_deposited is not an array", () => {
+      const engine = new EventEngine({ network: "testnet" });
+      const normalize = (
+        engine as unknown as {
+          normalize(record: unknown): unknown;
+        }
+      ).normalize.bind(engine);
+
+      const result = normalize(
+        makeLiquidityPoolDepositRecord({ reserves_deposited: "not an array" })
+      );
+
+      expect(result).toBeNull();
+      expect(console.warn).toHaveBeenCalledWith(
+        '[pulse-core] normalize() dropping liquidity_pool_deposit record: reserves_deposited is not an array.',
+        expect.objectContaining({ record: expect.any(Object) })
+      );
+    });
+
+    it("returns null and warns when shares_received is missing", () => {
+      const engine = new EventEngine({ network: "testnet" });
+      const normalize = (
+        engine as unknown as {
+          normalize(record: unknown): unknown;
+        }
+      ).normalize.bind(engine);
+
+      const result = normalize(
+        makeLiquidityPoolDepositRecord({ shares_received: undefined })
+      );
+
+      expect(result).toBeNull();
+      expect(console.warn).toHaveBeenCalledWith(
+        '[pulse-core] normalize() dropping liquidity_pool_deposit record: field "shares_received" is missing.',
+        expect.objectContaining({ record: expect.any(Object) })
+      );
+    });
+
+    it("does not route lp.deposited to unrelated watchers", () => {
+      const engine = new EventEngine({ network: "testnet" });
+      const srcWatcher = engine.subscribe("GSRC");
+      const otherWatcher = engine.subscribe("GOTHER");
+      const srcHandler = vi.fn();
+      const otherHandler = vi.fn();
+      srcWatcher.on("lp.deposited", srcHandler);
+      otherWatcher.on("lp.deposited", otherHandler);
+
+      engine.start();
+      latestStream().handlers.onmessage(makeLiquidityPoolDepositRecord({}));
+
+      expect(srcHandler).toHaveBeenCalledOnce();
+      expect(otherHandler).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("liquidity_pool_withdraw → lp.withdrawn", () => {
+    function makeLiquidityPoolWithdrawRecord(
+      overrides: Record<string, unknown>
+    ): Record<string, unknown> {
+      return {
+        type: "liquidity_pool_withdraw",
+        source_account: "GSRC",
+        liquidity_pool_id: "fedcba654321",
+        reserves_received: [
+          { asset: "JPY:GBVAOIACNSB7OVUXJYC5UE2D4YK2F7A24T7EE5YOMN4CE6GCHUTOUQXM", amount: "500.0000000" },
+          { asset: "EURT:GAP5LETOV6YIE62YAM56STDANPRDO7ZFDBGSNHJQIYGGKSMOZAHOOS2S", amount: "1200.0000000" },
+        ],
+        shares: "500",
+        created_at: "2026-04-24T11:00:00.000Z",
+        ...overrides,
+      };
+    }
+
+    it("emits lp.withdrawn with pool_id, reserves_received, and shares_redeemed", () => {
+      const engine = new EventEngine({ network: "testnet" });
+      const watcher = engine.subscribe("GSRC");
+      const handler = vi.fn();
+      watcher.on("lp.withdrawn", handler);
+
+      engine.start();
+      latestStream().handlers.onmessage(makeLiquidityPoolWithdrawRecord({}));
+
+      expect(handler).toHaveBeenCalledOnce();
+      expect(handler).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: "lp.withdrawn",
+          source: "GSRC",
+          pool_id: "fedcba654321",
+          reserves_received: [
+            { asset: "JPY:GBVAOIACNSB7OVUXJYC5UE2D4YK2F7A24T7EE5YOMN4CE6GCHUTOUQXM", amount: "500.0000000" },
+            { asset: "EURT:GAP5LETOV6YIE62YAM56STDANPRDO7ZFDBGSNHJQIYGGKSMOZAHOOS2S", amount: "1200.0000000" },
+          ],
+          shares_redeemed: "500",
+          timestamp: "2026-04-24T11:00:00.000Z",
+        })
+      );
+    });
+
+    it("returns null and warns when liquidity_pool_id is missing", () => {
+      const engine = new EventEngine({ network: "testnet" });
+      const normalize = (
+        engine as unknown as {
+          normalize(record: unknown): unknown;
+        }
+      ).normalize.bind(engine);
+
+      const result = normalize(
+        makeLiquidityPoolWithdrawRecord({ liquidity_pool_id: undefined })
+      );
+
+      expect(result).toBeNull();
+      expect(console.warn).toHaveBeenCalledWith(
+        '[pulse-core] normalize() dropping liquidity_pool_withdraw record: field "liquidity_pool_id" is missing.',
+        expect.objectContaining({ record: expect.any(Object) })
+      );
+    });
+
+    it("returns null and warns when reserves_received is missing", () => {
+      const engine = new EventEngine({ network: "testnet" });
+      const normalize = (
+        engine as unknown as {
+          normalize(record: unknown): unknown;
+        }
+      ).normalize.bind(engine);
+
+      const result = normalize(
+        makeLiquidityPoolWithdrawRecord({ reserves_received: undefined })
+      );
+
+      expect(result).toBeNull();
+      expect(console.warn).toHaveBeenCalledWith(
+        '[pulse-core] normalize() dropping liquidity_pool_withdraw record: field "reserves_received" is missing.',
+        expect.objectContaining({ record: expect.any(Object) })
+      );
+    });
+
+    it("returns null and warns when reserves_received is not an array", () => {
+      const engine = new EventEngine({ network: "testnet" });
+      const normalize = (
+        engine as unknown as {
+          normalize(record: unknown): unknown;
+        }
+      ).normalize.bind(engine);
+
+      const result = normalize(
+        makeLiquidityPoolWithdrawRecord({ reserves_received: "not an array" })
+      );
+
+      expect(result).toBeNull();
+      expect(console.warn).toHaveBeenCalledWith(
+        '[pulse-core] normalize() dropping liquidity_pool_withdraw record: reserves_received is not an array.',
+        expect.objectContaining({ record: expect.any(Object) })
+      );
+    });
+
+    it("returns null and warns when shares is missing", () => {
+      const engine = new EventEngine({ network: "testnet" });
+      const normalize = (
+        engine as unknown as {
+          normalize(record: unknown): unknown;
+        }
+      ).normalize.bind(engine);
+
+      const result = normalize(
+        makeLiquidityPoolWithdrawRecord({ shares: undefined })
+      );
+
+      expect(result).toBeNull();
+      expect(console.warn).toHaveBeenCalledWith(
+        '[pulse-core] normalize() dropping liquidity_pool_withdraw record: field "shares" is missing.',
+        expect.objectContaining({ record: expect.any(Object) })
+      );
+    });
+
+    it("does not route lp.withdrawn to unrelated watchers", () => {
+      const engine = new EventEngine({ network: "testnet" });
+      const srcWatcher = engine.subscribe("GSRC");
+      const otherWatcher = engine.subscribe("GOTHER");
+      const srcHandler = vi.fn();
+      const otherHandler = vi.fn();
+      srcWatcher.on("lp.withdrawn", srcHandler);
+      otherWatcher.on("lp.withdrawn", otherHandler);
+
+      engine.start();
+      latestStream().handlers.onmessage(makeLiquidityPoolWithdrawRecord({}));
 
       expect(srcHandler).toHaveBeenCalledOnce();
       expect(otherHandler).not.toHaveBeenCalled();

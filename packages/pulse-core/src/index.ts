@@ -6,6 +6,7 @@ export type Network = "mainnet" | "testnet";
 
 export type PaymentEventType = "payment.received" | "payment.sent";
 export type AccountOptionsEventType = "account.options_changed";
+export type LiquidityPoolEventType = "lp.deposited" | "lp.withdrawn";
 export type WatcherNotificationType =
   | "engine.reconnecting"
   | "engine.reconnected";
@@ -45,7 +46,32 @@ export type AccountOptionsEvent = {
   raw: unknown;
 };
 
-export type NormalizedEvent = PaymentEvent | AccountOptionsEvent;
+export type LiquidityPoolReserve = {
+  asset: string;
+  amount: string;
+};
+
+export type LiquidityPoolDepositEvent = {
+  type: "lp.deposited";
+  source: string;
+  pool_id: string;
+  reserves_deposited: LiquidityPoolReserve[];
+  shares_received: string;
+  timestamp: string;
+  raw: unknown;
+};
+
+export type LiquidityPoolWithdrawEvent = {
+  type: "lp.withdrawn";
+  source: string;
+  pool_id: string;
+  reserves_received: LiquidityPoolReserve[];
+  shares_redeemed: string;
+  timestamp: string;
+  raw: unknown;
+};
+
+export type NormalizedEvent = PaymentEvent | AccountOptionsEvent | LiquidityPoolDepositEvent | LiquidityPoolWithdrawEvent;
 
 export type WatcherNotification = {
   type: WatcherNotificationType;
