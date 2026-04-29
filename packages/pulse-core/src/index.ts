@@ -9,6 +9,7 @@ export type AccountOptionsEventType = "account.options_changed";
 export type WatcherNotificationType =
   | "engine.reconnecting"
   | "engine.reconnected";
+  | 'engine.stopped' ;
 
 export type SetOptionsSigner = {
   key: string;
@@ -53,11 +54,6 @@ export type WatcherNotification = {
   delayMs?: number;
   timestamp: string;
 };
-
-export type WatcherNotificationType = 
-  | 'engine.reconnecting'
-  | 'engine.reconnected'
-  | 'engine.stopped' 
 
 export type ReconnectConfig = {
   initialDelayMs?: number;
