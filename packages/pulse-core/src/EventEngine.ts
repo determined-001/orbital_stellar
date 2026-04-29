@@ -47,6 +47,10 @@ export class EventEngine {
   private readonly reconnectConfig: Required<ReconnectConfig>;
   private isRunning = false;
 
+  /**
+   * Creates a new EventEngine instance.
+   * @param config - The core configuration for the engine.
+   */
   constructor(config: CoreConfig) {
     this.server = new Horizon.Server(HORIZON_URLS[config.network]);
     this.reconnectConfig = {
@@ -55,6 +59,12 @@ export class EventEngine {
     };
   }
 
+  /**
+   * Subscribes to events for a given Stellar address.
+   * Returns an existing Watcher if one already exists for the address.
+   * @param address - The Stellar address to watch.
+   * @returns The Watcher instance for the address.
+   */
   subscribe(address: string): Watcher {
     const existingWatcher = this.registry.get(address);
     if (existingWatcher) {
@@ -69,10 +79,18 @@ export class EventEngine {
     return watcher;
   }
 
+  /**
+   * Unsubscribes from events for a given Stellar address and stops its watcher.
+   * @param address - The Stellar address to stop watching.
+   */
   unsubscribe(address: string): void {
     this.registry.get(address)?.stop();
   }
 
+  /**
+   * Starts the SSE stream to listen for Stellar network events.
+   * No-op if the stream is already running.
+   */
   start(): void {
     if (this.isRunning || this.reconnectTimer) {
       console.warn(
@@ -84,6 +102,10 @@ export class EventEngine {
     this.openStream(false);
   }
 
+  /**
+   * Stops the SSE stream and all active watchers.
+   * Cleans up all resources and resets reconnection state.
+   */
   stop(): void {
     this.clearReconnectTimer();
     this.pendingReconnectSuccessAttempt = null;
