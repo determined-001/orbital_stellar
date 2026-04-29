@@ -54,6 +54,11 @@ export type WatcherNotification = {
   timestamp: string;
 };
 
+export type WatcherNotificationType = 
+  | 'engine.reconnecting'
+  | 'engine.reconnected'
+  | 'engine.stopped' 
+
 export type ReconnectConfig = {
   initialDelayMs?: number;
   maxDelayMs?: number;
