@@ -165,6 +165,23 @@ describe("pulse-core EventEngine", () => {
     }
   });
 
+  it('should emit engine.stopped when stop is called', () => {
+  
+  const engine = new EventEngine();
+  const notifications: string[] = [];
+  
+  const mockWatcher = {
+    notify: (type: string) => notifications.push(type)
+  };
+
+  
+  engine.registerWatcher(mockWatcher as any);
+  engine.stop();
+
+
+  expect(notifications).toContain('engine.stopped');
+});
+
   it("removes stopped watchers from the registry and keeps stop idempotent", () => {
     const engine = new EventEngine({ network: "testnet" });
     const watcher = engine.subscribe("GABC");
