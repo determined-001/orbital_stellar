@@ -50,12 +50,18 @@ function latestStream(): MockStreamInstance {
 }
 
 describe("pulse-core EventEngine", () => {
+  const log = {
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+  };
+
   beforeEach(() => {
     streamInstances.length = 0;
     vi.useFakeTimers();
-    vi.spyOn(console, "error").mockImplementation(() => undefined);
-    vi.spyOn(console, "info").mockImplementation(() => undefined);
-    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    log.info.mockReset();
+    log.warn.mockReset();
+    log.error.mockReset();
   });
 
   afterEach(() => {
@@ -117,7 +123,7 @@ describe("pulse-core EventEngine", () => {
   });
 
   it("returns null and warns when a required payment field is missing", () => {
-    const engine = new EventEngine({ network: "testnet" });
+    const engine = new EventEngine({ network: "testnet", logger: log });
     const normalize = (
       engine as unknown as {
         normalize(record: unknown): unknown;
@@ -134,14 +140,13 @@ describe("pulse-core EventEngine", () => {
     });
 
     expect(result).toBeNull();
-    expect(console.warn).toHaveBeenCalledWith(
-      '[pulse-core] normalize() dropping payment record: field "to" is missing or not a non-empty string.',
-      expect.objectContaining({ record: expect.any(Object) })
+    expect(log.warn).toHaveBeenCalledWith(
+      '[pulse-core] normalize() dropping payment record: field "to" is missing or not a non-empty string.'
     );
   });
 
   it("returns null and warns for each missing required field individually", () => {
-    const engine = new EventEngine({ network: "testnet" });
+    const engine = new EventEngine({ network: "testnet", logger: log });
     const normalize = (
       engine as unknown as {
         normalize(record: unknown): unknown;
@@ -155,12 +160,11 @@ describe("pulse-core EventEngine", () => {
     ];
 
     for (const [field, record] of missingFieldCases) {
-      vi.clearAllMocks();
+      log.warn.mockReset();
       const result = normalize(record);
       expect(result).toBeNull();
-      expect(console.warn).toHaveBeenCalledWith(
-        `[pulse-core] normalize() dropping payment record: field "${field}" is missing or not a non-empty string.`,
-        expect.objectContaining({ record: expect.any(Object) })
+      expect(log.warn).toHaveBeenCalledWith(
+        `[pulse-core] normalize() dropping payment record: field "${field}" is missing or not a non-empty string.`
       );
     }
   });
@@ -183,20 +187,61 @@ describe("pulse-core EventEngine", () => {
   });
 
   it("guards start() so duplicate live streams are not opened", () => {
-    const engine = new EventEngine({ network: "testnet" });
+    const engine = new EventEngine({ network: "testnet", logger: log });
 
     engine.start();
     engine.start();
 
     expect(streamInstances).toHaveLength(1);
-    expect(console.warn).toHaveBeenCalledWith(
+    expect(log.warn).toHaveBeenCalledWith(
       "[pulse-core] EventEngine.start() called while the SSE stream is already active."
+    );
+  });
+
+  it("routes self-payments as payment.self exactly once", () => {
+    const engine = new EventEngine({ network: "testnet" });
+    const watcher = engine.subscribe("GSELF");
+    const selfHandler = vi.fn();
+    const receivedHandler = vi.fn();
+    const sentHandler = vi.fn();
+    const wildcardHandler = vi.fn();
+
+    watcher.on("payment.self", selfHandler);
+    watcher.on("payment.received", receivedHandler);
+    watcher.on("payment.sent", sentHandler);
+    watcher.on("*", wildcardHandler);
+
+    engine.start();
+    latestStream().handlers.onmessage({
+      type: "payment",
+      to: "GSELF",
+      from: "GSELF",
+      amount: "25",
+      asset_type: "native",
+      created_at: "2026-04-28T13:00:00.000Z",
+    });
+
+    expect(selfHandler).toHaveBeenCalledOnce();
+    expect(selfHandler).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "payment.self",
+        to: "GSELF",
+        from: "GSELF",
+        amount: "25",
+      })
+    );
+    expect(receivedHandler).not.toHaveBeenCalled();
+    expect(sentHandler).not.toHaveBeenCalled();
+    expect(wildcardHandler).toHaveBeenCalledOnce();
+    expect(wildcardHandler).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "payment.self" })
     );
   });
 
   it("reconnects with exponential backoff and emits watcher notifications", () => {
     const engine = new EventEngine({
       network: "testnet",
+      logger: log,
       reconnect: {
         initialDelayMs: 1000,
         maxDelayMs: 30000,
@@ -221,7 +266,7 @@ describe("pulse-core EventEngine", () => {
         delayMs: 1000,
       })
     );
-    expect(console.warn).toHaveBeenCalledWith(
+    expect(log.warn).toHaveBeenCalledWith(
       "[pulse-core] SSE reconnect attempt 1 scheduled in 1000ms."
     );
     expect(streamInstances).toHaveLength(1);
@@ -240,7 +285,7 @@ describe("pulse-core EventEngine", () => {
         delayMs: 2000,
       })
     );
-    expect(console.warn).toHaveBeenLastCalledWith(
+    expect(log.warn).toHaveBeenLastCalledWith(
       "[pulse-core] SSE reconnect attempt 2 scheduled in 2000ms."
     );
 
@@ -263,7 +308,7 @@ describe("pulse-core EventEngine", () => {
         attempt: 2,
       })
     );
-    expect(console.info).toHaveBeenCalledWith(
+    expect(log.info).toHaveBeenCalledWith(
       "[pulse-core] SSE reconnect succeeded on attempt 2."
     );
 

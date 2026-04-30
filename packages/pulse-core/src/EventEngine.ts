@@ -38,6 +38,8 @@ const DEFAULT_RECONNECT: Required<ReconnectConfig> = {
   maxRetries: Number.POSITIVE_INFINITY,
 };
 
+const noop = { info: () => {}, warn: () => {}, error: () => {} };
+
 export class EventEngine {
   private server: Horizon.Server;
   private registry: Map<string, Watcher> = new Map();
@@ -47,7 +49,12 @@ export class EventEngine {
   private pendingReconnectSuccessAttempt: number | null = null;
   private readonly reconnectConfig: Required<ReconnectConfig>;
   private isRunning = false;
+  private log: Required<NonNullable<CoreConfig["logger"]>>;
 
+  /**
+   * Creates a new EventEngine instance.
+   * @param config - The core configuration for the engine.
+   */
   constructor(config: CoreConfig) {
     const horizonUrl = HORIZON_URLS[config.network];
     if (!horizonUrl) {
@@ -58,8 +65,15 @@ export class EventEngine {
       ...DEFAULT_RECONNECT,
       ...config.reconnect,
     };
+    this.log = config.logger ?? noop;
   }
 
+  /**
+   * Subscribes to events for a given Stellar address.
+   * Returns an existing Watcher if one already exists for the address.
+   * @param address - The Stellar address to watch.
+   * @returns The Watcher instance for the address.
+   */
   subscribe(address: string): Watcher {
     const existingWatcher = this.registry.get(address);
     if (existingWatcher) {
@@ -74,21 +88,31 @@ export class EventEngine {
     return watcher;
   }
 
+  /**
+   * Unsubscribes from events for a given Stellar address and stops its watcher.
+   * @param address - The Stellar address to stop watching.
+   */
   unsubscribe(address: string): void {
     this.registry.get(address)?.stop();
   }
 
+  /**
+   * Starts the SSE stream to listen for Stellar network events.
+   * No-op if the stream is already running.
+   */
   start(): void {
     if (this.isRunning || this.reconnectTimer) {
-      console.warn(
-        "[pulse-core] EventEngine.start() called while the SSE stream is already active."
-      );
+      this.log.warn("[pulse-core] EventEngine.start() called while the SSE stream is already active.");
       return;
     }
 
     this.openStream(false);
   }
 
+  /**
+   * Stops the SSE stream and all active watchers.
+   * Cleans up all resources and resets reconnection state.
+   */
   stop(): void {
     this.clearReconnectTimer();
     this.pendingReconnectSuccessAttempt = null;
@@ -115,9 +139,7 @@ export class EventEngine {
           const attempt = this.pendingReconnectSuccessAttempt;
           this.pendingReconnectSuccessAttempt = null;
           this.reconnectAttempt = 0;
-          console.info(
-            `[pulse-core] SSE reconnect succeeded on attempt ${attempt}.`
-          );
+          this.log.info(`[pulse-core] SSE reconnect succeeded on attempt ${attempt}.`);
           this.notifyWatchers("engine.reconnected", {
             type: "engine.reconnected",
             attempt,
@@ -133,7 +155,7 @@ export class EventEngine {
         this.route(event);
       },
       onerror: (error) => {
-        console.error("[pulse-core] SSE error:", error);
+        this.log.error(`[pulse-core] SSE error: ${error}`);
         this.handleStreamError();
       },
     };
@@ -155,9 +177,7 @@ export class EventEngine {
 
     const nextAttempt = this.reconnectAttempt + 1;
     if (nextAttempt > this.reconnectConfig.maxRetries) {
-      console.error(
-        `[pulse-core] SSE reconnect stopped after ${this.reconnectAttempt} failed attempts.`
-      );
+      this.log.error(`[pulse-core] SSE reconnect stopped after ${this.reconnectAttempt} failed attempts.`);
       return;
     }
 
@@ -168,9 +188,7 @@ export class EventEngine {
       this.reconnectConfig.maxDelayMs
     );
 
-    console.warn(
-      `[pulse-core] SSE reconnect attempt ${nextAttempt} scheduled in ${delayMs}ms.`
-    );
+    this.log.warn(`[pulse-core] SSE reconnect attempt ${nextAttempt} scheduled in ${delayMs}ms.`);
     this.notifyWatchers("engine.reconnecting", {
       type: "engine.reconnecting",
       attempt: nextAttempt,
@@ -219,10 +237,7 @@ export class EventEngine {
       const requiredFields = ["to", "from", "amount", "created_at"] as const;
       for (const field of requiredFields) {
         if (typeof r[field] !== "string" || r[field] === "") {
-          console.warn(
-            `[pulse-core] normalize() dropping payment record: field "${field}" is missing or not a non-empty string.`,
-            { record }
-          );
+          this.log.warn(`[pulse-core] normalize() dropping payment record: field "${field}" is missing or not a non-empty string.`);
           return null;
         }
       }
@@ -301,6 +316,16 @@ export class EventEngine {
       if (watcher) {
         watcher.emit("account.options_changed", event);
         watcher.emit("*", event);
+      }
+      return;
+    }
+
+    if (event.from === event.to) {
+      const watcher = this.registry.get(event.to);
+      if (watcher) {
+        const selfPayment = this.withResolvedType(event, "payment.self");
+        watcher.emit("payment.self", selfPayment);
+        watcher.emit("*", selfPayment);
       }
       return;
     }

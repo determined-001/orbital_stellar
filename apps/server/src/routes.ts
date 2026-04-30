@@ -129,12 +129,11 @@ export function createRoutes(registry: WebhookRegistry, engine: EventEngine): Ro
     req.on("close", () => {
       clearInterval(heartbeat);
       watcher.removeListener("*", handler);
-      // Fully remove the watcher from the engine so no dead watchers remain
       engine.unsubscribe(address);
-      console.log(`[sse] Client disconnected from ${address}`);
+      req.log.info({ address }, "SSE client disconnected");
     });
 
-    console.log(`[sse] Client connected to ${address}`);
+    req.log.info({ address }, "SSE client connected");
   });
 
   return router;
