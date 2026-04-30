@@ -81,16 +81,6 @@ export class EventEngine {
       return;
     }
 
-stop(): void {
-
-  this.watchers.forEach(watcher => {
-    watcher.notify('engine.stopped');
-  });
-
-  this.iterateAndClearWatchers(); 
-  
-                        }
-
     this.openStream(false);
   }
 
@@ -100,6 +90,11 @@ stop(): void {
     this.reconnectAttempt = 0;
     this.closeStream();
     this.isRunning = false;
+
+    this.notifyWatchers("engine.stopped", {
+      type: "engine.stopped",
+      timestamp: new Date().toISOString(),
+    });
 
     for (const watcher of this.registry.values()) {
       watcher.stop();
@@ -338,4 +333,4 @@ stop(): void {
       type,
     };
   }
-}
+            }
