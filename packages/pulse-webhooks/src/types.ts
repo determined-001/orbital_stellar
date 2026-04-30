@@ -1,5 +1,5 @@
 export type WebhookConfig = {
-  url: string;
+  url: string | string[];
   secret: string;
   retries?: number;
   deliveryTimeoutMs?: number;

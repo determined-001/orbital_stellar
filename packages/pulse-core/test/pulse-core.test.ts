@@ -11,10 +11,13 @@ type MockStreamInstance = {
 };
 
 const streamInstances: MockStreamInstance[] = [];
+const serverUrls: string[] = [];
 
 vi.mock("@stellar/stellar-sdk", () => {
   class MockServer {
-    constructor(_url: string) {}
+    constructor(url: string) {
+      serverUrls.push(url);
+    }
 
     operations() {
       return {
@@ -50,12 +53,19 @@ function latestStream(): MockStreamInstance {
 }
 
 describe("pulse-core EventEngine", () => {
+  const log = {
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+  };
+
   beforeEach(() => {
     streamInstances.length = 0;
+    serverUrls.length = 0;
     vi.useFakeTimers();
-    vi.spyOn(console, "error").mockImplementation(() => undefined);
-    vi.spyOn(console, "info").mockImplementation(() => undefined);
-    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    log.info.mockReset();
+    log.warn.mockReset();
+    log.error.mockReset();
   });
 
   afterEach(() => {
@@ -102,6 +112,67 @@ describe("pulse-core EventEngine", () => {
     });
   });
 
+  it("empties the registry via stop handlers when stop() is called", () => {
+    const engine = new EventEngine({ network: "testnet" });
+    engine.subscribe("GABC");
+    engine.subscribe("GDEF");
+
+    const registry = (engine as unknown as { registry: Map<string, unknown> })
+      .registry;
+    expect(registry.size).toBe(2);
+
+    engine.stop();
+
+    expect(registry.size).toBe(0);
+  });
+
+  it("returns null and warns when a required payment field is missing", () => {
+    const engine = new EventEngine({ network: "testnet", logger: log });
+    const normalize = (
+      engine as unknown as {
+        normalize(record: unknown): unknown;
+      }
+    ).normalize.bind(engine);
+
+    // Missing `to`
+    const result = normalize({
+      type: "payment",
+      from: "GSRC",
+      amount: "42",
+      asset_type: "native",
+      created_at: "2026-03-26T20:00:00.000Z",
+    });
+
+    expect(result).toBeNull();
+    expect(log.warn).toHaveBeenCalledWith(
+      '[pulse-core] normalize() dropping payment record: field "to" is missing or not a non-empty string.'
+    );
+  });
+
+  it("returns null and warns for each missing required field individually", () => {
+    const engine = new EventEngine({ network: "testnet", logger: log });
+    const normalize = (
+      engine as unknown as {
+        normalize(record: unknown): unknown;
+      }
+    ).normalize.bind(engine);
+
+    const missingFieldCases: Array<[string, Record<string, unknown>]> = [
+      ["from",       { type: "payment", to: "GDEST", amount: "1", created_at: "2026-01-01T00:00:00Z" }],
+      ["amount",     { type: "payment", to: "GDEST", from: "GSRC", created_at: "2026-01-01T00:00:00Z" }],
+      ["created_at", { type: "payment", to: "GDEST", from: "GSRC", amount: "1" }],
+    ];
+
+    for (const [field, record] of missingFieldCases) {
+      log.warn.mockReset();
+      const result = normalize(record);
+      expect(result).toBeNull();
+      expect(log.warn).toHaveBeenCalledWith(
+        `[pulse-core] normalize() dropping payment record: field "${field}" is missing or not a non-empty string.`
+      );
+    }
+  });
+
   it("removes stopped watchers from the registry and keeps stop idempotent", () => {
     const engine = new EventEngine({ network: "testnet" });
     const watcher = engine.subscribe("GABC");
@@ -119,21 +190,105 @@ describe("pulse-core EventEngine", () => {
     expect(engine.subscribe("GABC")).not.toBe(watcher);
   });
 
+  describe("horizonUrl override", () => {
+    it("uses a custom horizon URL when provided in config", () => {
+      new EventEngine({
+        network: "testnet",
+        horizonUrl: "https://custom-horizon.example.com",
+      });
+      expect(serverUrls[0]).toBe("https://custom-horizon.example.com");
+    });
+
+    it("throws on an invalid horizon URL", () => {
+      expect(
+        () =>
+          new EventEngine({
+            network: "testnet",
+            horizonUrl: "not-a-url",
+          })
+      ).toThrow("Invalid horizonUrl");
+    });
+
+    it("throws on a non-http(s) horizon URL", () => {
+      expect(
+        () =>
+          new EventEngine({
+            network: "testnet",
+            horizonUrl: "ftp://horizon.example.com",
+          })
+      ).toThrow("Invalid horizonUrl");
+    });
+
+    it("falls back to network-derived URL when horizonUrl is not set", () => {
+      new EventEngine({ network: "testnet" });
+      expect(serverUrls[0]).toBe("https://horizon-testnet.stellar.org");
+    });
+
+    it("falls back to network-derived URL when horizonUrl is explicitly undefined", () => {
+      new EventEngine({
+        network: "testnet",
+        horizonUrl: undefined,
+      });
+      expect(serverUrls[0]).toBe("https://horizon-testnet.stellar.org");
+    });
+  });
+
   it("guards start() so duplicate live streams are not opened", () => {
-    const engine = new EventEngine({ network: "testnet" });
+    const engine = new EventEngine({ network: "testnet", logger: log });
 
     engine.start();
     engine.start();
 
     expect(streamInstances).toHaveLength(1);
-    expect(console.warn).toHaveBeenCalledWith(
+    expect(log.warn).toHaveBeenCalledWith(
       "[pulse-core] EventEngine.start() called while the SSE stream is already active."
+    );
+  });
+
+  it("routes self-payments as payment.self exactly once", () => {
+    const engine = new EventEngine({ network: "testnet" });
+    const watcher = engine.subscribe("GSELF");
+    const selfHandler = vi.fn();
+    const receivedHandler = vi.fn();
+    const sentHandler = vi.fn();
+    const wildcardHandler = vi.fn();
+
+    watcher.on("payment.self", selfHandler);
+    watcher.on("payment.received", receivedHandler);
+    watcher.on("payment.sent", sentHandler);
+    watcher.on("*", wildcardHandler);
+
+    engine.start();
+    latestStream().handlers.onmessage({
+      type: "payment",
+      to: "GSELF",
+      from: "GSELF",
+      amount: "25",
+      asset_type: "native",
+      created_at: "2026-04-28T13:00:00.000Z",
+    });
+
+    expect(selfHandler).toHaveBeenCalledOnce();
+    expect(selfHandler).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "payment.self",
+        to: "GSELF",
+        from: "GSELF",
+        amount: "25",
+      })
+    );
+    expect(receivedHandler).not.toHaveBeenCalled();
+    expect(sentHandler).not.toHaveBeenCalled();
+    expect(wildcardHandler).toHaveBeenCalledOnce();
+    expect(wildcardHandler).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "payment.self" })
     );
   });
 
   it("reconnects with exponential backoff and emits watcher notifications", () => {
     const engine = new EventEngine({
       network: "testnet",
+      logger: log,
       reconnect: {
         initialDelayMs: 1000,
         maxDelayMs: 30000,
@@ -158,7 +313,7 @@ describe("pulse-core EventEngine", () => {
         delayMs: 1000,
       })
     );
-    expect(console.warn).toHaveBeenCalledWith(
+    expect(log.warn).toHaveBeenCalledWith(
       "[pulse-core] SSE reconnect attempt 1 scheduled in 1000ms."
     );
     expect(streamInstances).toHaveLength(1);
@@ -177,7 +332,7 @@ describe("pulse-core EventEngine", () => {
         delayMs: 2000,
       })
     );
-    expect(console.warn).toHaveBeenLastCalledWith(
+    expect(log.warn).toHaveBeenLastCalledWith(
       "[pulse-core] SSE reconnect attempt 2 scheduled in 2000ms."
     );
 
@@ -200,7 +355,7 @@ describe("pulse-core EventEngine", () => {
         attempt: 2,
       })
     );
-    expect(console.info).toHaveBeenCalledWith(
+    expect(log.info).toHaveBeenCalledWith(
       "[pulse-core] SSE reconnect succeeded on attempt 2."
     );
 
@@ -475,6 +630,21 @@ describe("pulse-core EventEngine", () => {
 
       expect(sourceHandler).toHaveBeenCalledOnce();
       expect(otherHandler).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("EventEngine constructor network validation", () => {
+    it("throws error with helpful message when network is invalid", () => {
+      expect(() => new EventEngine({ network: "invalid_network" as any }))
+        .toThrow('Unknown network: "invalid_network". Valid networks: mainnet, testnet');
+    });
+
+    it("does not throw when network is mainnet", () => {
+      expect(() => new EventEngine({ network: "mainnet" })).not.toThrow();
+    });
+
+    it("does not throw when network is testnet", () => {
+      expect(() => new EventEngine({ network: "testnet" })).not.toThrow();
     });
   });
 });
