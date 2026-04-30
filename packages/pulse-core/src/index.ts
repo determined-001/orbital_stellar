@@ -8,8 +8,8 @@ export type PaymentEventType = "payment.received" | "payment.sent";
 export type AccountOptionsEventType = "account.options_changed";
 export type WatcherNotificationType =
   | "engine.reconnecting"
-  | "engine.reconnected";
-  | 'engine.stopped' ;
+  | "engine.reconnected"
+  | "engine.stopped";
 
 export type SetOptionsSigner = {
   key: string;
@@ -48,12 +48,22 @@ export type AccountOptionsEvent = {
 
 export type NormalizedEvent = PaymentEvent | AccountOptionsEvent;
 
-export type WatcherNotification = {
-  type: WatcherNotificationType;
-  attempt: number;
-  delayMs?: number;
-  timestamp: string;
-};
+export type WatcherNotification =
+  | {
+      type: "engine.reconnecting";
+      attempt: number;
+      delayMs: number;
+      timestamp: string;
+    }
+  | {
+      type: "engine.reconnected";
+      attempt: number;
+      timestamp: string;
+    }
+  | {
+      type: "engine.stopped";
+      timestamp: string;
+    };
 
 export type ReconnectConfig = {
   initialDelayMs?: number;
