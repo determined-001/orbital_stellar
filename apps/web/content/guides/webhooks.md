@@ -41,7 +41,7 @@ Every delivery contains a `NormalizedEvent` object:
 
 ## Verifying signatures
 
-Every request includes an `X-Orbital-Signature` header containing an HMAC-SHA256 of the raw body, signed with your secret.
+Every request includes `X-Orbital-Signature` and `X-Orbital-Timestamp` headers. The signature is computed as `HMAC(secret, timestamp + "." + rawBody)`.
 
 ```typescript
 import { verifyWebhook } from '@orbital/pulse-webhooks'
@@ -52,12 +52,14 @@ const app = express()
 // Use raw body parser — do NOT use express.json() for this route
 app.post('/webhook', express.raw({ type: '*/*' }), (req, res) => {
   const sig = req.headers['x-orbital-signature'] as string
+  const timestamp = req.headers['x-orbital-timestamp'] as string
+  const payload = req.body.toString('utf8')
 
-  if (!verifyWebhook(req.body, sig, process.env.WEBHOOK_SECRET!)) {
+  const event = verifyWebhook(payload, sig, process.env.WEBHOOK_SECRET!, timestamp)
+  if (!event) {
     return res.status(401).json({ error: 'Invalid signature' })
   }
 
-  const event = JSON.parse(req.body.toString())
   // Handle the event...
 
   res.sendStatus(200)

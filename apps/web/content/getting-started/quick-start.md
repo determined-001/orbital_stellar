@@ -33,11 +33,12 @@ import { verifyWebhook } from '@orbital/pulse-webhooks'
 
 app.post('/webhook', express.raw({ type: '*/*' }), (req, res) => {
   const signature = req.headers['x-orbital-signature'] as string
-  const isValid = verifyWebhook(req.body, signature, 'my-signing-secret')
+  const timestamp = req.headers['x-orbital-timestamp'] as string
+  const payload = req.body.toString('utf8')
+  const event = verifyWebhook(payload, signature, 'my-signing-secret', timestamp)
 
-  if (!isValid) return res.status(401).send('Invalid signature')
+  if (!event) return res.status(401).send('Invalid signature')
 
-  const event = JSON.parse(req.body.toString())
   console.log('Received event:', event)
 
   res.sendStatus(200)

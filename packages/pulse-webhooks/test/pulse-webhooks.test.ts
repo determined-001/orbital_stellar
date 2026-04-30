@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { createHmac } from "crypto";
 
 import { Watcher } from "@orbital/pulse-core";
-import { WebhookDelivery } from "../src/index.js";
+import { verifyWebhook, WebhookDelivery } from "../src/index.js";
 
 const deliveryEvent = {
     type: "payment.received",
@@ -18,6 +19,12 @@ async function flushAsyncWork (): Promise<void> {
     await Promise.resolve();
 }
 
+function signWebhookPayload (secret: string, payload: string, timestamp: string): string {
+    return createHmac("sha256", secret)
+        .update(`${timestamp}.${payload}`)
+        .digest("hex");
+}
+
 describe("pulse-webhooks WebhookDelivery", () => {
     beforeEach(() => {
         vi.useFakeTimers();
@@ -30,8 +37,14 @@ describe("pulse-webhooks WebhookDelivery", () => {
     });
 
     it("delivers each event to every configured URL", () => {
+        vi.setSystemTime(new Date("2026-04-27T00:00:00.000Z"));
         const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200 });
         vi.stubGlobal("fetch", fetchMock);
+
+        const secret = "top-secret";
+        const payload = JSON.stringify(deliveryEvent);
+        const timestamp = Date.now().toString();
+        const expectedSignature = signWebhookPayload(secret, payload, timestamp);
 
         const watcher = new Watcher("GABC");
         new WebhookDelivery(watcher, {
@@ -40,7 +53,7 @@ describe("pulse-webhooks WebhookDelivery", () => {
                 "https://staging.example.com/webhooks/stellar",
                 "https://audit.example.com/webhooks/stellar",
             ],
-            secret: "top-secret",
+            secret,
         });
 
         watcher.emit("*", deliveryEvent);
@@ -49,17 +62,32 @@ describe("pulse-webhooks WebhookDelivery", () => {
         expect(fetchMock).toHaveBeenNthCalledWith(
             1,
             "https://prod.example.com/webhooks/stellar",
-            expect.objectContaining({ method: "POST", body: JSON.stringify(deliveryEvent) })
+            expect.objectContaining({
+                method: "POST",
+                body: payload,
+                headers: expect.objectContaining({
+                    "Content-Type": "application/json",
+                    "x-orbital-attempt": "1",
+                    "x-orbital-timestamp": timestamp,
+                    "x-orbital-signature": expectedSignature,
+                }),
+            })
         );
         expect(fetchMock).toHaveBeenNthCalledWith(
             2,
             "https://staging.example.com/webhooks/stellar",
-            expect.objectContaining({ method: "POST", body: JSON.stringify(deliveryEvent) })
+            expect.objectContaining({
+                method: "POST",
+                body: payload,
+            })
         );
         expect(fetchMock).toHaveBeenNthCalledWith(
             3,
             "https://audit.example.com/webhooks/stellar",
-            expect.objectContaining({ method: "POST", body: JSON.stringify(deliveryEvent) })
+            expect.objectContaining({
+                method: "POST",
+                body: payload,
+            })
         );
     });
 
@@ -133,5 +161,35 @@ describe("pulse-webhooks WebhookDelivery", () => {
         await flushAsyncWork();
 
         expect(fetchMock).toHaveBeenCalledTimes(2);
+    });
+});
+
+describe("pulse-webhooks verifyWebhook", () => {
+    it("returns parsed event when signature matches timestamped payload", () => {
+        const payload = JSON.stringify(deliveryEvent);
+        const timestamp = "1714176000000";
+        const signature = signWebhookPayload("top-secret", payload, timestamp);
+
+        const event = verifyWebhook(payload, signature, "top-secret", timestamp);
+
+        expect(event).toEqual(deliveryEvent);
+    });
+
+    it("returns null when timestamp is missing or invalid", () => {
+        const payload = JSON.stringify(deliveryEvent);
+        const signature = signWebhookPayload("top-secret", payload, "1714176000000");
+
+        expect(verifyWebhook(payload, signature, "top-secret", "")).toBeNull();
+        expect(verifyWebhook(payload, signature, "top-secret", "not-a-number")).toBeNull();
+    });
+
+    it("returns null when signature does not match timestamped payload", () => {
+        const payload = JSON.stringify(deliveryEvent);
+        const timestamp = "1714176000000";
+        const signature = signWebhookPayload("top-secret", payload, timestamp);
+
+        expect(verifyWebhook(payload, signature, "wrong-secret", timestamp)).toBeNull();
+        expect(verifyWebhook(`${payload}x`, signature, "top-secret", timestamp)).toBeNull();
+        expect(verifyWebhook(payload, signature, "top-secret", "1714176000001")).toBeNull();
     });
 });
