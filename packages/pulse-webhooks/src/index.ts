@@ -21,6 +21,7 @@ export class WebhookDelivery {
     this.config = {
       retries: 3,
       deliveryTimeoutMs: 10000,
+      random: Math.random,
       ...config,
       urls: Array.isArray(config.url) ? [...config.url] : [config.url],
     };
@@ -46,7 +47,8 @@ export class WebhookDelivery {
     if (this.watcher.stopped) return;
 
     const payload = JSON.stringify(event);
-    const signature = this.sign(payload);
+    const timestamp = Date.now().toString();
+    const signature = this.sign(payload, timestamp);
     const controller = new AbortController();
     const timeoutMs = this.config.deliveryTimeoutMs;
     const abortTimer = setTimeout(() => controller.abort(), timeoutMs);
@@ -57,6 +59,7 @@ export class WebhookDelivery {
         headers: {
           "Content-Type": "application/json",
           "x-orbital-signature": signature,
+          "x-orbital-timestamp": timestamp,
           "x-orbital-attempt": String(attempt),
         },
         body: payload,
@@ -70,7 +73,8 @@ export class WebhookDelivery {
       const errorMessage = this.getErrorMessage(err);
 
       if (attempt < this.config.retries) {
-        const delay = Math.pow(2, attempt - 1) * 1000;
+        const exponentialDelay = Math.pow(2, attempt - 1) * 1000;
+        const delay = Math.floor(this.config.random() * exponentialDelay);
         const retryTimer = setTimeout(() => {
           this.retryTimers.delete(retryTimer);
           void this.deliverToUrl(event, url, attempt + 1);
@@ -107,9 +111,11 @@ export class WebhookDelivery {
     return err instanceof Error ? err.message : "Unknown error";
   }
 
-  private sign (payload: string): string {
+  private sign (payload: string, timestamp: string): string {
+    const signedPayload = `${timestamp}.${payload}`;
+
     return createHmac("sha256", this.config.secret)
-      .update(payload)
+      .update(signedPayload)
       .digest("hex");
   }
 }
@@ -119,10 +125,13 @@ export class WebhookDelivery {
 export function verifyWebhook (
   payload: string,
   signature: string,
-  secret: string
+  secret: string,
+  timestamp: string
 ): NormalizedEvent | null {
+  if (!/^\d+$/.test(timestamp)) return null;
+
   const expected = createHmac("sha256", secret)
-    .update(payload)
+    .update(`${timestamp}.${payload}`)
     .digest("hex");
 
   const expectedBuffer = Buffer.from(expected, "hex");
