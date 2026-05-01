@@ -31,6 +31,9 @@ watcher.on("payment.received", (event) => {
 watcher.on("payment.sent", (event) => {
   console.log(`Sent ${event.amount} ${event.asset} to ${event.to}`);
 });
+watcher.on("payment.self", (event) => {
+  console.log(`Self-payment of ${event.amount} ${event.asset}`);
+});
 ```
 
 ## API
@@ -40,6 +43,7 @@ watcher.on("payment.sent", (event) => {
 | Field | Type | Description |
 |---|---|---|
 | `config.network` | `"mainnet" \| "testnet"` | Which Stellar network to connect to |
+| `config.horizonUrl` | `string` | Override the Horizon server URL (e.g. private node, regional mirror, futurenet). When set, `network` is still used for chain context but the connection is made to this URL |
 | `config.reconnect.initialDelayMs` | `number` | First retry delay (default `1000`) |
 | `config.reconnect.maxDelayMs` | `number` | Backoff ceiling (default `30_000`) |
 | `config.reconnect.maxRetries` | `number` | Retry budget (default `Infinity`) |
@@ -62,6 +66,7 @@ Stops and removes the watcher for the given address.
 |---|---|---|
 | `payment.received` | `NormalizedEvent` | The address is the recipient of a payment |
 | `payment.sent` | `NormalizedEvent` | The address is the sender of a payment |
+| `payment.self` | `NormalizedEvent` | The address is both sender and recipient of a payment |
 | `*` | `NormalizedEvent` | Any event on this address |
 | `engine.reconnecting` | `WatcherNotification` | The engine is retrying its upstream connection |
 | `engine.reconnected` | `WatcherNotification` | Reconnect succeeded |
@@ -70,7 +75,7 @@ Stops and removes the watcher for the given address.
 
 ```ts
 type NormalizedEvent = {
-  type: "payment.received" | "payment.sent";
+  type: "payment.received" | "payment.sent" | "payment.self";
   to: string;       // Stellar public key
   from: string;     // Stellar public key
   amount: string;   // Decimal string (never a JS number)
@@ -86,6 +91,28 @@ type NormalizedEvent = {
 - **Watchers are cheap.** They do nothing until events arrive for their address. Create thousands without worrying about overhead.
 - **Cleanup is mandatory.** Always call `engine.stop()` in your shutdown path. Watchers clean themselves up via `addStopHandler`.
 - **The raw record is preserved.** `event.raw` contains the original Horizon payload. If Orbital's normalization loses information you need, it's still there.
+
+## Benchmark
+
+`pulse-core` includes a reproducible throughput benchmark at `bench/throughput.ts`.
+
+Run it with:
+
+```bash
+pnpm --filter @orbital/pulse-core exec node --expose-gc --import tsx bench/throughput.ts --records=100000
+```
+
+The harness subscribes `N` watchers and replays `M` synthetic payment records through the engine's normalize + route path, then reports memory and routed events/sec.
+
+### Headline numbers (Node v25.1.0, `M=100000`)
+
+| Watchers (`N`) | Routed events | Duration (ms) | Events/sec | Subscribed heap (MB) | Post-replay heap (MB) | Post-replay RSS (MB) |
+|---|---:|---:|---:|---:|---:|---:|
+| 1,000 | 400,000 | 258.05 | 1,550,110.02 | 17.56 | 17.44 | 144.13 |
+| 5,000 | 400,000 | 246.09 | 1,625,418.95 | 21.04 | 20.29 | 148.28 |
+| 10,000 | 400,000 | 254.38 | 1,572,441.39 | 25.36 | 23.85 | 160.80 |
+
+Results vary by CPU, Node version, and runtime load; rerun locally to compare changes over time.
 
 ## Current limitations
 
