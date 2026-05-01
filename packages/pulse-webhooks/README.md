@@ -42,11 +42,12 @@ import express from "express";
 
 const app = express();
 
-app.post("/hooks/stellar", express.text({ type: "*/*" }), (req, res) => {
+app.post("/hooks/stellar", express.raw({ type: "application/json" }), (req, res) => {
   const signature = req.header("x-orbital-signature");
-  if (!signature) return res.sendStatus(400);
+  const timestamp = req.header("x-orbital-timestamp");
+  if (!signature || !timestamp) return res.sendStatus(400);
 
-  const event = verifyWebhook(req.body, signature, process.env.WEBHOOK_SECRET!);
+  const event = verifyWebhook(req.body, signature, process.env.WEBHOOK_SECRET!, timestamp);
   if (!event) return res.sendStatus(401);
 
   // event is a verified NormalizedEvent
@@ -69,9 +70,9 @@ Attaches a delivery driver to a `Watcher`. Every event the watcher emits is deli
 | `config.deliveryTimeoutMs` | `number` | `10_000` | Abort threshold for each HTTP attempt |
 | `config.allowPrivateNetworks` | `boolean` | `false` | If true, bypass SSRF checks for local/private IP ranges |
 
-### `verifyWebhook(payload, signature, secret)` → `NormalizedEvent | null`
+### `verifyWebhook(payload, signature, secret, timestamp)` → `NormalizedEvent | null`
 
-Verifies that `payload` was signed with `secret`. Returns the parsed event on success, `null` on any failure (bad signature, malformed JSON, length mismatch).
+Verifies that `payload` was signed with `secret` using `timestamp + "." + payload`. Returns the parsed event on success, `null` on any failure (bad signature, malformed JSON, invalid timestamp, length mismatch).
 
 Uses `crypto.timingSafeEqual` under the hood — do not roll your own comparison.
 
@@ -81,7 +82,8 @@ Uses `crypto.timingSafeEqual` under the hood — do not roll your own comparison
 - **Content-Type:** `application/json`
 - **Body:** The full `NormalizedEvent`, JSON-serialized
 - **Headers:**
-  - `x-orbital-signature`: hex-encoded HMAC-SHA256 of the raw body
+  - `x-orbital-signature`: hex-encoded HMAC-SHA256 of `x-orbital-timestamp + "." + raw body`
+  - `x-orbital-timestamp`: Unix epoch milliseconds as a string (for example: `1714176000000`)
   - `x-orbital-attempt`: `1`, `2`, … up to `retries`
 - **Success:** Any 2xx response
 - **Retry:** Any non-2xx, network error, or timeout. Backoff is exponential: `2^(attempt-1) × 1000 ms`.
@@ -92,7 +94,7 @@ Uses `crypto.timingSafeEqual` under the hood — do not roll your own comparison
 - **Verify every signature.** `verifyWebhook` uses constant-time comparison.
 - **Treat the secret like a password.** Store it in a secrets manager, not a config file.
 - **Enforce HTTPS.** The reference server (`apps/server`) rejects non-HTTPS URLs at registration time.
-- **Bound the payload.** On the receiver side, cap body size with `express.json({ limit: "100kb" })` or equivalent.
+- **Bound the payload.** On the receiver side, cap body size with `express.raw({ type: "application/json", limit: "100kb" })` or equivalent.
 
 ## Network safety
 
