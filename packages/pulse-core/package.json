@@ -9,7 +9,8 @@
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "test:integration": "INTEGRATION_TESTS=true vitest run test/integration",
-    "typecheck": "tsc --noEmit -p tsconfig.json"
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "bench:throughput": "tsx bench/throughput.ts"
   },
   "dependencies": {
     "@stellar/stellar-sdk": "^15.0.1"

@@ -114,7 +114,6 @@ export function createRoutes(registry: WebhookRegistry, engine: EventEngine, act
     res.setHeader("Connection", "keep-alive");
     res.flushHeaders();
 
-    // Track this connection for clean shutdown
     activeSSEConnections.add(res);
 
     const watcher = engine.subscribe(address);
@@ -122,8 +121,8 @@ export function createRoutes(registry: WebhookRegistry, engine: EventEngine, act
     const handler = (event: unknown) => {
       try {
         res.write(`data: ${JSON.stringify(event)}\n\n`);
-      } catch (error) {
-        console.error(`[sse] Error writing to client ${address}:`, error);
+      } catch (err) {
+        req.log.error({ address, err }, "Error writing SSE event to client");
       }
     };
 
@@ -132,30 +131,20 @@ export function createRoutes(registry: WebhookRegistry, engine: EventEngine, act
     const heartbeat = setInterval(() => {
       try {
         res.write(`: heartbeat\n\n`);
-      } catch (error) {
-        console.error(`[sse] Error sending heartbeat to ${address}:`, error);
+      } catch (err) {
+        req.log.error({ address, err }, "Error sending SSE heartbeat");
       }
     }, 30000);
 
     req.on("close", () => {
       clearInterval(heartbeat);
       watcher.removeListener("*", handler);
-      // Fully remove the watcher from the engine so no dead watchers remain
-      engine.unsubscribe(address);
-      // Remove from active connections tracking
-      activeSSEConnections.delete(res);
-      console.log(`[sse] Client disconnected from ${address}`);
-    });
-
-    req.on("aborted", () => {
-      clearInterval(heartbeat);
-      watcher.removeListener("*", handler);
       engine.unsubscribe(address);
       activeSSEConnections.delete(res);
-      console.log(`[sse] Client aborted connection to ${address}`);
+      req.log.info({ address }, "SSE client disconnected");
     });
 
-    console.log(`[sse] Client connected to ${address}`);
+    req.log.info({ address }, "SSE client connected");
   });
 
   return router;

@@ -62,20 +62,26 @@ A standalone utility for verifying incoming webhook requests on your server.
 import { verifyWebhook } from '@orbital/pulse-webhooks'
 
 // req.body must be the raw Buffer (use express.raw() middleware)
-const isValid = verifyWebhook(rawBody, signature, secret)
+const event = verifyWebhook(
+  rawBody.toString('utf8'),
+  signature,
+  secret,
+  timestamp
+)
 ```
 
 ### Parameters
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| `rawBody` | `Buffer \| string` | The raw request body |
+| `payload` | `string` | The raw request body as a UTF-8 string |
 | `signature` | `string` | Value of `X-Orbital-Signature` header |
 | `secret` | `string` | The signing secret used at registration |
+| `timestamp` | `string` | Value of `X-Orbital-Timestamp` header (Unix epoch milliseconds) |
 
 ### Returns
 
-`boolean` — `true` if the signature matches, `false` otherwise.
+`NormalizedEvent \| null` — Parsed event when verification succeeds, `null` otherwise.
 
 > Uses Node.js `crypto.timingSafeEqual` to prevent timing attacks.
 
@@ -86,8 +92,7 @@ Every webhook POST includes:
 | Header | Description |
 |--------|-------------|
 | `Content-Type` | `application/json` |
-| `X-Orbital-Signature` | HMAC-SHA256 hex digest of the body |
-| `X-Orbital-Event` | Event type (e.g. `payment.received`) |
-| `X-Orbital-Timestamp` | ISO 8601 delivery time |
+| `X-Orbital-Signature` | HMAC-SHA256 hex digest of `X-Orbital-Timestamp + "." + raw body` |
+| `X-Orbital-Timestamp` | Unix epoch milliseconds as a string |
 
 When `url` is an array, each URL is delivered in parallel and retried independently.
