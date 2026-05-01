@@ -25,6 +25,7 @@ export class WebhookDelivery {
       ...config,
       urls: Array.isArray(config.url) ? [...config.url] : [config.url],
     };
+    this.config.maxConcurrentRetries = Math.max(1, this.config.maxConcurrentRetries);
 
     this.watcher.addStopHandler(() => {
       this.clearRetryTimers();
@@ -73,16 +74,18 @@ export class WebhookDelivery {
       if (attempt < this.config.retries) {
         // Enforce the retry cap — evict the oldest pending retry when at limit.
         if (this.retryTimers.size >= this.config.maxConcurrentRetries) {
-          const [oldestTimer, oldest] = this.retryTimers.entries().next().value as [ReturnType<typeof setTimeout>, { event: NormalizedEvent; url: string }];
-          clearTimeout(oldestTimer);
-          this.retryTimers.delete(oldestTimer);
+          // Evict the newest (last-inserted) retry — it has waited the least, so dropping it wastes the least elapsed time.
+          const newestTimer = [...this.retryTimers.keys()].at(-1)!;
+          const newest = this.retryTimers.get(newestTimer)!;
+          clearTimeout(newestTimer);
+          this.retryTimers.delete(newestTimer);
           this.watcher.emit("webhook.dropped", {
-            ...oldest.event,
+            ...newest.event,
             raw: {
               reason: "retry_cap_exceeded",
-              url: oldest.url,
+              url: newest.url,
               maxConcurrentRetries: this.config.maxConcurrentRetries,
-              originalEvent: oldest.event,
+              originalEvent: newest.event,
             },
           } as unknown as NormalizedEvent);
         }
