@@ -8,11 +8,11 @@ This is the binary that a self-hoster runs. Everything else in Orbital is a libr
 
 | Method | Path | Description |
 |---|---|---|
-| `POST` | `/webhooks/register` | Register an address → webhook URL mapping |
-| `DELETE` | `/webhooks/:address` | Unregister an address |
-| `GET` | `/webhooks` | List registered webhooks (secrets stripped) |
-| `GET` | `/webhooks/:address` | Get a single registration |
-| `GET` | `/events/:address` | Server-Sent Events stream for live events |
+| `POST` | `/v1/webhooks/register` | Register an address → webhook URL mapping |
+| `DELETE` | `/v1/webhooks/:address` | Unregister an address |
+| `GET` | `/v1/webhooks` | List registered webhooks (secrets stripped) |
+| `GET` | `/v1/webhooks/:address` | Get a single registration |
+| `GET` | `/v1/events/:address` | Server-Sent Events stream for live events |
 | `GET` | `/health` | Liveness probe |
 
 All endpoints except `/health` require an API key — either `Authorization: Bearer <key>` (REST) or `?token=<key>` (SSE, since browsers cannot set headers on `EventSource`).
@@ -29,7 +29,7 @@ The server listens on `PORT` (default `3000`). Point your client at `http://loca
 ## Register a webhook
 
 ```bash
-curl -X POST http://localhost:3000/webhooks/register \
+curl -X POST http://localhost:3000/v1/webhooks/register \
   -H "Authorization: Bearer dev-key" \
   -H "Content-Type: application/json" \
   -d '{
@@ -42,7 +42,7 @@ curl -X POST http://localhost:3000/webhooks/register \
 ## Subscribe over SSE
 
 ```bash
-curl -N "http://localhost:3000/events/GABC...?token=dev-key"
+curl -N "http://localhost:3000/v1/events/GABC...?token=dev-key"
 ```
 
 Or from the browser, via `@orbital/pulse-notify`:
