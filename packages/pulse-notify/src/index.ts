@@ -11,8 +11,8 @@ export type UseEventConfig = {
   token?: string;
 };
 
-export type EventState = {
-  event: NormalizedEvent | null;
+export type EventState<T extends NormalizedEvent = NormalizedEvent> = {
+  event: T | null;
   connected: boolean;
   error: string | null;
 };
@@ -26,17 +26,19 @@ export type EventState = {
 // Prefer the primitives-first overload when writing inline call sites —
 // it is stable by construction and never needs useMemo.
 
-export function useStellarEvent(config: UseEventConfig): EventState;
-export function useStellarEvent(
+export function useStellarEvent<T extends NormalizedEvent = NormalizedEvent>(
+  config: UseEventConfig
+): EventState<T>;
+export function useStellarEvent<T extends NormalizedEvent = NormalizedEvent>(
   serverUrl: string,
   address: string,
   options?: Pick<UseEventConfig, "event" | "token">
-): EventState;
-export function useStellarEvent(
+): EventState<T>;
+export function useStellarEvent<T extends NormalizedEvent = NormalizedEvent>(
   configOrUrl: UseEventConfig | string,
   address?: string,
   options?: Pick<UseEventConfig, "event" | "token">
-): EventState {
+): EventState<T> {
   // Normalise the two call signatures down to four primitives.
   const serverUrl =
     typeof configOrUrl === "string" ? configOrUrl : configOrUrl.serverUrl;
@@ -58,7 +60,7 @@ export function useStellarEvent(
     ? [...eventType].sort().join(",")
     : eventType;
 
-  const [state, setState] = useState<EventState>({
+  const [state, setState] = useState<EventState<T>>({
     event: null,
     connected: false,
     error: null,
@@ -88,7 +90,7 @@ export function useStellarEvent(
 
         if (!allowed) return;
 
-        setState((prev) => ({ ...prev, event: incoming }));
+        setState((prev) => ({ ...prev, event: incoming as T }));
       } catch {
         setState((prev) => ({ ...prev, error: "Failed to parse event" }));
       }
@@ -116,7 +118,11 @@ export function useStellarEvent(
 // Convenience hook — only listens to payment events
 
 export function useStellarPayment(serverUrl: string, address: string) {
-  return useStellarEvent(serverUrl, address, { event: "payment.received" });
+  return useStellarEvent<Extract<NormalizedEvent, { type: "payment.received" }>>(
+    serverUrl,
+    address,
+    { event: "payment.received" }
+  );
 }
 
 // --- useStellarActivity ---
