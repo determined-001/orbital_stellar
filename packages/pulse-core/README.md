@@ -50,7 +50,7 @@ watcher.on("payment.self", (event) => {
 
 ### `engine.start()` / `engine.stop()`
 
-Open or close the SSE stream. Idempotent — calling `start()` twice logs a warning and returns.
+Open or close the SSE stream. Idempotent — calling `start()` twice logs a warning and returns. `engine.stop()` emits `engine.stopped` to all active watchers before tearing them down.
 
 ### `engine.subscribe(address)` → `Watcher`
 
@@ -70,6 +70,7 @@ Stops and removes the watcher for the given address.
 | `*` | `NormalizedEvent` | Any event on this address |
 | `engine.reconnecting` | `WatcherNotification` | The engine is retrying its upstream connection |
 | `engine.reconnected` | `WatcherNotification` | Reconnect succeeded |
+| `engine.stopped` | `WatcherNotification` | `engine.stop()` was called; emitted before watchers are torn down |
 
 ### `NormalizedEvent` shape
 
