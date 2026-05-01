@@ -1,4 +1,5 @@
 import { createHmac } from "crypto";
+import type { Logger } from "pino";
 import { EventEngine } from "@orbital/pulse-core";
 import { WebhookDelivery } from "@orbital/pulse-webhooks";
 
@@ -31,9 +32,11 @@ function hashSecret(secret: string): string {
 export class WebhookRegistry {
   private registrations: Map<string, WebhookRegistration> = new Map();
   private engine: EventEngine;
+  private log: Logger;
 
-  constructor(engine: EventEngine) {
+  constructor(engine: EventEngine, log: Logger) {
     this.engine = engine;
+    this.log = log;
   }
 
   register(address: string, url: string, secret: string): WebhookRegistrationPublic {
@@ -51,8 +54,9 @@ export class WebhookRegistry {
     const delivery = new WebhookDelivery(watcher, { url, secret });
 
     // Use watcher.once so this listener cannot accumulate on re-register
-    watcher.once("webhook.failed", (event) => {
-      console.error(`[registry] Webhook delivery failed for ${address}:`, event.raw);
+    watcher.once("webhook.failed", (event: unknown) => {
+      const raw = (event as { raw?: unknown })?.raw;
+      this.log.error({ address, raw }, "Webhook delivery failed");
     });
 
     const registration: WebhookRegistration = {
@@ -64,7 +68,7 @@ export class WebhookRegistry {
     };
 
     this.registrations.set(address, registration);
-    console.log(`[registry] Registered ${address} → ${url}`);
+    this.log.info({ address, url }, "Registered webhook");
     return this.toPublic(registration);
   }
 
@@ -74,7 +78,7 @@ export class WebhookRegistry {
     // Stopping the watcher clears its retry timers via addStopHandler in WebhookDelivery
     this.engine.unsubscribe(address);
     this.registrations.delete(address);
-    console.log(`[registry] Unregistered ${address}`);
+    this.log.info({ address }, "Unregistered webhook");
     return true;
   }
 

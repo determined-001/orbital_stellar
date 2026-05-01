@@ -80,12 +80,48 @@ Shorthand for all events on an address. Equivalent to `useStellarEvent(serverUrl
 ## Return shape
 
 ```ts
-type EventState = {
-  event: NormalizedEvent | null; // Latest event, or null before first arrival
-  connected: boolean;            // True once the SSE handshake completes
-  error: string | null;          // Error message if the connection fails
+type EventState<T extends NormalizedEvent = NormalizedEvent> = {
+  event: T | null;     // Latest event, or null before first arrival
+  connected: boolean;  // True once the SSE handshake completes
+  error: string | null; // Error message if the connection fails
 };
 ```
+
+## Type narrowing
+
+`useStellarEvent` is generic — pass a narrower union as `T` to get full IDE support and avoid manual casts. Use TypeScript's `Extract` to pull specific event types out of `NormalizedEvent`:
+
+```tsx
+import type { NormalizedEvent } from "@orbital/pulse-core";
+import { useStellarEvent } from "@orbital/pulse-notify";
+
+type WalletEvents = Extract<
+  NormalizedEvent,
+  { type: "payment.received" | "payment.sent" | "trustline.added" }
+>;
+
+function Wallet({ address }: { address: string }) {
+  const { event } = useStellarEvent<WalletEvents>(
+    "https://events.example.com",
+    address,
+    { event: ["payment.received", "payment.sent", "trustline.added"] }
+  );
+
+  if (!event) return null;
+
+  // event.type is now "payment.received" | "payment.sent" | "trustline.added"
+  // — TS narrows the rest of the shape per branch.
+  switch (event.type) {
+    case "payment.received":
+    case "payment.sent":
+      return <div>{event.amount} {event.asset}</div>;
+    case "trustline.added":
+      return <div>Added {event.asset}</div>;
+  }
+}
+```
+
+The default `T = NormalizedEvent` keeps the existing untyped behavior — pass `<T>` only when you want narrowing.
 
 Every render returns the *most recent* event. If you need history, accumulate it yourself in component state:
 
