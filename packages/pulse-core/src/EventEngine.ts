@@ -1,23 +1,42 @@
 import { Horizon } from "@stellar/stellar-sdk";
 import { Watcher } from "./Watcher.js";
 import type {
+  AccountCreatedEvent,
+  AccountEventType,
+  AccountMergeEvent,
   AccountOptionsChanges,
   AccountOptionsEvent,
-  AccountOptionsEventType,
+  BumpSequenceEvent,
+  BumpSequenceEventType,
   CoreConfig,
+  DataEvent,
+  DataEventType,
+  EngineStatus,
   Network,
   NormalizedEvent,
+  OfferEvent,
+  OfferEventType,
   PaymentEvent,
   PaymentEventType,
   ReconnectConfig,
+  SubscribeOptions,
+  TrustlineEvent,
+  TrustlineEventType,
   WatcherNotification,
   WatcherNotificationType,
-  DataEvent,
-  DataEventType,
 } from "./index.js";
+import { UnknownNetworkError } from "./index.js";
 
 type PendingPaymentEvent = Omit<PaymentEvent, "type"> & { type: "unknown" };
-type NormalizedEventOrPending = PendingPaymentEvent | AccountOptionsEvent | DataEvent;
+type NormalizedEventOrPending =
+  | PendingPaymentEvent
+  | AccountOptionsEvent
+  | AccountCreatedEvent
+  | TrustlineEvent
+  | AccountMergeEvent
+  | OfferEvent
+  | BumpSequenceEvent
+  | DataEvent;
 
 type StreamCallbacks = {
   onmessage: (record: unknown) => void;
@@ -39,6 +58,10 @@ const DEFAULT_RECONNECT: Required<ReconnectConfig> = {
   maxRetries: Number.POSITIVE_INFINITY,
 };
 
+const STELLAR_MAX_TRUSTLINE_LIMIT = "922337203685.4775807";
+
+const noop = { info: () => {}, warn: () => {}, error: () => {} };
+
 export class EventEngine {
   private server: Horizon.Server;
   private registry: Map<string, Watcher> = new Map();
@@ -48,48 +71,110 @@ export class EventEngine {
   private pendingReconnectSuccessAttempt: number | null = null;
   private readonly reconnectConfig: Required<ReconnectConfig>;
   private isRunning = false;
+  private filters: Map<string, (event: NormalizedEvent) => boolean> = new Map();
+  private log: Required<NonNullable<CoreConfig["logger"]>>;
+  private lastEventAt: string | null = null;
 
+  /**
+   * Creates a new EventEngine instance.
+   * @param config - The core configuration for the engine.
+   */
   constructor(config: CoreConfig) {
-    this.server = new Horizon.Server(HORIZON_URLS[config.network]);
+    let horizonUrl: string;
+    if (config.horizonUrl !== undefined) {
+      try {
+        const parsed = new URL(config.horizonUrl);
+        if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+          throw new Error("must be an http or https URL");
+        }
+      } catch (err) {
+        throw new Error(`Invalid horizonUrl: ${(err as Error).message}`);
+      }
+      horizonUrl = config.horizonUrl;
+    } else {
+      const fromNetwork = HORIZON_URLS[config.network];
+      if (!fromNetwork) {
+        throw new UnknownNetworkError(config.network);
+      }
+      horizonUrl = fromNetwork;
+    }
+    this.server = new Horizon.Server(horizonUrl);
     this.reconnectConfig = {
       ...DEFAULT_RECONNECT,
       ...config.reconnect,
     };
+    this.log = config.logger ?? noop;
   }
 
-  subscribe(address: string): Watcher {
+  /**
+   * Subscribes to events for a given Stellar address.
+   * Returns an existing Watcher if one already exists for the address.
+   * @param address - The Stellar address to watch.
+   * @param options - Optional subscription options, including a filter predicate.
+   * @returns The Watcher instance for the address.
+   */
+  subscribe(address: string, options?: SubscribeOptions): Watcher {
     const existingWatcher = this.registry.get(address);
     if (existingWatcher) {
+      if (options?.filter) {
+        this.log.warn(
+          `[pulse-core] subscribe() called for address ${address} which already has an active watcher — filter option ignored.`
+        );
+      }
       return existingWatcher;
     }
 
     const watcher = new Watcher(address);
+    if (options?.filter) {
+      this.filters.set(address, options.filter);
+    }
     watcher.addStopHandler(() => {
       this.registry.delete(address);
+      this.filters.delete(address);
     });
     this.registry.set(address, watcher);
     return watcher;
   }
 
+  /**
+   * Unsubscribes from events for a given Stellar address and stops its watcher.
+   * @param address - The Stellar address to stop watching.
+   */
   unsubscribe(address: string): void {
     this.registry.get(address)?.stop();
   }
 
+  /**
+   * Starts the SSE stream to listen for Stellar network events.
+   * No-op if the stream is already running.
+   */
   start(): void {
     if (this.isRunning || this.reconnectTimer) {
-      console.warn(
-        "[pulse-core] EventEngine.start() called while the SSE stream is already active."
-      );
+      this.log.warn("[pulse-core] EventEngine.start() called while the SSE stream is already active.");
       return;
     }
 
     this.openStream(false);
   }
 
+  status(): EngineStatus {
+    return {
+      running: this.isRunning,
+      watcherCount: this.registry.size,
+      lastEventAt: this.lastEventAt,
+      reconnectAttempt: this.reconnectAttempt,
+    };
+  }
+
+  /**
+   * Stops the SSE stream and all active watchers.
+   * Cleans up all resources and resets reconnection state.
+   */
   stop(): void {
     this.clearReconnectTimer();
     this.pendingReconnectSuccessAttempt = null;
     this.reconnectAttempt = 0;
+    this.lastEventAt = null;
     this.closeStream();
     this.isRunning = false;
 
@@ -102,23 +187,25 @@ export class EventEngine {
     this.closeStream();
     this.clearReconnectTimer();
     this.isRunning = true;
+    // Capture the current attempt number for the reconnect success notification.
+    // This value matches the attempt number emitted in engine.reconnecting.
     this.pendingReconnectSuccessAttempt = isReconnect
       ? this.reconnectAttempt
       : null;
 
     const callbacks: StreamCallbacks = {
       onmessage: (record) => {
+        this.lastEventAt = new Date().toISOString();
         if (this.pendingReconnectSuccessAttempt !== null) {
+          // Report the same attempt number that was emitted in engine.reconnecting.
           const attempt = this.pendingReconnectSuccessAttempt;
           this.pendingReconnectSuccessAttempt = null;
           this.reconnectAttempt = 0;
-          console.info(
-            `[pulse-core] SSE reconnect succeeded on attempt ${attempt}.`
-          );
+          this.log.info(`[pulse-core] SSE reconnect succeeded on attempt ${attempt}.`);
           this.notifyWatchers("engine.reconnected", {
             type: "engine.reconnected",
             attempt,
-            timestamp: new Date().toISOString(),
+            emittedAt: new Date().toISOString(),
           });
         }
 
@@ -130,8 +217,8 @@ export class EventEngine {
         this.route(event);
       },
       onerror: (error) => {
-        console.error("[pulse-core] SSE error:", error);
-        this.handleStreamError();
+        this.log.error(`[pulse-core] SSE error: ${error}`);
+        this.handleStreamError(error);
       },
     };
 
@@ -141,7 +228,7 @@ export class EventEngine {
       .stream(callbacks);
   }
 
-  private handleStreamError(): void {
+  private handleStreamError(error?: unknown): void {
     if (this.reconnectTimer) {
       return;
     }
@@ -152,33 +239,132 @@ export class EventEngine {
 
     const nextAttempt = this.reconnectAttempt + 1;
     if (nextAttempt > this.reconnectConfig.maxRetries) {
-      console.error(
-        `[pulse-core] SSE reconnect stopped after ${this.reconnectAttempt} failed attempts.`
-      );
+      this.log.error(`[pulse-core] SSE reconnect stopped after ${this.reconnectAttempt} failed attempts.`);
       return;
     }
 
     this.reconnectAttempt = nextAttempt;
 
-    const delayMs = Math.min(
-      this.reconnectConfig.initialDelayMs * 2 ** (nextAttempt - 1),
-      this.reconnectConfig.maxDelayMs
-    );
+    const isRateLimited = this.isRateLimitError(error);
 
-    console.warn(
-      `[pulse-core] SSE reconnect attempt ${nextAttempt} scheduled in ${delayMs}ms.`
-    );
-    this.notifyWatchers("engine.reconnecting", {
-      type: "engine.reconnecting",
-      attempt: nextAttempt,
-      delayMs,
-      timestamp: new Date().toISOString(),
-    });
+    let delayMs: number;
+    if (isRateLimited) {
+      const retryAfterMs = this.parseRetryAfterMs(error);
+      delayMs = retryAfterMs ?? 60000;
+
+      this.log.warn(`[pulse-core] SSE rate limited by Horizon, reconnect scheduled in ${delayMs}ms.`);
+      this.notifyWatchers("engine.rate_limited", {
+        type: "engine.rate_limited",
+        attempt: nextAttempt,
+        delayMs,
+        emittedAt: new Date().toISOString(),
+      });
+    } else {
+      const exponentialDelay = Math.min(
+        this.reconnectConfig.initialDelayMs * 2 ** (nextAttempt - 1),
+        this.reconnectConfig.maxDelayMs
+      );
+      delayMs = Math.floor(Math.random() * exponentialDelay);
+
+      // Log and emit the attempt number that will be used for this reconnect cycle.
+      // This same number will appear in the engine.reconnected notification if successful.
+      this.log.warn(`[pulse-core] SSE reconnect attempt ${nextAttempt} scheduled in ${delayMs}ms.`);
+      this.notifyWatchers("engine.reconnecting", {
+        type: "engine.reconnecting",
+        attempt: nextAttempt,
+        delayMs,
+        emittedAt: new Date().toISOString(),
+      });
+    }
 
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
       this.openStream(true);
     }, delayMs);
+  }
+
+  private isRateLimitError(error: unknown): boolean {
+    const status = this.extractStatus(error);
+    return status === 429;
+  }
+
+  private extractStatus(error: unknown): number | undefined {
+    const e = error as Record<string, unknown>;
+    if (typeof e.status === "number") {
+      return e.status;
+    }
+    if (typeof e.statusCode === "number") {
+      return e.statusCode;
+    }
+
+    const response = e.response as Record<string, unknown> | undefined;
+    if (response) {
+      if (typeof response.status === "number") {
+        return response.status;
+      }
+      if (typeof response.statusCode === "number") {
+        return response.statusCode;
+      }
+    }
+
+    return undefined;
+  }
+
+  private parseRetryAfterMs(error: unknown): number | null {
+    const header = this.getHeaderValue(error, "Retry-After");
+    if (!header) {
+      return null;
+    }
+
+    const seconds = Number.parseInt(header, 10);
+    if (!Number.isNaN(seconds)) {
+      return seconds * 1000;
+    }
+
+    const date = new Date(header).getTime();
+    return Number.isNaN(date) ? null : Math.max(date - Date.now(), 0);
+  }
+
+  private getHeaderValue(error: unknown, headerName: string): string | null {
+    const e = error as Record<string, unknown>;
+    const directHeader = typeof e[headerName.toLowerCase()] === "string"
+      ? (e[headerName.toLowerCase()] as string)
+      : typeof e[headerName] === "string"
+      ? (e[headerName] as string)
+      : null;
+    if (directHeader) {
+      return directHeader;
+    }
+
+    const response = e.response as Record<string, unknown> | undefined;
+    const candidates = [e.headers, response?.headers];
+
+    for (const headers of candidates) {
+      if (!headers || typeof headers !== "object") {
+        continue;
+      }
+
+      if (typeof (headers as any).get === "function") {
+        const value = (headers as any).get(headerName) ??
+          (headers as any).get(headerName.toLowerCase());
+        if (typeof value === "string") {
+          return value;
+        }
+      }
+
+      const value =
+        typeof (headers as any)[headerName] === "string"
+          ? (headers as any)[headerName]
+          : typeof (headers as any)[headerName.toLowerCase()] === "string"
+          ? (headers as any)[headerName.toLowerCase()]
+          : null;
+
+      if (typeof value === "string") {
+        return value;
+      }
+    }
+
+    return null;
   }
 
   private closeStream(): void {
@@ -216,10 +402,7 @@ export class EventEngine {
       const requiredFields = ["to", "from", "amount", "created_at"] as const;
       for (const field of requiredFields) {
         if (typeof r[field] !== "string" || r[field] === "") {
-          console.warn(
-            `[pulse-core] normalize() dropping payment record: field "${field}" is missing or not a non-empty string.`,
-            { record }
-          );
+          this.log.warn(`[pulse-core] normalize() dropping payment record: field "${field}" is missing or not a non-empty string.`);
           return null;
         }
       }
@@ -245,11 +428,193 @@ export class EventEngine {
       return this.normalizeSetOptions(r, record);
     }
 
+    if (r.type === "create_account") {
+      return this.normalizeCreateAccount(r, record);
+    }
+
+    if (r.type === "manage_sell_offer" || r.type === "manage_buy_offer") {
+      return this.normalizeOffer(r, record);
+    }
+
+    if (r.type === "bump_sequence") {
+      return this.normalizeBumpSequence(r, record);
+    }
+
     if (r.type === "manage_data") {
       return this.normalizeManageData(r, record);
     }
 
+    if (r.type === "change_trust") {
+      return this.normalizeChangeTrust(r, record);
+    }
+
+    if (r.type === "account_merge") {
+      return {
+        type: "account.merged",
+        source: r.account as string,
+        destination: r.into as string,
+        timestamp: r.created_at as string,
+        raw: record,
+      };
+    }
+
     return null;
+  }
+
+  private normalizeOffer(
+    r: Record<string, unknown>,
+    raw: unknown
+  ): OfferEvent | null {
+    if (typeof r.source_account !== "string" || typeof r.created_at !== "string") {
+      return null;
+    }
+
+    const offer_id = String(r.offer_id ?? "0");
+    const amount = String(r.amount ?? "0");
+
+    let type: OfferEventType;
+    if (amount === "0" || amount === "0.0000000") {
+      type = "offer.deleted";
+    } else if (offer_id === "0") {
+      type = "offer.created";
+    } else {
+      type = "offer.updated";
+    }
+
+    const buying_asset =
+      r.buying_asset_type === "native"
+        ? "XLM"
+        : `${r.buying_asset_code as string}:${r.buying_asset_issuer as string}`;
+
+    const selling_asset =
+      r.selling_asset_type === "native"
+        ? "XLM"
+        : `${r.selling_asset_code as string}:${r.selling_asset_issuer as string}`;
+
+    return {
+      type,
+      offer_id,
+      source: r.source_account,
+      buying_asset,
+      selling_asset,
+      amount,
+      price: r.price as string,
+      timestamp: r.created_at,
+      raw,
+    };
+  }
+
+  private normalizeCreateAccount(
+    r: Record<string, unknown>,
+    raw: unknown
+  ): AccountCreatedEvent | null {
+    if (
+      typeof r.funder !== "string" ||
+      typeof r.account !== "string" ||
+      typeof r.starting_balance !== "string" ||
+      typeof r.created_at !== "string"
+    ) {
+      return null;
+    }
+    return {
+      type: "account.created",
+      funder: r.funder,
+      account: r.account,
+      starting_balance: r.starting_balance,
+      timestamp: r.created_at,
+      raw,
+    };
+  }
+
+  private normalizeBumpSequence(
+    r: Record<string, unknown>,
+    raw: unknown
+  ): BumpSequenceEvent | null {
+    if (typeof r.source_account !== "string" || typeof r.created_at !== "string") {
+      return null;
+    }
+    return {
+      type: "account.bump_sequence",
+      source: r.source_account,
+      bump_to: r.bump_to as string,
+      timestamp: r.created_at,
+      raw,
+    };
+  }
+
+  private normalizeManageData(
+    r: Record<string, unknown>,
+    raw: unknown
+  ): DataEvent | null {
+    if (typeof r.source_account !== "string" || r.source_account === "") {
+      this.log.warn("[pulse-core] normalize() dropping manage_data record: source_account is missing.");
+      return null;
+    }
+
+    if (typeof r.data_name !== "string" || r.data_name === "") {
+      this.log.warn("[pulse-core] normalize() dropping manage_data record: data_name is missing.");
+      return null;
+    }
+
+    const value = r.data_value == null ? null : String(r.data_value);
+    const type: DataEventType = value !== null ? "data.set" : "data.cleared";
+
+    return {
+      type,
+      source: r.source_account,
+      name: r.data_name,
+      value,
+      timestamp: typeof r.created_at === "string" ? r.created_at : "",
+      raw,
+    };
+  }
+
+  private normalizeChangeTrust(
+    r: Record<string, unknown>,
+    raw: unknown
+  ): TrustlineEvent | null {
+    if (typeof r.source_account !== "string") {
+      return null;
+    }
+
+    if (typeof r.created_at !== "string") {
+      return null;
+    }
+
+    if (typeof r.limit !== "string" && typeof r.limit !== "number") {
+      return null;
+    }
+
+    const asset =
+      r.asset_type === "native"
+        ? "XLM"
+        : `${r.asset_code as string}:${r.asset_issuer as string}`;
+    const limit = String(r.limit);
+
+    return {
+      type: this.resolveTrustlineEventType(limit),
+      account: r.source_account,
+      asset,
+      limit,
+      timestamp: r.created_at,
+      raw,
+    };
+  }
+
+  private resolveTrustlineEventType(limit: string): TrustlineEventType {
+    if (this.isZeroTrustlineLimit(limit)) {
+      return "trustline.removed";
+    }
+
+    if (limit === STELLAR_MAX_TRUSTLINE_LIMIT) {
+      return "trustline.added";
+    }
+
+    return "trustline.updated";
+  }
+
+  private isZeroTrustlineLimit(limit: string): boolean {
+    return /^0(?:\.0+)?$/.test(limit);
   }
 
   private normalizeSetOptions(
@@ -296,83 +661,137 @@ export class EventEngine {
     };
   }
 
-  private normalizeManageData(
-    r: Record<string, unknown>,
-    raw: unknown
-  ): DataEvent | null {
-    if (typeof r.source_account !== "string" || r.source_account === "") {
-      console.warn(
-        "[pulse-core] normalize() dropping manage_data record: source_account is missing.",
-        { record: raw }
+  private passesFilter(address: string, event: NormalizedEvent): boolean {
+    const filter = this.filters.get(address);
+    if (!filter) return true;
+
+    try {
+      return filter(event);
+    } catch (err) {
+      this.log.warn(
+        `[pulse-core] subscribe() filter threw for address ${address} — treating as reject.`,
+        err
       );
-      return null;
+      return false;
     }
-
-    if (typeof r.data_name !== "string" || r.data_name === "") {
-      console.warn(
-        "[pulse-core] normalize() dropping manage_data record: data_name is missing.",
-        { record: raw }
-      );
-      return null;
-    }
-
-    // Horizon represents the value as a base64 string, or omits the field entirely
-    // when the entry is being deleted. Treat both null and undefined as "cleared".
-    const value =
-      r.data_value == null ? null : String(r.data_value);
-
-    const type: DataEventType = value !== null ? "data.set" : "data.cleared";
-
-    return {
-      type,
-      source: r.source_account,
-      name: r.data_name,
-      value,
-      timestamp: typeof r.created_at === "string" ? r.created_at : "",
-      raw,
-    };
   }
 
   private route(event: NormalizedEventOrPending): void {
-    if (event.type === "data.set" || event.type === "data.cleared") {
-      const watcher = this.registry.get(event.source);
-      if (watcher) {
-        watcher.emit(event.type, event);
-        watcher.emit("*", event);
+    if (event.type === "account.created") {
+      const funderWatcher = this.registry.get(event.funder);
+      if (funderWatcher && this.passesFilter(event.funder, event)) {
+        funderWatcher.emit("account.created", event);
+        funderWatcher.emit("*", event);
+      }
+
+      const accountWatcher = this.registry.get(event.account);
+      if (accountWatcher && event.account !== event.funder && this.passesFilter(event.account, event)) {
+        accountWatcher.emit("account.created", event);
+        accountWatcher.emit("*", event);
       }
       return;
     }
 
     if (event.type === "account.options_changed") {
       const watcher = this.registry.get(event.source);
-      if (watcher) {
+      if (watcher && this.passesFilter(event.source, event)) {
         watcher.emit("account.options_changed", event);
         watcher.emit("*", event);
       }
       return;
     }
 
-    // At this point, event must be a PendingPaymentEvent
-    if (!("to" in event) || !("from" in event)) {
+    if (
+      event.type === "offer.created" ||
+      event.type === "offer.updated" ||
+      event.type === "offer.deleted"
+    ) {
+      const watcher = this.registry.get(event.source);
+      if (watcher && this.passesFilter(event.source, event)) {
+        watcher.emit(event.type, event);
+        watcher.emit("*", event);
+      }
+      return;
+    }
+
+    if (
+      event.type === "trustline.added" ||
+      event.type === "trustline.removed" ||
+      event.type === "trustline.updated"
+    ) {
+      const watcher = this.registry.get(event.account);
+      if (watcher && this.passesFilter(event.account, event)) {
+        watcher.emit(event.type, event);
+        watcher.emit("*", event);
+      }
+      return;
+    }
+
+    if (event.type === "account.merged") {
+      const sourceWatcher = this.registry.get(event.source);
+      if (sourceWatcher && this.passesFilter(event.source, event)) {
+        sourceWatcher.emit("account.merged", event);
+        sourceWatcher.emit("*", event);
+      }
+
+      const destinationWatcher = this.registry.get(event.destination);
+      if (destinationWatcher && this.passesFilter(event.destination, event)) {
+        destinationWatcher.emit("account.merged", event);
+        destinationWatcher.emit("*", event);
+      }
+      return;
+    }
+
+    if (event.type === "account.bump_sequence") {
+      const watcher = this.registry.get(event.source);
+      if (watcher && this.passesFilter(event.source, event)) {
+        watcher.emit("account.bump_sequence", event);
+        watcher.emit("*", event);
+      }
+      return;
+    }
+
+    if (event.type === "data.set" || event.type === "data.cleared") {
+      const watcher = this.registry.get(event.source);
+      if (watcher && this.passesFilter(event.source, event)) {
+        watcher.emit(event.type, event);
+        watcher.emit("*", event);
+      }
+      return;
+    }
+
+    if (event.type !== "unknown") {
+      return;
+    }
+
+    if (event.from === event.to) {
+      const watcher = this.registry.get(event.to);
+      if (watcher) {
+        const selfPayment = this.withResolvedType(event, "payment.self");
+        if (this.passesFilter(event.to, selfPayment)) {
+          watcher.emit("payment.self", selfPayment);
+          watcher.emit("*", selfPayment);
+        }
+      }
       return;
     }
 
     const toWatcher = this.registry.get(event.to);
     if (toWatcher) {
-      toWatcher.emit(
-        "payment.received",
-        this.withResolvedType(event, "payment.received")
-      );
-      toWatcher.emit("*", this.withResolvedType(event, "payment.received"));
+      const receivedEvent = this.withResolvedType(event, "payment.received");
+      if (this.passesFilter(event.to, receivedEvent)) {
+        toWatcher.emit("payment.received", receivedEvent);
+        toWatcher.emit("*", receivedEvent);
+      }
     }
 
     const fromWatcher = this.registry.get(event.from);
     if (fromWatcher) {
-      fromWatcher.emit(
-        "payment.sent",
-        this.withResolvedType(event, "payment.sent")
-      );
-      fromWatcher.emit("*", this.withResolvedType(event, "payment.sent"));
+      const sentEvent = this.withResolvedType(event, "payment.sent");
+      if (this.passesFilter(event.from, sentEvent)) {
+        fromWatcher.emit("payment.sent", sentEvent);
+        fromWatcher.emit("*", sentEvent);
+      }
     }
   }
 

@@ -103,4 +103,41 @@ The server sends a heartbeat every 30 seconds to keep the connection alive throu
 : heartbeat
 ```
 
+### Graceful shutdown
+
+When the server shuts down gracefully, it sends a special `shutdown` event to all active SSE connections before closing them:
+
+```
+event: shutdown
+data: {}
+
+```
+
+This allows clients to distinguish between planned server shutdowns and unexpected connection failures. Clients can use this signal to:
+
+1. Show a "server restarting" message to users
+2. Attempt to reconnect to a different server instance
+3. Clean up resources gracefully
+
+#### Handling shutdown events
+
+```typescript
+const source = new EventSource(`${SERVER_URL}/events/${address}`)
+
+source.addEventListener('shutdown', (e) => {
+  console.log('Server is shutting down, attempting reconnection...')
+  // Implement reconnection logic here
+  source.close()
+  setTimeout(() => {
+    // Reconnect to same or different server
+    const newSource = new EventSource(`${SERVER_URL}/events/${address}`)
+  }, 1000)
+})
+
+source.onmessage = (e) => {
+  const event = JSON.parse(e.data)
+  // Handle normal events
+}
+```
+
 Browsers reconnect automatically on disconnect. For custom reconnection logic, use the `EventSource` constructor with a `reconnectInterval` option.

@@ -1,50 +1,48 @@
 import express, { type Request, type Response } from "express";
+import pinoHttp from "pino-http";
+import { randomUUID } from "crypto";
 import { EventEngine } from "@orbital/pulse-core";
 import { WebhookRegistry } from "./registry.js";
 import { createRoutes } from "./routes.js";
-
-// --- Environment validation ---
-
-const VALID_NETWORKS = ["mainnet", "testnet"] as const;
-type Network = (typeof VALID_NETWORKS)[number];
-
-const rawNetwork = process.env.NETWORK;
-if (!rawNetwork || !(VALID_NETWORKS as readonly string[]).includes(rawNetwork)) {
-  console.error(
-    `[server] Invalid or missing NETWORK env var: "${rawNetwork}". Must be "mainnet" or "testnet".`
-  );
-  process.exit(1);
-}
-const NETWORK = rawNetwork as Network;
-
-const rawPort = process.env.PORT;
-const parsedPort = rawPort ? parseInt(rawPort, 10) : NaN;
-let PORT: number;
-if (!rawPort || isNaN(parsedPort) || parsedPort <= 0 || parsedPort > 65535) {
-  console.warn(`[server] Invalid or missing PORT env var: "${rawPort}". Falling back to 3000.`);
-  PORT = 3000;
-} else {
-  PORT = parsedPort;
-}
+import { config } from "./config.js";
+import { logger } from "./logger.js";
 
 // --- Bootstrap ---
 
-const engine = new EventEngine({ network: NETWORK });
-engine.start();
-console.log(`[server] Event engine started on ${NETWORK}`);
+const activeSSEConnections = new Set<Response>();
 
-const registry = new WebhookRegistry(engine);
+const engine = new EventEngine({ network: config.NETWORK, logger });
+engine.start();
+logger.info({ network: config.NETWORK }, "Event engine started");
+
+const registry = new WebhookRegistry(engine, logger);
 
 const app = express();
-app.use(express.json({ limit: "16kb" }));
-app.use(createRoutes(registry, engine));
 
-app.get("/health", (_req: Request, res: Response) => {
-  res.json({ status: "ok", network: NETWORK });
+app.use(
+  pinoHttp({
+    logger,
+    genReqId: () => randomUUID(),
+    customSuccessMessage: (req, res) => `${req.method} ${req.url} ${res.statusCode}`,
+    customErrorMessage: (req, res) => `${req.method} ${req.url} ${res.statusCode}`,
+  })
+);
+
+// Propagate the request ID as a response header so callers can correlate logs
+app.use((req, res, next) => {
+  res.setHeader("X-Request-ID", req.id as string);
+  next();
 });
 
-const server = app.listen(PORT, () => {
-  console.log(`[server] Listening on port ${PORT}`);
+app.use(express.json({ limit: "16kb" }));
+app.use("/v1", createRoutes(registry, engine, activeSSEConnections));
+
+app.get("/health", (_req: Request, res: Response) => {
+  res.json({ status: "ok", network: config.NETWORK });
+});
+
+const server = app.listen(config.PORT, () => {
+  logger.info({ port: config.PORT }, "Listening");
 });
 
 // --- Graceful shutdown ---
@@ -52,21 +50,60 @@ const server = app.listen(PORT, () => {
 const SHUTDOWN_TIMEOUT_MS = 5000;
 
 function shutdown(signal: string): void {
-  console.log(`[server] Received ${signal}, shutting down...`);
+  logger.info({ signal }, "Shutting down");
 
-  // Hard-exit if graceful shutdown takes too long
-  const forceExit = setTimeout(() => {
-    console.error("[server] Graceful shutdown timed out, forcing exit.");
-    process.exit(1);
-  }, SHUTDOWN_TIMEOUT_MS) as unknown as NodeJS.Timeout;
-  // Don't let this timer keep the process alive on its own
-  forceExit.unref();
-  engine.stop();
+  const connections = Array.from(activeSSEConnections);
+  logger.info({ count: connections.length }, "Notifying SSE clients about shutdown");
 
-  server.close(() => {
-    console.log("[server] HTTP server closed. Exiting.");
-    process.exit(0);
-  });
+  let called = false;
+  function proceedWithShutdown(): void {
+    if (called) return;
+    called = true;
+
+    const forceExit = setTimeout(() => {
+      logger.error("Graceful shutdown timed out, forcing exit.");
+      process.exit(1);
+    }, SHUTDOWN_TIMEOUT_MS) as unknown as NodeJS.Timeout;
+    forceExit.unref();
+
+    engine.stop();
+
+    server.close(() => {
+      logger.info("HTTP server closed. Exiting.");
+      process.exit(0);
+    });
+  }
+
+  if (connections.length === 0) {
+    proceedWithShutdown();
+    return;
+  }
+
+  let completed = 0;
+  for (const res of connections) {
+    try {
+      if (!res.destroyed && !res.writableEnded) {
+        res.write("event: shutdown\ndata: {}\n\n");
+        res.end(() => {
+          activeSSEConnections.delete(res);
+          if (++completed === connections.length) proceedWithShutdown();
+        });
+      } else {
+        activeSSEConnections.delete(res);
+        if (++completed === connections.length) proceedWithShutdown();
+      }
+    } catch (err) {
+      logger.error({ err }, "Error sending shutdown event to SSE client");
+      activeSSEConnections.delete(res);
+      if (++completed === connections.length) proceedWithShutdown();
+    }
+  }
+
+  // Fallback: proceed if any connections don't respond within 2s
+  setTimeout(() => {
+    activeSSEConnections.clear();
+    proceedWithShutdown();
+  }, 2000).unref();
 }
 
 process.on("SIGTERM", () => shutdown("SIGTERM"));
