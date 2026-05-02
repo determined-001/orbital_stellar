@@ -33,7 +33,7 @@ function validateWebhookUrl(raw: string): string | null {
 
 // --- Routes ---
 
-export function createRoutes(registry: WebhookRegistry, engine: EventEngine): Router {
+export function createRoutes(registry: WebhookRegistry, engine: EventEngine, activeSSEConnections: Set<Response>): Router {
   const router = Router();
 
   // Apply auth to every route in this router
@@ -114,27 +114,37 @@ export function createRoutes(registry: WebhookRegistry, engine: EventEngine): Ro
     res.setHeader("Connection", "keep-alive");
     res.flushHeaders();
 
+    activeSSEConnections.add(res);
+
     const watcher = engine.subscribe(address);
 
     const handler = (event: unknown) => {
-      res.write(`data: ${JSON.stringify(event)}\n\n`);
+      try {
+        res.write(`data: ${JSON.stringify(event)}\n\n`);
+      } catch (err) {
+        req.log.error({ address, err }, "Error writing SSE event to client");
+      }
     };
 
     watcher.on("*", handler);
 
     const heartbeat = setInterval(() => {
-      res.write(`: heartbeat\n\n`);
+      try {
+        res.write(`: heartbeat\n\n`);
+      } catch (err) {
+        req.log.error({ address, err }, "Error sending SSE heartbeat");
+      }
     }, 30000);
 
     req.on("close", () => {
       clearInterval(heartbeat);
       watcher.removeListener("*", handler);
-      // Fully remove the watcher from the engine so no dead watchers remain
       engine.unsubscribe(address);
-      console.log(`[sse] Client disconnected from ${address}`);
+      activeSSEConnections.delete(res);
+      req.log.info({ address }, "SSE client disconnected");
     });
 
-    console.log(`[sse] Client connected to ${address}`);
+    req.log.info({ address }, "SSE client connected");
   });
 
   return router;
