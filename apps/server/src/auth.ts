@@ -1,12 +1,8 @@
 import type { Request, Response, NextFunction } from "express";
+import { config } from "./config.js";
 
 export function requireApiKey(req: Request, res: Response, next: NextFunction): void {
-  const apiKey = process.env.API_KEY;
-
-  if (!apiKey) {
-    res.status(500).json({ error: "Server misconfigured: API_KEY not set" });
-    return;
-  }
+  const apiKey = config.API_KEY;
 
   // Accept key via Authorization header (REST) or ?token= query param (EventSource/SSE)
   const authHeader = req.headers["authorization"];

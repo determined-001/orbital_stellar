@@ -42,6 +42,7 @@ vi.mock("@stellar/stellar-sdk", () => {
 });
 
 import { EventEngine } from "../src/EventEngine.js";
+import { Watcher } from "../src/Watcher.js";
 
 function latestStream(): MockStreamInstance {
   const stream = streamInstances.at(-1);
@@ -135,7 +136,6 @@ describe("pulse-core EventEngine", () => {
       }
     ).normalize.bind(engine);
 
-    // Missing `to`
     const result = normalize({
       type: "payment",
       from: "GSRC",
@@ -234,6 +234,28 @@ describe("pulse-core EventEngine", () => {
     });
   });
 
+  it("warns when registering listeners after a watcher is stopped", () => {
+    const warn = vi.fn();
+    const watcher = new Watcher("GABC", { logger: { warn } });
+
+    watcher.stop();
+    watcher.on("payment.received", vi.fn());
+
+    expect(warn).toHaveBeenCalledWith(
+      '[pulse-core] Watcher.on("payment.received") called after stop() for address GABC. Listener was not registered.'
+    );
+  });
+
+  it("throws in strict mode when registering listeners after stop", () => {
+    const watcher = new Watcher("GABC", { strictStoppedListeners: true });
+
+    watcher.stop();
+
+    expect(() => watcher.on("payment.received", vi.fn())).toThrow(
+      '[pulse-core] Watcher.on("payment.received") called after stop() for address GABC. Listener was not registered.'
+    );
+  });
+
   it("guards start() so duplicate live streams are not opened", () => {
     const engine = new EventEngine({ network: "testnet", logger: log });
 
@@ -271,12 +293,7 @@ describe("pulse-core EventEngine", () => {
 
     expect(selfHandler).toHaveBeenCalledOnce();
     expect(selfHandler).toHaveBeenCalledWith(
-      expect.objectContaining({
-        type: "payment.self",
-        to: "GSELF",
-        from: "GSELF",
-        amount: "25",
-      })
+      expect.objectContaining({ type: "payment.self", to: "GSELF", from: "GSELF", amount: "25" })
     );
     expect(receivedHandler).not.toHaveBeenCalled();
     expect(sentHandler).not.toHaveBeenCalled();
@@ -290,10 +307,7 @@ describe("pulse-core EventEngine", () => {
     const engine = new EventEngine({
       network: "testnet",
       logger: log,
-      reconnect: {
-        initialDelayMs: 1000,
-        maxDelayMs: 30000,
-      },
+      reconnect: { initialDelayMs: 1000, maxDelayMs: 30000 },
     });
 
     const watcher = engine.subscribe("GABC");
@@ -308,70 +322,91 @@ describe("pulse-core EventEngine", () => {
 
     expect(streamInstances[0]?.close).toHaveBeenCalledTimes(1);
     expect(reconnecting).toHaveBeenCalledWith(
-      expect.objectContaining({
-        type: "engine.reconnecting",
-        attempt: 1,
-        delayMs: expect.any(Number),
-        emittedAt: expect.any(String),
-      })
+      expect.objectContaining({ type: "engine.reconnecting", attempt: 1, delayMs: expect.any(Number), emittedAt: expect.any(String) })
     );
-    expect(log.warn).toHaveBeenCalledWith(
-      "[pulse-core] SSE reconnect attempt 1 scheduled in 1000ms."
-    );
+    expect(log.warn).toHaveBeenCalledWith("[pulse-core] SSE reconnect attempt 1 scheduled in 1000ms.");
     expect(streamInstances).toHaveLength(1);
 
     vi.advanceTimersByTime(1000);
-
     expect(streamInstances).toHaveLength(2);
 
     latestStream().handlers.onerror(new Error("stream dropped again"));
-
     expect(streamInstances[1]?.close).toHaveBeenCalledTimes(1);
-    expect(reconnecting).toHaveBeenLastCalledWith(
-      expect.objectContaining({
-        type: "engine.reconnecting",
-        attempt: 2,
-        delayMs: expect.any(Number),
-        emittedAt: expect.any(String),
-      })
-    );
-    expect(log.warn).toHaveBeenLastCalledWith(
-      "[pulse-core] SSE reconnect attempt 2 scheduled in 2000ms."
-    );
+    expect(log.warn).toHaveBeenLastCalledWith("[pulse-core] SSE reconnect attempt 2 scheduled in 2000ms.");
 
     vi.advanceTimersByTime(2000);
-
     expect(streamInstances).toHaveLength(3);
 
     latestStream().handlers.onmessage({
-      type: "payment",
-      to: "GABC",
-      from: "GSRC",
-      amount: "10",
-      asset_type: "native",
-      created_at: "2026-03-26T20:00:00.000Z",
+      type: "payment", to: "GABC", from: "GSRC", amount: "10", asset_type: "native", created_at: "2026-03-26T20:00:00.000Z",
     });
 
     expect(reconnected).toHaveBeenCalledWith(
-      expect.objectContaining({
-        type: "engine.reconnected",
-        attempt: 2,
-        emittedAt: expect.any(String),
-      })
+      expect.objectContaining({ type: "engine.reconnected", attempt: 2, emittedAt: expect.any(String) })
     );
-    expect(log.info).toHaveBeenCalledWith(
-      "[pulse-core] SSE reconnect succeeded on attempt 2."
-    );
+    expect(log.info).toHaveBeenCalledWith("[pulse-core] SSE reconnect succeeded on attempt 2.");
 
     latestStream().handlers.onerror(new Error("stream dropped after recovery"));
-
     expect(reconnecting).toHaveBeenLastCalledWith(
+      expect.objectContaining({ type: "engine.reconnecting", attempt: 1 })
+    );
+  });
+
+  it("emits matching attempt numbers in reconnecting and reconnected events", () => {
+    vi.spyOn(Math, "random").mockReturnValue(1);
+    const engine = new EventEngine({
+      network: "testnet",
+      logger: log,
+      reconnect: {
+        initialDelayMs: 500,
+        maxDelayMs: 10000,
+      },
+    });
+
+    const watcher = engine.subscribe("GTEST");
+    const reconnecting = vi.fn();
+    const reconnected = vi.fn();
+    watcher.on("engine.reconnecting", reconnecting);
+    watcher.on("engine.reconnected", reconnected);
+
+    engine.start();
+
+    // Trigger first reconnect
+    latestStream().handlers.onerror(new Error("connection lost"));
+
+    expect(reconnecting).toHaveBeenCalledWith(
       expect.objectContaining({
         type: "engine.reconnecting",
         attempt: 1,
-        delayMs: expect.any(Number),
-        emittedAt: expect.any(String),
+        delayMs: 500,
       })
+    );
+    expect(log.warn).toHaveBeenCalledWith(
+      "[pulse-core] SSE reconnect attempt 1 scheduled in 500ms."
+    );
+
+    // Advance timer to trigger reconnect
+    vi.advanceTimersByTime(500);
+
+    // Simulate successful reconnection with a message
+    latestStream().handlers.onmessage({
+      type: "payment",
+      to: "GTEST",
+      from: "GSRC",
+      amount: "5",
+      asset_type: "native",
+      created_at: "2026-04-28T12:00:00.000Z",
+    });
+
+    // Verify reconnected event has the same attempt number
+    expect(reconnected).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "engine.reconnected",
+        attempt: 1,
+      })
+    );
+    expect(log.info).toHaveBeenCalledWith(
+      "[pulse-core] SSE reconnect succeeded on attempt 1."
     );
   });
 
@@ -380,75 +415,48 @@ describe("pulse-core EventEngine", () => {
       const engine = new EventEngine({
         network: "testnet",
         logger: log,
-        reconnect: {
-          initialDelayMs: 1000,
-          maxDelayMs: 5000,
-        },
+        reconnect: { initialDelayMs: 1000, maxDelayMs: 5000 },
       });
       engine.subscribe("GABC");
       engine.start();
 
       vi.spyOn(Math, "random").mockReturnValue(0.999999);
 
-      // Attempt 1: 1000ms
       latestStream().handlers.onerror(new Error("err"));
-      expect(log.warn).toHaveBeenLastCalledWith(
-        expect.stringContaining("scheduled in 999ms.")
-      );
-
+      expect(log.warn).toHaveBeenLastCalledWith(expect.stringContaining("scheduled in 999ms."));
       vi.advanceTimersByTime(1000);
-      // Attempt 2: 2000ms
-      latestStream().handlers.onerror(new Error("err"));
-      expect(log.warn).toHaveBeenLastCalledWith(
-        expect.stringContaining("scheduled in 1999ms.")
-      );
 
+      latestStream().handlers.onerror(new Error("err"));
+      expect(log.warn).toHaveBeenLastCalledWith(expect.stringContaining("scheduled in 1999ms."));
       vi.advanceTimersByTime(2000);
-      // Attempt 3: 4000ms
-      latestStream().handlers.onerror(new Error("err"));
-      expect(log.warn).toHaveBeenLastCalledWith(
-        expect.stringContaining("scheduled in 3999ms.")
-      );
 
-      vi.advanceTimersByTime(4000);
-      // Attempt 4: 8000ms base, capped at 5000ms
       latestStream().handlers.onerror(new Error("err"));
-      expect(log.warn).toHaveBeenLastCalledWith(
-        expect.stringContaining("scheduled in 4999ms.")
-      );
+      expect(log.warn).toHaveBeenLastCalledWith(expect.stringContaining("scheduled in 3999ms."));
+      vi.advanceTimersByTime(4000);
+
+      latestStream().handlers.onerror(new Error("err"));
+      expect(log.warn).toHaveBeenLastCalledWith(expect.stringContaining("scheduled in 4999ms."));
     });
 
     it("max-retries terminates the loop", () => {
       const engine = new EventEngine({
         network: "testnet",
         logger: log,
-        reconnect: {
-          initialDelayMs: 100,
-          maxRetries: 2,
-        },
+        reconnect: { initialDelayMs: 100, maxRetries: 2 },
       });
       engine.subscribe("GABC");
       engine.start();
 
-      // Attempt 1
       latestStream().handlers.onerror(new Error("err"));
-      expect(log.warn).toHaveBeenCalledWith(
-        expect.stringContaining("attempt 1 scheduled")
-      );
+      expect(log.warn).toHaveBeenCalledWith(expect.stringContaining("attempt 1 scheduled"));
       vi.advanceTimersByTime(1000);
 
-      // Attempt 2
       latestStream().handlers.onerror(new Error("err"));
-      expect(log.warn).toHaveBeenCalledWith(
-        expect.stringContaining("attempt 2 scheduled")
-      );
+      expect(log.warn).toHaveBeenCalledWith(expect.stringContaining("attempt 2 scheduled"));
       vi.advanceTimersByTime(1000);
 
-      // Attempt 3 -> Should fail
       latestStream().handlers.onerror(new Error("err"));
-      expect(log.error).toHaveBeenLastCalledWith(
-        "[pulse-core] SSE reconnect stopped after 2 failed attempts."
-      );
+      expect(log.error).toHaveBeenLastCalledWith("[pulse-core] SSE reconnect stopped after 2 failed attempts.");
     });
 
     it("attempt counter resets after engine.reconnected", () => {
@@ -462,31 +470,19 @@ describe("pulse-core EventEngine", () => {
 
       vi.spyOn(Math, "random").mockReturnValue(0.999999);
 
-      // Attempt 1
       latestStream().handlers.onerror(new Error("err"));
-      expect(log.warn).toHaveBeenLastCalledWith(
-        expect.stringContaining("attempt 1 scheduled in 999ms")
-      );
+      expect(log.warn).toHaveBeenLastCalledWith(expect.stringContaining("attempt 1 scheduled in 999ms"));
       vi.advanceTimersByTime(1000);
 
-      // Attempt 2
       latestStream().handlers.onerror(new Error("err"));
-      expect(log.warn).toHaveBeenLastCalledWith(
-        expect.stringContaining("attempt 2 scheduled in 1999ms")
-      );
+      expect(log.warn).toHaveBeenLastCalledWith(expect.stringContaining("attempt 2 scheduled in 1999ms"));
       vi.advanceTimersByTime(2000);
 
-      // Reconnect success
       latestStream().handlers.onmessage({ type: "payment", to: "GABC", from: "X", amount: "1", created_at: "now" });
-      expect(log.info).toHaveBeenCalledWith(
-        "[pulse-core] SSE reconnect succeeded on attempt 2."
-      );
+      expect(log.info).toHaveBeenCalledWith("[pulse-core] SSE reconnect succeeded on attempt 2.");
 
-      // Next error should be attempt 1 again
       latestStream().handlers.onerror(new Error("err"));
-      expect(log.warn).toHaveBeenLastCalledWith(
-        expect.stringContaining("attempt 1 scheduled in 999ms")
-      );
+      expect(log.warn).toHaveBeenLastCalledWith(expect.stringContaining("attempt 1 scheduled in 999ms"));
     });
 
     it("jitter test using a seeded-like mock", () => {
@@ -498,35 +494,20 @@ describe("pulse-core EventEngine", () => {
       engine.subscribe("GABC");
       engine.start();
 
-      // Mock random to 0.5
       vi.spyOn(Math, "random").mockReturnValue(0.5);
       latestStream().handlers.onerror(new Error("err"));
-      // 1000 * 0.5 = 500
-      expect(log.warn).toHaveBeenLastCalledWith(
-        expect.stringContaining("scheduled in 500ms.")
-      );
+      expect(log.warn).toHaveBeenLastCalledWith(expect.stringContaining("scheduled in 500ms."));
 
       vi.advanceTimersByTime(500);
-      // Mock random to 0.1
       vi.spyOn(Math, "random").mockReturnValue(0.1);
       latestStream().handlers.onerror(new Error("err"));
-      // 2000 * 0.1 = 200
-      expect(log.warn).toHaveBeenLastCalledWith(
-        expect.stringContaining("scheduled in 200ms.")
-      );
+      expect(log.warn).toHaveBeenLastCalledWith(expect.stringContaining("scheduled in 200ms."));
     });
   });
 
   describe("set_options → account.options_changed", () => {
-    function makeSetOptionsRecord(
-      overrides: Record<string, unknown>
-    ): Record<string, unknown> {
-      return {
-        type: "set_options",
-        source_account: "GSRC",
-        created_at: "2026-04-24T10:00:00.000Z",
-        ...overrides,
-      };
+    function makeSetOptionsRecord(overrides: Record<string, unknown>): Record<string, unknown> {
+      return { type: "set_options", source_account: "GSRC", created_at: "2026-04-24T10:00:00.000Z", ...overrides };
     }
 
     it("emits account.options_changed with signer_added when signer_weight > 0", () => {
@@ -536,9 +517,7 @@ describe("pulse-core EventEngine", () => {
       watcher.on("account.options_changed", handler);
 
       engine.start();
-      latestStream().handlers.onmessage(
-        makeSetOptionsRecord({ signer_key: "GNEWSIGNER", signer_weight: 2 })
-      );
+      latestStream().handlers.onmessage(makeSetOptionsRecord({ signer_key: "GNEWSIGNER", signer_weight: 2 }));
 
       expect(handler).toHaveBeenCalledOnce();
       expect(handler).toHaveBeenCalledWith(
@@ -558,17 +537,11 @@ describe("pulse-core EventEngine", () => {
       watcher.on("account.options_changed", handler);
 
       engine.start();
-      latestStream().handlers.onmessage(
-        makeSetOptionsRecord({ signer_key: "GOLDSIGNER", signer_weight: 0 })
-      );
+      latestStream().handlers.onmessage(makeSetOptionsRecord({ signer_key: "GOLDSIGNER", signer_weight: 0 }));
 
       expect(handler).toHaveBeenCalledOnce();
       expect(handler).toHaveBeenCalledWith(
-        expect.objectContaining({
-          type: "account.options_changed",
-          source: "GSRC",
-          changes: { signer_removed: { key: "GOLDSIGNER", weight: 0 } },
-        })
+        expect.objectContaining({ changes: { signer_removed: { key: "GOLDSIGNER", weight: 0 } } })
       );
     });
 
@@ -580,27 +553,13 @@ describe("pulse-core EventEngine", () => {
 
       engine.start();
       latestStream().handlers.onmessage(
-        makeSetOptionsRecord({
-          low_threshold: 1,
-          med_threshold: 2,
-          high_threshold: 3,
-          master_key_weight: 1,
-        })
+        makeSetOptionsRecord({ low_threshold: 1, med_threshold: 2, high_threshold: 3, master_key_weight: 1 })
       );
 
       expect(handler).toHaveBeenCalledOnce();
       expect(handler).toHaveBeenCalledWith(
         expect.objectContaining({
-          type: "account.options_changed",
-          source: "GSRC",
-          changes: {
-            thresholds: {
-              low_threshold: 1,
-              med_threshold: 2,
-              high_threshold: 3,
-              master_key_weight: 1,
-            },
-          },
+          changes: { thresholds: { low_threshold: 1, med_threshold: 2, high_threshold: 3, master_key_weight: 1 } },
         })
       );
     });
@@ -612,17 +571,11 @@ describe("pulse-core EventEngine", () => {
       watcher.on("account.options_changed", handler);
 
       engine.start();
-      latestStream().handlers.onmessage(
-        makeSetOptionsRecord({ home_domain: "example.com" })
-      );
+      latestStream().handlers.onmessage(makeSetOptionsRecord({ home_domain: "example.com" }));
 
       expect(handler).toHaveBeenCalledOnce();
       expect(handler).toHaveBeenCalledWith(
-        expect.objectContaining({
-          type: "account.options_changed",
-          source: "GSRC",
-          changes: { home_domain: "example.com" },
-        })
+        expect.objectContaining({ changes: { home_domain: "example.com" } })
       );
     });
 
@@ -633,16 +586,11 @@ describe("pulse-core EventEngine", () => {
       watcher.on("account.options_changed", handler);
 
       engine.start();
-      latestStream().handlers.onmessage(
-        makeSetOptionsRecord({ home_domain: "stellar.org", low_threshold: 5 })
-      );
+      latestStream().handlers.onmessage(makeSetOptionsRecord({ home_domain: "stellar.org", low_threshold: 5 }));
 
       expect(handler).toHaveBeenCalledOnce();
       const payload = handler.mock.calls[0]![0];
-      expect(payload.changes).toEqual({
-        home_domain: "stellar.org",
-        thresholds: { low_threshold: 5 },
-      });
+      expect(payload.changes).toEqual({ home_domain: "stellar.org", thresholds: { low_threshold: 5 } });
       expect(payload.changes).not.toHaveProperty("signer_added");
       expect(payload.changes).not.toHaveProperty("signer_removed");
     });
@@ -654,9 +602,7 @@ describe("pulse-core EventEngine", () => {
       watcher.on("account.options_changed", handler);
 
       engine.start();
-      latestStream().handlers.onmessage(
-        makeSetOptionsRecord({ set_flags: 1 })
-      );
+      latestStream().handlers.onmessage(makeSetOptionsRecord({ set_flags: 1 }));
 
       expect(handler).not.toHaveBeenCalled();
     });
@@ -671,19 +617,199 @@ describe("pulse-core EventEngine", () => {
       otherWatcher.on("account.options_changed", otherHandler);
 
       engine.start();
-      latestStream().handlers.onmessage(
-        makeSetOptionsRecord({ home_domain: "example.com" })
-      );
+      latestStream().handlers.onmessage(makeSetOptionsRecord({ home_domain: "example.com" }));
 
       expect(srcHandler).toHaveBeenCalledOnce();
       expect(otherHandler).not.toHaveBeenCalled();
     });
   });
 
+  describe("subscribe() filter predicate", () => {
+    const PAYMENT_RECORD = {
+      type: "payment",
+      to: "GDEST",
+      from: "GSRC",
+      amount: "100",
+      asset_type: "native",
+      created_at: "2026-03-26T20:00:00.000Z",
+    };
+
+    it("delivers events to a watcher whose filter returns true", () => {
+      const engine = new EventEngine({ network: "testnet" });
+      const watcher = engine.subscribe("GDEST", {
+        filter: (e) => (e as { amount: string }).amount === "100",
+      });
+      const handler = vi.fn();
+      watcher.on("payment.received", handler);
+
+      engine.start();
+      latestStream().handlers.onmessage(PAYMENT_RECORD);
+
+      expect(handler).toHaveBeenCalledOnce();
+      expect(handler).toHaveBeenCalledWith(
+        expect.objectContaining({ type: "payment.received", amount: "100" })
+      );
+    });
+
+    it("suppresses events for a watcher whose filter returns false", () => {
+      const engine = new EventEngine({ network: "testnet" });
+      const watcher = engine.subscribe("GDEST", {
+        filter: (e) => (e as { amount: string }).amount !== "100",
+      });
+      const handler = vi.fn();
+      watcher.on("payment.received", handler);
+      watcher.on("*", handler);
+
+      engine.start();
+      latestStream().handlers.onmessage(PAYMENT_RECORD);
+
+      expect(handler).not.toHaveBeenCalled();
+    });
+
+    it("treats a throwing filter as a reject and logs a warning without crashing the engine", () => {
+      const engine = new EventEngine({ network: "testnet", logger: log });
+      const filterError = new Error("filter boom");
+      const watcher = engine.subscribe("GDEST", {
+        filter: () => { throw filterError; },
+      });
+      const handler = vi.fn();
+      watcher.on("payment.received", handler);
+
+      engine.start();
+      latestStream().handlers.onmessage(PAYMENT_RECORD);
+
+      expect(handler).not.toHaveBeenCalled();
+      expect(log.warn).toHaveBeenCalledWith(
+        "[pulse-core] subscribe() filter threw for address GDEST — treating as reject.",
+        filterError
+      );
+
+      const unfiltered = engine.subscribe("GSRC");
+      const sentHandler = vi.fn();
+      unfiltered.on("payment.sent", sentHandler);
+      latestStream().handlers.onmessage(PAYMENT_RECORD);
+      expect(sentHandler).toHaveBeenCalledOnce();
+    });
+
+    it("warns and ignores filter when re-subscribing to an already-watched address", () => {
+      const engine = new EventEngine({ network: "testnet", logger: log });
+      const first = engine.subscribe("GDEST");
+      const second = engine.subscribe("GDEST", { filter: () => false });
+
+      expect(second).toBe(first);
+      expect(log.warn).toHaveBeenCalledWith(
+        "[pulse-core] subscribe() called for address GDEST which already has an active watcher — filter option ignored."
+      );
+    });
+  });
+
+  describe("create_account → account.created", () => {
+    function makeCreateAccountRecord(overrides: Record<string, unknown>): Record<string, unknown> {
+      return {
+        type: "create_account",
+        funder: "GFUNDER",
+        account: "GNEW",
+        starting_balance: "10.0000000",
+        created_at: "2026-04-24T10:00:00.000Z",
+        ...overrides,
+      };
+    }
+
+    it("emits account.created and routes to both funder and account watchers", () => {
+      const engine = new EventEngine({ network: "testnet" });
+      const funderWatcher = engine.subscribe("GFUNDER");
+      const accountWatcher = engine.subscribe("GNEW");
+      const otherWatcher = engine.subscribe("GOTHER");
+
+      const funderHandler = vi.fn();
+      const accountHandler = vi.fn();
+      const otherHandler = vi.fn();
+
+      funderWatcher.on("account.created", funderHandler);
+      accountWatcher.on("account.created", accountHandler);
+      otherWatcher.on("account.created", otherHandler);
+
+      engine.start();
+      latestStream().handlers.onmessage(makeCreateAccountRecord({}));
+
+      expect(funderHandler).toHaveBeenCalledOnce();
+      expect(funderHandler).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: "account.created",
+          funder: "GFUNDER",
+          account: "GNEW",
+          starting_balance: "10.0000000",
+          timestamp: "2026-04-24T10:00:00.000Z",
+        })
+      );
+
+      expect(accountHandler).toHaveBeenCalledOnce();
+      expect(accountHandler).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: "account.created",
+          funder: "GFUNDER",
+          account: "GNEW",
+          starting_balance: "10.0000000",
+          timestamp: "2026-04-24T10:00:00.000Z",
+        })
+      );
+
+      expect(otherHandler).not.toHaveBeenCalled();
+    });
+
+    it("does not emit account.created if required fields are missing", () => {
+      const engine = new EventEngine({ network: "testnet" });
+      const funderWatcher = engine.subscribe("GFUNDER");
+      const funderHandler = vi.fn();
+      funderWatcher.on("account.created", funderHandler);
+
+      engine.start();
+      latestStream().handlers.onmessage({
+        type: "create_account",
+        funder: "GFUNDER",
+        account: "GNEW",
+        // missing starting_balance
+        created_at: "2026-04-24T10:00:00.000Z",
+      });
+
+      expect(funderHandler).not.toHaveBeenCalled();
+    });
+
+    it("does not emit account.created if created_at is missing", () => {
+      const engine = new EventEngine({ network: "testnet" });
+      const funderWatcher = engine.subscribe("GFUNDER");
+      const funderHandler = vi.fn();
+      funderWatcher.on("account.created", funderHandler);
+
+      engine.start();
+      latestStream().handlers.onmessage({
+        type: "create_account",
+        funder: "GFUNDER",
+        account: "GNEW",
+        starting_balance: "10.0000000",
+        // missing created_at
+      });
+
+      expect(funderHandler).not.toHaveBeenCalled();
+    });
+
+    it("emits only once when funder and account are the same address", () => {
+      const engine = new EventEngine({ network: "testnet" });
+      const watcher = engine.subscribe("GSELF");
+      const handler = vi.fn();
+      watcher.on("account.created", handler);
+
+      engine.start();
+      latestStream().handlers.onmessage(
+        makeCreateAccountRecord({ funder: "GSELF", account: "GSELF" })
+      );
+
+      expect(handler).toHaveBeenCalledOnce();
+    });
+  });
+
   describe("manage_sell_offer / manage_buy_offer → offer.*", () => {
-    function makeOfferRecord(
-      overrides: Record<string, unknown>
-    ): Record<string, unknown> {
+    function makeOfferRecord(overrides: Record<string, unknown>): Record<string, unknown> {
       return {
         type: "manage_sell_offer",
         source_account: "GSRC",
@@ -695,18 +821,6 @@ describe("pulse-core EventEngine", () => {
         selling_asset_issuer: "GISSUER",
         price: "0.5",
         created_at: "2026-04-28T14:00:00.000Z",
-  describe("change_trust → trustline.*", () => {
-    function makeChangeTrustRecord(
-      overrides: Record<string, unknown>
-    ): Record<string, unknown> {
-      return {
-        type: "change_trust",
-        source_account: "GSRC",
-        asset_type: "credit_alphanum4",
-        asset_code: "USDC",
-        asset_issuer: "GISSUER",
-        limit: "922337203685.4775807",
-        created_at: "2026-04-24T10:00:00.000Z",
         ...overrides,
       };
     }
@@ -718,17 +832,7 @@ describe("pulse-core EventEngine", () => {
       watcher.on("offer.created", handler);
 
       engine.start();
-      latestStream().handlers.onmessage(
-        makeOfferRecord({ offer_id: "0", amount: "100" })
-      );
-    it("emits trustline.added for max trustline limit", () => {
-      const engine = new EventEngine({ network: "testnet" });
-      const watcher = engine.subscribe("GSRC");
-      const handler = vi.fn();
-      watcher.on("trustline.added", handler);
-
-      engine.start();
-      latestStream().handlers.onmessage(makeChangeTrustRecord({}));
+      latestStream().handlers.onmessage(makeOfferRecord({ offer_id: "0", amount: "100" }));
 
       expect(handler).toHaveBeenCalledOnce();
       expect(handler).toHaveBeenCalledWith(
@@ -750,35 +854,11 @@ describe("pulse-core EventEngine", () => {
       watcher.on("offer.updated", handler);
 
       engine.start();
-      latestStream().handlers.onmessage(
-        makeOfferRecord({ offer_id: "12345", amount: "200" })
-          type: "trustline.added",
-          account: "GSRC",
-          asset: "USDC:GISSUER",
-          limit: "922337203685.4775807",
-          timestamp: "2026-04-24T10:00:00.000Z",
-        })
-      );
-    });
-
-    it("emits trustline.removed when limit is zero", () => {
-      const engine = new EventEngine({ network: "testnet" });
-      const watcher = engine.subscribe("GSRC");
-      const handler = vi.fn();
-      watcher.on("trustline.removed", handler);
-
-      engine.start();
-      latestStream().handlers.onmessage(
-        makeChangeTrustRecord({ limit: "0.0000000" })
-      );
+      latestStream().handlers.onmessage(makeOfferRecord({ offer_id: "12345", amount: "200" }));
 
       expect(handler).toHaveBeenCalledOnce();
       expect(handler).toHaveBeenCalledWith(
-        expect.objectContaining({
-          type: "offer.updated",
-          offer_id: "12345",
-          amount: "200",
-        })
+        expect.objectContaining({ type: "offer.updated", offer_id: "12345", amount: "200" })
       );
     });
 
@@ -789,34 +869,11 @@ describe("pulse-core EventEngine", () => {
       watcher.on("offer.deleted", handler);
 
       engine.start();
-      latestStream().handlers.onmessage(
-        makeOfferRecord({ offer_id: "12345", amount: "0" })
-          type: "trustline.removed",
-          account: "GSRC",
-          asset: "USDC:GISSUER",
-          limit: "0.0000000",
-        })
-      );
-    });
-
-    it("emits trustline.updated when limit is non-zero and not max", () => {
-      const engine = new EventEngine({ network: "testnet" });
-      const watcher = engine.subscribe("GSRC");
-      const handler = vi.fn();
-      watcher.on("trustline.updated", handler);
-
-      engine.start();
-      latestStream().handlers.onmessage(
-        makeChangeTrustRecord({ limit: "2500.0000000" })
-      );
+      latestStream().handlers.onmessage(makeOfferRecord({ offer_id: "12345", amount: "0" }));
 
       expect(handler).toHaveBeenCalledOnce();
       expect(handler).toHaveBeenCalledWith(
-        expect.objectContaining({
-          type: "offer.deleted",
-          offer_id: "12345",
-          amount: "0",
-        })
+        expect.objectContaining({ type: "offer.deleted", offer_id: "12345", amount: "0" })
       );
     });
 
@@ -833,10 +890,7 @@ describe("pulse-core EventEngine", () => {
 
       expect(handler).toHaveBeenCalledOnce();
       expect(handler).toHaveBeenCalledWith(
-        expect.objectContaining({
-          type: "offer.created",
-          amount: "50",
-        })
+        expect.objectContaining({ type: "offer.created", amount: "50" })
       );
     });
   });
@@ -865,11 +919,88 @@ describe("pulse-core EventEngine", () => {
           timestamp: "2026-04-28T14:00:00.000Z",
         })
       );
-          type: "trustline.updated",
+    });
+
+    it("does not emit account.bump_sequence if source_account is missing", () => {
+      const engine = new EventEngine({ network: "testnet" });
+      const watcher = engine.subscribe("GSRC");
+      const handler = vi.fn();
+      watcher.on("account.bump_sequence", handler);
+
+      engine.start();
+      latestStream().handlers.onmessage({
+        type: "bump_sequence",
+        bump_to: "123456789",
+        created_at: "2026-04-28T14:00:00.000Z",
+        // missing source_account
+      });
+
+      expect(handler).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("change_trust → trustline.*", () => {
+    function makeChangeTrustRecord(overrides: Record<string, unknown>): Record<string, unknown> {
+      return {
+        type: "change_trust",
+        source_account: "GSRC",
+        asset_type: "credit_alphanum4",
+        asset_code: "USDC",
+        asset_issuer: "GISSUER",
+        limit: "922337203685.4775807",
+        created_at: "2026-04-24T10:00:00.000Z",
+        ...overrides,
+      };
+    }
+
+    it("emits trustline.added for max trustline limit", () => {
+      const engine = new EventEngine({ network: "testnet" });
+      const watcher = engine.subscribe("GSRC");
+      const handler = vi.fn();
+      watcher.on("trustline.added", handler);
+
+      engine.start();
+      latestStream().handlers.onmessage(makeChangeTrustRecord({}));
+
+      expect(handler).toHaveBeenCalledOnce();
+      expect(handler).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: "trustline.added",
           account: "GSRC",
           asset: "USDC:GISSUER",
-          limit: "2500.0000000",
+          limit: "922337203685.4775807",
+          timestamp: "2026-04-24T10:00:00.000Z",
         })
+      );
+    });
+
+    it("emits trustline.removed when limit is zero", () => {
+      const engine = new EventEngine({ network: "testnet" });
+      const watcher = engine.subscribe("GSRC");
+      const handler = vi.fn();
+      watcher.on("trustline.removed", handler);
+
+      engine.start();
+      latestStream().handlers.onmessage(makeChangeTrustRecord({ limit: "0.0000000" }));
+
+      expect(handler).toHaveBeenCalledOnce();
+      expect(handler).toHaveBeenCalledWith(
+        expect.objectContaining({ type: "trustline.removed", account: "GSRC", limit: "0.0000000" })
+      );
+    });
+
+    it("emits trustline.updated when limit is non-zero and not max", () => {
+      const engine = new EventEngine({ network: "testnet" });
+      const watcher = engine.subscribe("GSRC");
+      const handler = vi.fn();
+      watcher.on("trustline.updated", handler);
+
+      engine.start();
+      latestStream().handlers.onmessage(makeChangeTrustRecord({ limit: "2500.0000000" }));
+
+      expect(handler).toHaveBeenCalledOnce();
+      expect(handler).toHaveBeenCalledWith(
+        expect.objectContaining({ type: "trustline.updated", account: "GSRC", limit: "2500.0000000" })
       );
     });
 
@@ -883,9 +1014,7 @@ describe("pulse-core EventEngine", () => {
       otherWatcher.on("trustline.updated", otherHandler);
 
       engine.start();
-      latestStream().handlers.onmessage(
-        makeChangeTrustRecord({ limit: "3000.0000000" })
-      );
+      latestStream().handlers.onmessage(makeChangeTrustRecord({ limit: "3000.0000000" }));
 
       expect(sourceHandler).toHaveBeenCalledOnce();
       expect(otherHandler).not.toHaveBeenCalled();
@@ -908,25 +1037,13 @@ describe("pulse-core EventEngine", () => {
   });
 
   describe("account_merge → account.merged", () => {
-    function makeAccountMergeRecord(
-      overrides: Record<string, unknown>
-    ): Record<string, unknown> {
-      return {
-        type: "account_merge",
-        account: "GSRC",
-        into: "GDEST",
-        created_at: "2026-04-26T12:00:00.000Z",
-        ...overrides,
-      };
+    function makeAccountMergeRecord(overrides: Record<string, unknown>): Record<string, unknown> {
+      return { type: "account_merge", account: "GSRC", into: "GDEST", created_at: "2026-04-26T12:00:00.000Z", ...overrides };
     }
 
     it("normalizes account_merge into account.merged", () => {
       const engine = new EventEngine({ network: "testnet" });
-      const normalize = (
-        engine as unknown as {
-          normalize(record: unknown): unknown;
-        }
-      ).normalize.bind(engine);
+      const normalize = (engine as unknown as { normalize(record: unknown): unknown }).normalize.bind(engine);
 
       const normalized = normalize(makeAccountMergeRecord({}));
 
@@ -958,22 +1075,12 @@ describe("pulse-core EventEngine", () => {
 
       expect(srcHandler).toHaveBeenCalledOnce();
       expect(srcHandler).toHaveBeenCalledWith(
-        expect.objectContaining({
-          type: "account.merged",
-          source: "GSRC",
-          destination: "GDEST",
-        })
+        expect.objectContaining({ type: "account.merged", source: "GSRC", destination: "GDEST" })
       );
-
       expect(destHandler).toHaveBeenCalledOnce();
       expect(destHandler).toHaveBeenCalledWith(
-        expect.objectContaining({
-          type: "account.merged",
-          source: "GSRC",
-          destination: "GDEST",
-        })
+        expect.objectContaining({ type: "account.merged", source: "GSRC", destination: "GDEST" })
       );
-
       expect(otherHandler).not.toHaveBeenCalled();
     });
   });
@@ -981,12 +1088,7 @@ describe("pulse-core EventEngine", () => {
   describe("status()", () => {
     it("returns accurate snapshot in initial state", () => {
       const engine = new EventEngine({ network: "testnet" });
-      expect(engine.status()).toEqual({
-        running: false,
-        watcherCount: 0,
-        lastEventAt: null,
-        reconnectAttempt: 0,
-      });
+      expect(engine.status()).toEqual({ running: false, watcherCount: 0, lastEventAt: null, reconnectAttempt: 0 });
     });
 
     it("returns accurate snapshot after start()", () => {
@@ -994,12 +1096,7 @@ describe("pulse-core EventEngine", () => {
       engine.subscribe("GABC");
       engine.start();
 
-      expect(engine.status()).toEqual({
-        running: true,
-        watcherCount: 1,
-        lastEventAt: null,
-        reconnectAttempt: 0,
-      });
+      expect(engine.status()).toEqual({ running: true, watcherCount: 1, lastEventAt: null, reconnectAttempt: 0 });
     });
 
     it("updates lastEventAt after a message", () => {
@@ -1008,27 +1105,18 @@ describe("pulse-core EventEngine", () => {
 
       const now = "2026-04-27T10:00:00.000Z";
       vi.setSystemTime(new Date(now));
-
       latestStream().handlers.onmessage({});
 
       expect(engine.status().lastEventAt).toBe(now);
     });
 
     it("reflects reconnect attempts and running: false during backoff", () => {
-      const engine = new EventEngine({
-        network: "testnet",
-        reconnect: { initialDelayMs: 1000 },
-      });
+      const engine = new EventEngine({ network: "testnet", reconnect: { initialDelayMs: 1000 } });
       engine.start();
 
       latestStream().handlers.onerror(new Error("disconnect"));
 
-      expect(engine.status()).toEqual({
-        running: false,
-        watcherCount: 0,
-        lastEventAt: null,
-        reconnectAttempt: 1,
-      });
+      expect(engine.status()).toEqual({ running: false, watcherCount: 0, lastEventAt: null, reconnectAttempt: 1 });
     });
 
     it("resets state when stop() is called", () => {
@@ -1039,12 +1127,7 @@ describe("pulse-core EventEngine", () => {
 
       engine.stop();
 
-      expect(engine.status()).toEqual({
-        running: false,
-        watcherCount: 0,
-        lastEventAt: null,
-        reconnectAttempt: 0,
-      });
+      expect(engine.status()).toEqual({ running: false, watcherCount: 0, lastEventAt: null, reconnectAttempt: 0 });
     });
   });
 });

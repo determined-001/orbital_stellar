@@ -42,7 +42,7 @@ import express from "express";
 
 const app = express();
 
-app.post("/hooks/stellar", express.text({ type: "*/*" }), (req, res) => {
+app.post("/hooks/stellar", express.raw({ type: "application/json" }), (req, res) => {
   const signature = req.header("x-orbital-signature");
   const timestamp = req.header("x-orbital-timestamp");
   if (!signature || !timestamp) return res.sendStatus(400);
@@ -94,7 +94,7 @@ Uses `crypto.timingSafeEqual` under the hood — do not roll your own comparison
 - **Verify every signature.** `verifyWebhook` uses constant-time comparison.
 - **Treat the secret like a password.** Store it in a secrets manager, not a config file.
 - **Enforce HTTPS.** The reference server (`apps/server`) rejects non-HTTPS URLs at registration time.
-- **Bound the payload.** On the receiver side, cap body size with `express.json({ limit: "100kb" })` or equivalent.
+- **Bound the payload.** On the receiver side, cap body size with `express.raw({ type: "application/json", limit: "100kb" })` or equivalent.
 
 ## Network safety
 

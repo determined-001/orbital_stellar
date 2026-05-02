@@ -2,6 +2,7 @@ import { createHmac } from "crypto";
 import type { Logger } from "pino";
 import { EventEngine } from "@orbital/pulse-core";
 import { WebhookDelivery } from "@orbital/pulse-webhooks";
+import { config } from "./config.js";
 
 // --- Types ---
 
@@ -21,9 +22,9 @@ export type WebhookRegistrationPublic = Omit<WebhookRegistration, "secretHash" |
 // --- Helpers ---
 
 function hashSecret(secret: string): string {
-  // Use a fixed HMAC key from env so the hash is deterministic for signature
+  // Use a fixed HMAC key from config so the hash is deterministic for signature
   // verification, but not reversible without the key.
-  const hmacKey = process.env.WEBHOOK_SECRET ?? "pulse-default-hmac-key";
+  const hmacKey = config.WEBHOOK_SECRET;
   return createHmac("sha256", hmacKey).update(secret).digest("hex");
 }
 
