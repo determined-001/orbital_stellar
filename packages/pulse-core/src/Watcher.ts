@@ -4,6 +4,13 @@ import type { NormalizedEvent, WatcherNotification } from "./index.js";
 
 type WatcherEvent = NormalizedEvent | WatcherNotification;
 
+type WatcherLogger = Pick<Console, "warn">;
+
+export type WatcherOptions = {
+  strictStoppedListeners?: boolean;
+  logger?: WatcherLogger;
+};
+
 /**
  * Watches for Stellar network events related to a specific address.
  * Extends EventEmitter to provide event-driven notifications.
@@ -17,15 +24,15 @@ type WatcherEvent = NormalizedEvent | WatcherNotification;
 export class Watcher extends EventEmitter {
   readonly address: string;
   private _stopped: boolean = false;
+  private readonly strictStoppedListeners: boolean;
+  private readonly logger: WatcherLogger;
   private stopHandlers: Set<() => void> = new Set();
 
-  /**
-   * Creates a new Watcher for the given Stellar address.
-   * @param address - The Stellar address to watch.
-   */
-  constructor(address: string) {
+  constructor(address: string, options: WatcherOptions = {}) {
     super();
     this.address = address;
+    this.strictStoppedListeners = options.strictStoppedListeners ?? false;
+    this.logger = options.logger ?? console;
   }
 
   /**
@@ -36,7 +43,17 @@ export class Watcher extends EventEmitter {
    * @returns This watcher instance for chaining.
    */
   on(eventType: string, handler: (event: WatcherEvent) => void): this {
-    if (this._stopped) return this;
+    if (this._stopped) {
+      const message = `[pulse-core] Watcher.on("${eventType}") called after stop() for address ${this.address}. Listener was not registered.`;
+
+      if (this.strictStoppedListeners) {
+        throw new Error(message);
+      }
+
+      this.logger.warn(message);
+      return this;
+    }
+
     return super.on(eventType, handler);
   }
 
@@ -66,7 +83,7 @@ export class Watcher extends EventEmitter {
   addStopHandler(handler: () => void): () => void {
     if (this._stopped) {
       handler();
-      return () => { };
+      return () => {};
     }
 
     this.stopHandlers.add(handler);
