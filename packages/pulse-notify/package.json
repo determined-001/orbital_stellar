@@ -12,9 +12,9 @@
     "@orbital/pulse-core": "workspace:*"
   },
   "devDependencies": {
-    "@types/node": "^25.6.0",
+    "@types/node": "^25.9.0",
     "@types/react": "^19.2.14",
-    "tsx": "^4.0.0"
+    "tsx": "^4.22.3"
   },
   "peerDependencies": {
     "react": "^18.0.0 || ^19.0.0"
