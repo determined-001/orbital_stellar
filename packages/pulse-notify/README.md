@@ -217,8 +217,16 @@ The hooks are client-only — they rely on `EventSource`, which does not exist i
 ## Current limitations
 
 - Hook instances with the same `serverUrl`, `address`, and `token` share one browser `EventSource`; different keys open separate connections.
-- No offline queue. Events that arrive while the tab is backgrounded and the connection is closed are not replayed on reconnect.
-- `EventSource` reconnect is browser-controlled. Fine-grained retry policy belongs in a future WebSocket-based transport.
+- **No offline queue.** Events that arrive while the tab is backgrounded and the connection is closed are not replayed on reconnect.
+- **`EventSource` reconnect is browser-controlled.** Fine-grained retry policy belongs in a future WebSocket-based transport.
+
+## Related documents
+
+- [`docs/ARCHITECTURE.md` § 7 React hook internals](../../docs/ARCHITECTURE.md#7-react-hook-internals) — design choices (stable dep-array, dual call signature, generic narrowing)
+- [`docs/COOKBOOK.md` § 10 Render live payments in React with type narrowing](../../docs/COOKBOOK.md#10-render-live-payments-in-react-with-type-narrowing)
+- [`docs/COOKBOOK.md` § 11 Stand up an SSE endpoint in Next.js](../../docs/COOKBOOK.md#11-stand-up-an-sse-endpoint-in-nextjs) — the backend the hooks expect
+- [`SECURITY.md` § Best practices for consumers § pulse-notify](../../SECURITY.md#pulse-notify) — token handling, SSR boundary
+- [`CHANGELOG.md`](../../CHANGELOG.md) — release notes
 
 ## License
 
