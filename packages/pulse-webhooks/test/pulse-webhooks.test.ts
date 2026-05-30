@@ -100,6 +100,44 @@ describe("pulse-webhooks WebhookDelivery", () => {
     );
   });
 
+  it("rejects URL when custom urlValidator blocks an otherwise allowed URL without retrying", async () => {
+    const allowedUrl = "https://prod.example.com/webhooks/stellar";
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200 });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const watcher = new Watcher("GABC");
+    const failedHandler = vi.fn();
+    watcher.on("webhook.failed", failedHandler);
+
+    new WebhookDelivery(watcher, {
+      url: allowedUrl,
+      secret: "top-secret",
+      urlValidator: async (url) =>
+        url === allowedUrl ? "blocked by custom validator" : null,
+    });
+
+    watcher.emit("*", deliveryEvent);
+    await flushAsyncWork();
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(failedHandler).toHaveBeenCalledTimes(1);
+    expect(failedHandler).toHaveBeenCalledWith(
+      expect.objectContaining({
+        raw: expect.objectContaining({
+          url: allowedUrl,
+          error: "blocked by custom validator",
+          attempts: 1,
+        }),
+      }),
+    );
+
+    vi.advanceTimersByTime(10_000);
+    await flushAsyncWork();
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(failedHandler).toHaveBeenCalledTimes(1);
+  });
+
   it("keeps delivering to other URLs when one URL fails", async () => {
     const failedUrl = "https://prod.example.com/webhooks/stellar";
     const successfulUrl = "https://audit.example.com/webhooks/stellar";
@@ -286,7 +324,9 @@ describe("pulse-webhooks verifyWebhook", () => {
     const timestamp = "1714176000000";
     const signature = signWebhookPayload("top-secret", payload, timestamp);
 
-    const event = verifyWebhook(payload, signature, "top-secret", timestamp);
+    const event = verifyWebhook(payload, signature, "top-secret", timestamp, {
+      nowMs: Number(timestamp),
+    });
 
     expect(event).toEqual(deliveryEvent);
   });
@@ -320,6 +360,46 @@ describe("pulse-webhooks verifyWebhook", () => {
       verifyWebhook(payload, signature, "top-secret", "1714176000001"),
     ).toBeNull();
   });
+
+  it("accepts timestamp within configured clock skew window", () => {
+    const payload = JSON.stringify(deliveryEvent);
+    const nowMs = 1_714_176_000_000;
+    const timestamp = String(nowMs + 20_000);
+    const signature = signWebhookPayload("top-secret", payload, timestamp);
+
+    const event = verifyWebhook(payload, signature, "top-secret", timestamp, {
+      nowMs,
+      maxAgeMs: 60_000,
+      clockSkewMs: 30_000,
+    });
+
+    expect(event).toEqual(deliveryEvent);
+  });
+
+  it("rejects timestamp outside configured skew and maxAge window", () => {
+    const payload = JSON.stringify(deliveryEvent);
+    const nowMs = 1_714_176_000_000;
+    const tooFarFutureTs = String(nowMs + 30_001);
+    const tooOldTs = String(nowMs - 60_000 - 30_001);
+
+    const futureSig = signWebhookPayload("top-secret", payload, tooFarFutureTs);
+    const oldSig = signWebhookPayload("top-secret", payload, tooOldTs);
+
+    expect(
+      verifyWebhook(payload, futureSig, "top-secret", tooFarFutureTs, {
+        nowMs,
+        maxAgeMs: 60_000,
+        clockSkewMs: 30_000,
+      }),
+    ).toBeNull();
+    expect(
+      verifyWebhook(payload, oldSig, "top-secret", tooOldTs, {
+        nowMs,
+        maxAgeMs: 60_000,
+        clockSkewMs: 30_000,
+      }),
+    ).toBeNull();
+  });
 });
 
 describe("pulse-webhooks verifyWebhookEdge", () => {
@@ -333,6 +413,7 @@ describe("pulse-webhooks verifyWebhookEdge", () => {
       signature,
       "top-secret",
       timestamp,
+      { nowMs: Number(timestamp) },
     );
 
     expect(event).toEqual(deliveryEvent);
@@ -377,6 +458,46 @@ describe("pulse-webhooks verifyWebhookEdge", () => {
         "top-secret",
         "1714176000001",
       ),
+    ).toBeNull();
+  });
+
+  it("accepts timestamp within configured clock skew window", async () => {
+    const payload = JSON.stringify(deliveryEvent);
+    const nowMs = 1_714_176_000_000;
+    const timestamp = String(nowMs + 20_000);
+    const signature = signWebhookPayload("top-secret", payload, timestamp);
+
+    const event = await verifyWebhookEdge(payload, signature, "top-secret", timestamp, {
+      nowMs,
+      maxAgeMs: 60_000,
+      clockSkewMs: 30_000,
+    });
+
+    expect(event).toEqual(deliveryEvent);
+  });
+
+  it("rejects timestamp outside configured skew and maxAge window", async () => {
+    const payload = JSON.stringify(deliveryEvent);
+    const nowMs = 1_714_176_000_000;
+    const tooFarFutureTs = String(nowMs + 30_001);
+    const tooOldTs = String(nowMs - 60_000 - 30_001);
+
+    const futureSig = signWebhookPayload("top-secret", payload, tooFarFutureTs);
+    const oldSig = signWebhookPayload("top-secret", payload, tooOldTs);
+
+    expect(
+      await verifyWebhookEdge(payload, futureSig, "top-secret", tooFarFutureTs, {
+        nowMs,
+        maxAgeMs: 60_000,
+        clockSkewMs: 30_000,
+      }),
+    ).toBeNull();
+    expect(
+      await verifyWebhookEdge(payload, oldSig, "top-secret", tooOldTs, {
+        nowMs,
+        maxAgeMs: 60_000,
+        clockSkewMs: 30_000,
+      }),
     ).toBeNull();
   });
 

@@ -5,135 +5,14 @@ import type {
 } from "@orbital/pulse-core";
 import { createHmac, timingSafeEqual } from "crypto";
 
-import type { WebhookConfig } from "./types.js";
+import type { VerifyWebhookOptions, WebhookConfig } from "./types.js";
+import { DEFAULT_MAX_AGE_MS, DEFAULT_CLOCK_SKEW_MS } from "./types.js";
 export { verifyWebhookEdge } from "./edge.js";
-export type { WebhookConfig } from "./types.js";
+export type { VerifyWebhookOptions, WebhookConfig } from "./types.js";
 
-export interface DeadLetterEntry {
-  id: string;
-  url: string;
-  event: NormalizedEvent;
-  error: string;
-  attempts: number;
-  timestamp: number;
-}
-
-export interface DeadLetterFilter {
-  url?: string;
-  since?: number;
-  until?: number;
-  limit?: number;
-}
-
-/**
- * Dead Letter Queue for failed webhook deliveries.
- * Stores failed webhooks keyed by unique failure ID.
- * Supports querying by URL, time window, and limit.
- *
- * For best query performance, create indexes on:
- * - `url` (for URL-first queries)
- * - `timestamp` (for time-window queries)
- * - Composite index on `(url, timestamp)` (for combined filters)
- */
-export class DeadLetterStore {
-  private entries: Map<string, DeadLetterEntry> = new Map();
-  private nextId: number = 0;
-
-  /**
-   * Add a failed webhook delivery to the dead letter store.
-   */
-  add(
-    url: string,
-    event: NormalizedEvent,
-    error: string,
-    attempts: number,
-  ): string {
-    const id = `dlq_${this.nextId++}_${Date.now()}_${Math.random().toString(36).slice(2)}`;
-    const timestamp = Date.now();
-
-    this.entries.set(id, {
-      id,
-      url,
-      event,
-      error,
-      attempts,
-      timestamp,
-    });
-
-    return id;
-  }
-
-  /**
-   * Query the dead letter store with optional filters.
-   * Returns entries matching all provided filters.
-   *
-   * @param filter - Filter criteria { url?, since?, until?, limit? }
-   * @returns Array of matching DeadLetterEntry objects
-   *
-   * Filter behavior:
-   * - url: exact string match
-   * - since: timestamp >= since (inclusive)
-   * - until: timestamp <= until (inclusive)
-   * - limit: return at most limit entries (from oldest first)
-   */
-  list(filter: DeadLetterFilter = {}): DeadLetterEntry[] {
-    let results = Array.from(this.entries.values());
-
-    // Filter by URL
-    if (filter.url !== undefined) {
-      results = results.filter((entry) => entry.url === filter.url);
-    }
-
-    // Filter by time range
-    if (filter.since !== undefined) {
-      results = results.filter((entry) => entry.timestamp >= filter.since!);
-    }
-    if (filter.until !== undefined) {
-      results = results.filter((entry) => entry.timestamp <= filter.until!);
-    }
-
-    // Sort by timestamp (oldest first) for consistent ordering
-    results.sort((a, b) => a.timestamp - b.timestamp);
-
-    // Apply limit
-    if (filter.limit !== undefined && filter.limit > 0) {
-      results = results.slice(0, filter.limit);
-    }
-
-    return results;
-  }
-
-  /**
-   * Retrieve a specific entry by ID.
-   */
-  get(id: string): DeadLetterEntry | undefined {
-    return this.entries.get(id);
-  }
-
-  /**
-   * Remove an entry from the store.
-   */
-  remove(id: string): boolean {
-    return this.entries.delete(id);
-  }
-
-  /**
-   * Clear all entries from the store.
-   */
-  clear(): void {
-    this.entries.clear();
-  }
-
-  /**
-   * Get total number of entries in the store.
-   */
-  size(): number {
-    return this.entries.size;
-  }
-}
-
-type ResolvedWebhookConfig = Omit<Required<WebhookConfig>, "url"> & {
+type ResolvedWebhookConfig = Omit<Required<WebhookConfig>, "url" | "urlValidator"> & {
   urls: string[];
+  urlValidator?: WebhookConfig["urlValidator"];
 };
 
 export class WebhookDelivery {
@@ -188,6 +67,25 @@ export class WebhookDelivery {
     attempt = 1,
   ): Promise<void> {
     if (this.watcher.stopped) return;
+
+    let customValidationError: string | null = null;
+    try {
+      customValidationError = this.config.urlValidator
+        ? await this.config.urlValidator(url)
+        : null;
+    } catch (err) {
+      if (this.watcher.stopped) return;
+
+      this.emitFailure(event, url, this.getErrorMessage(err), attempt);
+      return;
+    }
+
+    if (this.watcher.stopped) return;
+
+    if (customValidationError) {
+      this.emitFailure(event, url, customValidationError, attempt);
+      return;
+    }
 
     const payload = JSON.stringify(event);
     const timestamp = Date.now().toString();
@@ -252,23 +150,28 @@ export class WebhookDelivery {
         }, delay);
         this.retryTimers.set(retryTimer, { event, url });
       } else {
-        // Add to dead letter store
-        const dlqId = this.dlq.add(url, event, errorMessage, attempt);
-
-        this.watcher.emit("webhook.failed", {
-          ...event,
-          raw: {
-            dlqId,
-            error: errorMessage,
-            url,
-            attempts: attempt,
-            originalEvent: event,
-          },
-        } as unknown as NormalizedEvent);
+        this.emitFailure(event, url, errorMessage, attempt);
       }
     } finally {
       clearTimeout(abortTimer);
     }
+  }
+
+  private emitFailure(
+    event: NormalizedEvent,
+    url: string,
+    errorMessage: string,
+    attempt: number,
+  ): void {
+    this.watcher.emit("webhook.failed", {
+      ...event,
+      raw: {
+        error: errorMessage,
+        url,
+        attempts: attempt,
+        originalEvent: event,
+      },
+    } as unknown as NormalizedEvent);
   }
 
   private clearRetryTimers(): void {
@@ -300,8 +203,19 @@ export function verifyWebhook(
   signature: string,
   secret: string,
   timestamp: string,
+  options: VerifyWebhookOptions = {},
 ): NormalizedEvent | null {
   if (!/^\d+$/.test(timestamp)) return null;
+
+  const timestampMs = Number(timestamp);
+  if (!Number.isFinite(timestampMs)) return null;
+
+  const maxAgeMs = options.maxAgeMs ?? DEFAULT_MAX_AGE_MS;
+  const clockSkewMs = options.clockSkewMs ?? DEFAULT_CLOCK_SKEW_MS;
+  const nowMs = options.nowMs ?? Date.now();
+
+  if (timestampMs > nowMs + clockSkewMs) return null;
+  if (timestampMs < nowMs - maxAgeMs - clockSkewMs) return null;
 
   const expected = createHmac("sha256", secret)
     .update(`${timestamp}.${payload}`)
