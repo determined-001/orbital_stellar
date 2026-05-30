@@ -114,3 +114,10 @@ export function useStellarPayment(serverUrl: string, address: string) {
 export function useStellarActivity(serverUrl: string, address: string) {
   return useStellarEvent(serverUrl, address, { event: "*" });
 }
+
+export {
+  StellarConnectionStatus,
+  type StellarConnectionStatusLabels,
+  type StellarConnectionStatusProps,
+  type StellarConnectionStatusState,
+} from "./StellarConnectionStatus.js";

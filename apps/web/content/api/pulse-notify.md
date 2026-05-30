@@ -104,6 +104,27 @@ import { useStellarActivity } from "@orbital/pulse-notify";
 const { event, connected } = useStellarActivity(serverUrl, address);
 ```
 
+## StellarConnectionStatus
+
+Small status indicator that opens its own `EventSource` and renders connection health without requiring consumers to wire `connected` and `error` state.
+
+```tsx
+"use client";
+import { StellarConnectionStatus } from "@orbital/pulse-notify";
+
+<StellarConnectionStatus serverUrl={serverUrl} address={address} />;
+```
+
+The component sets `data-status` to `connecting`, `connected`, or `error`, and applies classes such as `stellar-connection-status--connected`. Built-in inline styles read CSS custom properties, so apps can theme it without importing a CSS file:
+
+```css
+.stellar-connection-status {
+  --stellar-connection-status-connected-color: #16a34a;
+  --stellar-connection-status-error-color: #dc2626;
+  --stellar-connection-status-padding: 0.35rem 0.65rem;
+}
+```
+
 ## Type narrowing
 
 Pass a narrower union as `T` to get full IDE support and avoid manual casts:
