@@ -1,9 +1,12 @@
 import type { NormalizedEvent, Watcher, WatcherNotification } from "@orbital/pulse-core";
 import { createHmac, timingSafeEqual } from "crypto";
 
-import type { WebhookConfig } from "./types.js";
+import type { VerifyWebhookOptions, WebhookConfig } from "./types.js";
 export { verifyWebhookEdge } from "./edge.js";
-export type { WebhookConfig } from "./types.js";
+export type { VerifyWebhookOptions, WebhookConfig } from "./types.js";
+
+const DEFAULT_MAX_AGE_MS = 300_000;
+const DEFAULT_CLOCK_SKEW_MS = 30_000;
 
 type ResolvedWebhookConfig = Omit<Required<WebhookConfig>, "url"> & {
   urls: string[];
@@ -144,8 +147,19 @@ export function verifyWebhook(
   signature: string,
   secret: string,
   timestamp: string,
+  options: VerifyWebhookOptions = {},
 ): NormalizedEvent | null {
   if (!/^\d+$/.test(timestamp)) return null;
+
+  const timestampMs = Number(timestamp);
+  if (!Number.isFinite(timestampMs)) return null;
+
+  const maxAgeMs = options.maxAgeMs ?? DEFAULT_MAX_AGE_MS;
+  const clockSkewMs = options.clockSkewMs ?? DEFAULT_CLOCK_SKEW_MS;
+  const nowMs = options.nowMs ?? Date.now();
+
+  if (timestampMs > nowMs + clockSkewMs) return null;
+  if (timestampMs < nowMs - maxAgeMs - clockSkewMs) return null;
 
   const expected = createHmac("sha256", secret)
     .update(`${timestamp}.${payload}`)
