@@ -284,8 +284,13 @@ verifier doesn't load there.
 
 ## 7. React hook internals
 
-`useStellarEvent<T>` is intentionally thin: ~70 lines of `useEffect` opening
-an `EventSource`, with two design choices worth noting.
+`useStellarEvent<T>` is intentionally thin: it acquires a pooled
+`EventSource` connection and applies a per-hook event filter, with three
+design choices worth noting.
+
+**Connection pooling.** Hook instances with the same `serverUrl`, `address`,
+and `token` share one browser `EventSource`; the pool closes that connection
+when the last hook using the key unmounts.
 
 **Stable dep-array.** An array literal passed as the `event` allowlist
 would otherwise be a new reference every render and re-run the effect

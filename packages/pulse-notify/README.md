@@ -10,7 +10,7 @@ Requires React 18 or 19. Designed for Next.js App Router, Vite, Remix, and plain
 
 ## What it does
 
-`pulse-notify` opens a browser-native `EventSource` connection to your Orbital server, subscribes to an address, and re-renders your component whenever a new event arrives. It is intentionally thin — no global store, no custom cache, no peer-dependency on a state manager.
+`pulse-notify` opens a browser-native `EventSource` connection to your Orbital server, subscribes to an address, and re-renders your component whenever a new event arrives. Hook instances watching the same `serverUrl`, `address`, and `token` share one connection internally while keeping their own event filters. It is intentionally thin — no global store, no custom cache, no peer-dependency on a state manager.
 
 You point the hook at your own Orbital server (self-hosted or managed) and pass the address you want to watch.
 
@@ -216,7 +216,7 @@ The hooks are client-only — they rely on `EventSource`, which does not exist i
 
 ## Current limitations
 
-- One connection per hook instance. Deduplication across components watching the same address is a planned enhancement.
+- Hook instances with the same `serverUrl`, `address`, and `token` share one browser `EventSource`; different keys open separate connections.
 - No offline queue. Events that arrive while the tab is backgrounded and the connection is closed are not replayed on reconnect.
 - `EventSource` reconnect is browser-controlled. Fine-grained retry policy belongs in a future WebSocket-based transport.
 
