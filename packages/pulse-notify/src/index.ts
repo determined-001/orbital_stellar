@@ -100,15 +100,21 @@ export function useStellarEvent<T extends NormalizedEvent = NormalizedEvent>(
     // an array literal, which would otherwise be a new reference every render.
   }, [serverUrl, addr, eventKey, token]);
 
+
   return state;
 }
 
+type PaymentEvent = Extract<NormalizedEvent, { type: "payment.received" }>;
+
 export function useStellarPayment(serverUrl: string, address: string) {
-  return useStellarEvent<Extract<NormalizedEvent, { type: "payment.received" }>>(
-    serverUrl,
-    address,
-    { event: "payment.received" }
-  );
+  const base = useStellarEvent<PaymentEvent>(serverUrl, address, {
+    event: "payment.received",
+  });
+  const amountStroop: bigint | null =
+    base.event?.amount != null
+      ? BigInt(Math.round(parseFloat(base.event.amount) * 10_000_000))
+      : null;
+  return { ...base, amountStroop };
 }
 
 export function useStellarActivity(serverUrl: string, address: string) {
