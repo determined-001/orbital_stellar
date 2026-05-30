@@ -3,7 +3,12 @@ import { createHmac, timingSafeEqual } from "crypto";
 
 import type { VerifyWebhookOptions, WebhookConfig } from "./types.js";
 import { DEFAULT_MAX_AGE_MS, DEFAULT_CLOCK_SKEW_MS } from "./types.js";
+import type { WebhookMetrics, DeliveryAttributes } from "./metrics.js";
+import { NoopWebhookMetrics, hostOf } from "./metrics.js";
 export { verifyWebhookEdge } from "./edge.js";
+export { OtelWebhookMetrics } from "./OtelWebhookMetrics.js";
+export { NoopWebhookMetrics } from "./metrics.js";
+export type { WebhookMetrics, DeliveryAttributes } from "./metrics.js";
 export type { VerifyWebhookOptions, WebhookConfig } from "./types.js";
 
 type ResolvedWebhookConfig = Omit<Required<WebhookConfig>, "url"> & {
@@ -23,6 +28,7 @@ export class WebhookDelivery {
       deliveryTimeoutMs: 10000,
       maxConcurrentRetries: 100,
       random: Math.random,
+      metrics: NoopWebhookMetrics,
       ...config,
       urls: Array.isArray(config.url) ? [...config.url] : [config.url],
     };
@@ -48,6 +54,13 @@ export class WebhookDelivery {
   ): Promise<void> {
     if (this.watcher.stopped) return;
 
+    const startedAt = Date.now();
+    const attrs: DeliveryAttributes = {
+      host: hostOf(url),
+      eventType: event.type,
+      attempt,
+    };
+
     const payload = JSON.stringify(event);
     const timestamp = Date.now().toString();
     const signature = this.sign(payload, timestamp);
@@ -69,6 +82,8 @@ export class WebhookDelivery {
       });
 
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+      this.config.metrics.onDelivered(Date.now() - startedAt, attrs);
     } catch (err) {
       if (this.watcher.stopped) return;
 
@@ -91,6 +106,11 @@ export class WebhookDelivery {
               originalEvent: newest.event,
             },
           } as unknown as NormalizedEvent);
+          this.config.metrics.onDropped({
+            host: hostOf(newest.url),
+            eventType: newest.event.type,
+            attempt,
+          });
         }
 
         const exponentialDelay = Math.pow(2, attempt - 1) * 1000;
@@ -100,6 +120,7 @@ export class WebhookDelivery {
           void this.deliverToUrl(event, url, attempt + 1);
         }, delay);
         this.retryTimers.set(retryTimer, { event, url });
+        this.config.metrics.onRetry(attrs);
       } else {
         this.watcher.emit("webhook.failed", {
           ...event,
@@ -110,6 +131,7 @@ export class WebhookDelivery {
             originalEvent: event,
           },
         } as unknown as NormalizedEvent);
+        this.config.metrics.onFailed(attrs);
       }
     } finally {
       clearTimeout(abortTimer);

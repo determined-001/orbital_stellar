@@ -1,3 +1,5 @@
+import type { WebhookMetrics } from "./metrics.js";
+
 export type WebhookConfig = {
   url: string | string[];
   secret: string;
@@ -7,6 +9,11 @@ export type WebhookConfig = {
   maxConcurrentRetries?: number;
   /** Optional RNG for testing jitter. Defaults to `Math.random`. */
   random?: () => number;
+  /**
+   * Optional metrics sink. Defaults to a no-op. Pass an adapter such as
+   * `OtelWebhookMetrics` to export delivery counters and latency histograms.
+   */
+  metrics?: WebhookMetrics;
 };
 
 export const DEFAULT_MAX_AGE_MS = 300_000;
