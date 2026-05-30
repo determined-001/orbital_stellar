@@ -15,8 +15,9 @@ export { DeadLetterStore } from "./DeadLetterStore.js";
 // Global singleton for tracking delivery health across all WebhookDelivery instances
 const dlq = new DeadLetterStore();
 
-type ResolvedWebhookConfig = Omit<Required<WebhookConfig>, "url"> & {
+type ResolvedWebhookConfig = Omit<Required<WebhookConfig>, "url" | "urlValidator"> & {
   urls: string[];
+  urlValidator?: WebhookConfig["urlValidator"];
 };
 
 export class WebhookDelivery {
@@ -62,6 +63,25 @@ export class WebhookDelivery {
     attempt = 1,
   ): Promise<void> {
     if (this.watcher.stopped) return;
+
+    let customValidationError: string | null = null;
+    try {
+      customValidationError = this.config.urlValidator
+        ? await this.config.urlValidator(url)
+        : null;
+    } catch (err) {
+      if (this.watcher.stopped) return;
+
+      this.emitFailure(event, url, this.getErrorMessage(err), attempt);
+      return;
+    }
+
+    if (this.watcher.stopped) return;
+
+    if (customValidationError) {
+      this.emitFailure(event, url, customValidationError, attempt);
+      return;
+    }
 
     const payload = JSON.stringify(event);
     const timestamp = Date.now().toString();
@@ -136,6 +156,23 @@ export class WebhookDelivery {
     }
   }
 
+  private emitFailure(
+    event: NormalizedEvent,
+    url: string,
+    errorMessage: string,
+    attempt: number,
+  ): void {
+    this.watcher.emit("webhook.failed", {
+      ...event,
+      raw: {
+        error: errorMessage,
+        url,
+        attempts: attempt,
+        originalEvent: event,
+      },
+    } as unknown as NormalizedEvent);
+  }
+
   private clearRetryTimers(): void {
     for (const timer of this.retryTimers.keys()) {
       clearTimeout(timer);
@@ -165,8 +202,19 @@ export function verifyWebhook(
   signature: string,
   secret: string,
   timestamp: string,
+  options: VerifyWebhookOptions = {},
 ): NormalizedEvent | null {
   if (!/^\d+$/.test(timestamp)) return null;
+
+  const timestampMs = Number(timestamp);
+  if (!Number.isFinite(timestampMs)) return null;
+
+  const maxAgeMs = options.maxAgeMs ?? DEFAULT_MAX_AGE_MS;
+  const clockSkewMs = options.clockSkewMs ?? DEFAULT_CLOCK_SKEW_MS;
+  const nowMs = options.nowMs ?? Date.now();
+
+  if (timestampMs > nowMs + clockSkewMs) return null;
+  if (timestampMs < nowMs - maxAgeMs - clockSkewMs) return null;
 
   const expected = createHmac("sha256", secret)
     .update(`${timestamp}.${payload}`)
