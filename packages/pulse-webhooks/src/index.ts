@@ -1,9 +1,136 @@
-import type { NormalizedEvent, Watcher, WatcherNotification } from "@orbital/pulse-core";
+import type {
+  NormalizedEvent,
+  Watcher,
+  WatcherNotification,
+} from "@orbital/pulse-core";
 import { createHmac, timingSafeEqual } from "crypto";
 
 import type { WebhookConfig } from "./types.js";
 export { verifyWebhookEdge } from "./edge.js";
 export type { WebhookConfig } from "./types.js";
+
+export interface DeadLetterEntry {
+  id: string;
+  url: string;
+  event: NormalizedEvent;
+  error: string;
+  attempts: number;
+  timestamp: number;
+}
+
+export interface DeadLetterFilter {
+  url?: string;
+  since?: number;
+  until?: number;
+  limit?: number;
+}
+
+/**
+ * Dead Letter Queue for failed webhook deliveries.
+ * Stores failed webhooks keyed by unique failure ID.
+ * Supports querying by URL, time window, and limit.
+ *
+ * For best query performance, create indexes on:
+ * - `url` (for URL-first queries)
+ * - `timestamp` (for time-window queries)
+ * - Composite index on `(url, timestamp)` (for combined filters)
+ */
+export class DeadLetterStore {
+  private entries: Map<string, DeadLetterEntry> = new Map();
+  private nextId: number = 0;
+
+  /**
+   * Add a failed webhook delivery to the dead letter store.
+   */
+  add(
+    url: string,
+    event: NormalizedEvent,
+    error: string,
+    attempts: number,
+  ): string {
+    const id = `dlq_${this.nextId++}_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+    const timestamp = Date.now();
+
+    this.entries.set(id, {
+      id,
+      url,
+      event,
+      error,
+      attempts,
+      timestamp,
+    });
+
+    return id;
+  }
+
+  /**
+   * Query the dead letter store with optional filters.
+   * Returns entries matching all provided filters.
+   *
+   * @param filter - Filter criteria { url?, since?, until?, limit? }
+   * @returns Array of matching DeadLetterEntry objects
+   *
+   * Filter behavior:
+   * - url: exact string match
+   * - since: timestamp >= since (inclusive)
+   * - until: timestamp <= until (inclusive)
+   * - limit: return at most limit entries (from oldest first)
+   */
+  list(filter: DeadLetterFilter = {}): DeadLetterEntry[] {
+    let results = Array.from(this.entries.values());
+
+    // Filter by URL
+    if (filter.url !== undefined) {
+      results = results.filter((entry) => entry.url === filter.url);
+    }
+
+    // Filter by time range
+    if (filter.since !== undefined) {
+      results = results.filter((entry) => entry.timestamp >= filter.since!);
+    }
+    if (filter.until !== undefined) {
+      results = results.filter((entry) => entry.timestamp <= filter.until!);
+    }
+
+    // Sort by timestamp (oldest first) for consistent ordering
+    results.sort((a, b) => a.timestamp - b.timestamp);
+
+    // Apply limit
+    if (filter.limit !== undefined && filter.limit > 0) {
+      results = results.slice(0, filter.limit);
+    }
+
+    return results;
+  }
+
+  /**
+   * Retrieve a specific entry by ID.
+   */
+  get(id: string): DeadLetterEntry | undefined {
+    return this.entries.get(id);
+  }
+
+  /**
+   * Remove an entry from the store.
+   */
+  remove(id: string): boolean {
+    return this.entries.delete(id);
+  }
+
+  /**
+   * Clear all entries from the store.
+   */
+  clear(): void {
+    this.entries.clear();
+  }
+
+  /**
+   * Get total number of entries in the store.
+   */
+  size(): number {
+    return this.entries.size;
+  }
+}
 
 type ResolvedWebhookConfig = Omit<Required<WebhookConfig>, "url"> & {
   urls: string[];
@@ -12,11 +139,16 @@ type ResolvedWebhookConfig = Omit<Required<WebhookConfig>, "url"> & {
 export class WebhookDelivery {
   private config: ResolvedWebhookConfig;
   private watcher: Watcher;
+  private dlq: DeadLetterStore;
   // Map of timer -> event so we can evict the newest entry when the cap is hit.
-  private retryTimers: Map<ReturnType<typeof setTimeout>, { event: NormalizedEvent; url: string }> = new Map();
+  private retryTimers: Map<
+    ReturnType<typeof setTimeout>,
+    { event: NormalizedEvent; url: string }
+  > = new Map();
 
-  constructor(watcher: Watcher, config: WebhookConfig) {
+  constructor(watcher: Watcher, config: WebhookConfig, dlq?: DeadLetterStore) {
     this.watcher = watcher;
+    this.dlq = dlq || new DeadLetterStore();
     this.config = {
       retries: 3,
       deliveryTimeoutMs: 10000,
@@ -25,7 +157,10 @@ export class WebhookDelivery {
       ...config,
       urls: Array.isArray(config.url) ? [...config.url] : [config.url],
     };
-    this.config.maxConcurrentRetries = Math.max(1, this.config.maxConcurrentRetries);
+    this.config.maxConcurrentRetries = Math.max(
+      1,
+      this.config.maxConcurrentRetries,
+    );
 
     this.watcher.addStopHandler(() => {
       this.clearRetryTimers();
@@ -38,6 +173,13 @@ export class WebhookDelivery {
         }
       }
     });
+  }
+
+  /**
+   * Get the dead letter store for this delivery instance.
+   */
+  getDeadLetterStore(): DeadLetterStore {
+    return this.dlq;
   }
 
   private async deliverToUrl(
@@ -81,9 +223,19 @@ export class WebhookDelivery {
           const newest = this.retryTimers.get(newestTimer)!;
           clearTimeout(newestTimer);
           this.retryTimers.delete(newestTimer);
+
+          // Add to dead letter store
+          const dlqId = this.dlq.add(
+            newest.url,
+            newest.event,
+            "Retry capacity exceeded, dropped from queue",
+            attempt,
+          );
+
           this.watcher.emit("webhook.dropped", {
             ...newest.event,
             raw: {
+              dlqId,
               reason: "retry_cap_exceeded",
               url: newest.url,
               maxConcurrentRetries: this.config.maxConcurrentRetries,
@@ -100,9 +252,13 @@ export class WebhookDelivery {
         }, delay);
         this.retryTimers.set(retryTimer, { event, url });
       } else {
+        // Add to dead letter store
+        const dlqId = this.dlq.add(url, event, errorMessage, attempt);
+
         this.watcher.emit("webhook.failed", {
           ...event,
           raw: {
+            dlqId,
             error: errorMessage,
             url,
             attempts: attempt,
