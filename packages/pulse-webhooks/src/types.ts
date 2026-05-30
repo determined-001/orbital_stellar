@@ -9,12 +9,14 @@ export type WebhookConfig = {
   maxConcurrentRetries?: number;
   /** Optional RNG for testing jitter. Defaults to `Math.random`. */
   random?: () => number;
-  /**
+/**
    * Optional durable backing store for pending retries. When supplied, its
    * `ping()` is consulted by {@link WebhookDelivery.healthCheck} — a failing
    * ping flips delivery health to `unhealthy`. Omit to use in-process timers.
    */
   retryQueue?: RetryQueue;
+  /** Optional custom URL validator for additional block-lists. Return an error message to reject, or null to allow. */
+  urlValidator?: (url: string) => Promise<string | null>;
 };
 
 export const DEFAULT_MAX_AGE_MS = 300_000;

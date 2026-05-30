@@ -22,9 +22,10 @@ export type WebhookHealth = {
   pendingRetries: number;
 };
 
-type ResolvedWebhookConfig = Omit<Required<WebhookConfig>, "url" | "retryQueue"> & {
+type ResolvedWebhookConfig = Omit<Required<WebhookConfig>, "url" | "retryQueue" | "urlValidator"> & {
   urls: string[];
   retryQueue?: RetryQueue;
+  urlValidator?: WebhookConfig["urlValidator"];
 };
 
 export class WebhookDelivery {
@@ -105,6 +106,25 @@ export class WebhookDelivery {
   ): Promise<void> {
     if (this.watcher.stopped) return;
 
+    let customValidationError: string | null = null;
+    try {
+      customValidationError = this.config.urlValidator
+        ? await this.config.urlValidator(url)
+        : null;
+    } catch (err) {
+      if (this.watcher.stopped) return;
+
+      this.emitFailure(event, url, this.getErrorMessage(err), attempt);
+      return;
+    }
+
+    if (this.watcher.stopped) return;
+
+    if (customValidationError) {
+      this.emitFailure(event, url, customValidationError, attempt);
+      return;
+    }
+
     const payload = JSON.stringify(event);
     const timestamp = Date.now().toString();
     const signature = this.sign(payload, timestamp);
@@ -158,19 +178,28 @@ export class WebhookDelivery {
         }, delay);
         this.retryTimers.set(retryTimer, { event, url });
       } else {
-        this.watcher.emit("webhook.failed", {
-          ...event,
-          raw: {
-            error: errorMessage,
-            url,
-            attempts: attempt,
-            originalEvent: event,
-          },
-        } as unknown as NormalizedEvent);
+        this.emitFailure(event, url, errorMessage, attempt);
       }
     } finally {
       clearTimeout(abortTimer);
     }
+  }
+
+  private emitFailure(
+    event: NormalizedEvent,
+    url: string,
+    errorMessage: string,
+    attempt: number,
+  ): void {
+    this.watcher.emit("webhook.failed", {
+      ...event,
+      raw: {
+        error: errorMessage,
+        url,
+        attempts: attempt,
+        originalEvent: event,
+      },
+    } as unknown as NormalizedEvent);
   }
 
   private clearRetryTimers(): void {
