@@ -7,4 +7,6 @@ export type WebhookConfig = {
   maxConcurrentRetries?: number;
   /** Optional RNG for testing jitter. Defaults to `Math.random`. */
   random?: () => number;
+  /** Optional custom URL validator for additional block-lists. Return an error message to reject, or null to allow. */
+  urlValidator?: (url: string) => Promise<string | null>;
 };

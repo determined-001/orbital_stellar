@@ -99,6 +99,39 @@ describe("pulse-webhooks WebhookDelivery", () => {
     );
   });
 
+  it("rejects URL when custom urlValidator blocks an otherwise allowed URL", async () => {
+    const allowedUrl = "https://prod.example.com/webhooks/stellar";
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200 });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const watcher = new Watcher("GABC");
+    const failedHandler = vi.fn();
+    watcher.on("webhook.failed", failedHandler);
+
+    new WebhookDelivery(watcher, {
+      url: allowedUrl,
+      secret: "top-secret",
+      retries: 1,
+      urlValidator: async (url) =>
+        url === allowedUrl ? "blocked by custom validator" : null,
+    });
+
+    watcher.emit("*", deliveryEvent);
+    await flushAsyncWork();
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(failedHandler).toHaveBeenCalledTimes(1);
+    expect(failedHandler).toHaveBeenCalledWith(
+      expect.objectContaining({
+        raw: expect.objectContaining({
+          url: allowedUrl,
+          error: "blocked by custom validator",
+          attempts: 1,
+        }),
+      }),
+    );
+  });
+
   it("keeps delivering to other URLs when one URL fails", async () => {
     const failedUrl = "https://prod.example.com/webhooks/stellar";
     const successfulUrl = "https://audit.example.com/webhooks/stellar";

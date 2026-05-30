@@ -5,8 +5,9 @@ import type { WebhookConfig } from "./types.js";
 export { verifyWebhookEdge } from "./edge.js";
 export type { WebhookConfig } from "./types.js";
 
-type ResolvedWebhookConfig = Omit<Required<WebhookConfig>, "url"> & {
+type ResolvedWebhookConfig = Omit<Required<WebhookConfig>, "url" | "urlValidator"> & {
   urls: string[];
+  urlValidator?: WebhookConfig["urlValidator"];
 };
 
 export class WebhookDelivery {
@@ -55,6 +56,14 @@ export class WebhookDelivery {
     const abortTimer = setTimeout(() => controller.abort(), timeoutMs);
 
     try {
+      const customValidationError = this.config.urlValidator
+        ? await this.config.urlValidator(url)
+        : null;
+
+      if (customValidationError) {
+        throw new Error(customValidationError);
+      }
+
       const res = await fetch(url, {
         method: "POST",
         headers: {
