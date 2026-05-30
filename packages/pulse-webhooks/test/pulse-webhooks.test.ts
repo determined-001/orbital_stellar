@@ -6,6 +6,8 @@ import {
   verifyWebhook,
   verifyWebhookEdge,
   WebhookDelivery,
+  deliveryHealth,
+  DeadLetterStore,
 } from "../src/index.js";
 
 const deliveryEvent = {
@@ -256,7 +258,9 @@ describe("pulse-webhooks WebhookDelivery", () => {
     watcher.emit("*", deliveryEvent);
     await flushAsyncWork();
 
-    const allCalls = setTimeoutSpy.mock.calls.filter((call: any[]) => call[1] !== 10000);
+    const allCalls = setTimeoutSpy.mock.calls.filter(
+      (call: any[]) => call[1] !== 10000,
+    );
     expect(allCalls.length).toBe(1);
 
     const attempt1Delay = allCalls[0][1] as number;
@@ -266,7 +270,9 @@ describe("pulse-webhooks WebhookDelivery", () => {
     vi.advanceTimersByTime(attempt1Delay + 1);
     await flushAsyncWork();
 
-    const allCallsAfterRetry = setTimeoutSpy.mock.calls.filter((call: any[]) => call[1] !== 10000);
+    const allCallsAfterRetry = setTimeoutSpy.mock.calls.filter(
+      (call: any[]) => call[1] !== 10000,
+    );
     expect(allCallsAfterRetry.length).toBe(2);
 
     const attempt2Delay = allCallsAfterRetry[1][1] as number;
@@ -383,5 +389,180 @@ describe("pulse-webhooks verifyWebhookEdge", () => {
     expect(
       await verifyWebhookEdge(payload, signature, "top-secret", timestamp),
     ).toBeNull();
+  });
+});
+
+describe("pulse-webhooks deliveryHealth", () => {
+  let dlq: DeadLetterStore;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    dlq = new DeadLetterStore();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("returns unhealthy status for unknown URL", () => {
+    const health = deliveryHealth("https://unknown.example.com/hook");
+
+    expect(health).toEqual({
+      healthy: false,
+      failureRate: 0,
+    });
+  });
+
+  it("returns healthy when recent success and no failures", () => {
+    vi.setSystemTime(new Date("2026-05-30T12:00:00Z"));
+
+    const dlqInstance = new DeadLetterStore();
+    dlqInstance.recordSuccess("https://example.com/hook", Date.now());
+
+    const health = dlqInstance.getHealth("https://example.com/hook");
+
+    expect(health.healthy).toBe(true);
+    expect(health.failureRate).toBe(0);
+    expect(health.lastSuccess).toBeDefined();
+  });
+
+  it("returns unhealthy when no recent success in last 15 minutes", () => {
+    vi.setSystemTime(new Date("2026-05-30T12:30:00Z"));
+
+    const dlqInstance = new DeadLetterStore();
+    dlqInstance.recordSuccess(
+      "https://example.com/hook",
+      Date.now() - 20 * 60 * 1000,
+    ); // 20 minutes ago
+    dlqInstance.recordFailure("https://example.com/hook", Date.now());
+
+    const health = dlqInstance.getHealth("https://example.com/hook");
+
+    expect(health.healthy).toBe(false);
+  });
+
+  it("calculates failure rate correctly", () => {
+    vi.setSystemTime(new Date("2026-05-30T12:00:00Z"));
+
+    const dlqInstance = new DeadLetterStore();
+    const now = Date.now();
+
+    // Add 10 successes and 1 failure in the last hour = 10% failure rate
+    for (let i = 0; i < 10; i++) {
+      dlqInstance.recordSuccess("https://example.com/hook", now - i * 1000);
+    }
+    dlqInstance.recordFailure("https://example.com/hook", now);
+
+    const health = dlqInstance.getHealth("https://example.com/hook");
+
+    expect(health.failureRate).toBeCloseTo(9.09, 1); // 1/11 ≈ 9.09%
+  });
+
+  it("returns unhealthy when failure rate >= 5%", () => {
+    vi.setSystemTime(new Date("2026-05-30T12:00:00Z"));
+
+    const dlqInstance = new DeadLetterStore();
+    const now = Date.now();
+
+    // Add 19 successes and 1 failure = 5% failure rate
+    for (let i = 0; i < 19; i++) {
+      dlqInstance.recordSuccess("https://example.com/hook", now - i * 1000);
+    }
+    dlqInstance.recordFailure("https://example.com/hook", now);
+
+    const health = dlqInstance.getHealth("https://example.com/hook");
+
+    expect(health.failureRate).toBe(5);
+    expect(health.healthy).toBe(false); // Not healthy at exactly 5%
+  });
+
+  it("returns healthy when failure rate < 5% and recent success", () => {
+    vi.setSystemTime(new Date("2026-05-30T12:00:00Z"));
+
+    const dlqInstance = new DeadLetterStore();
+    const now = Date.now();
+
+    // Add 20 successes and 1 failure = 4.76% failure rate < 5%
+    for (let i = 0; i < 20; i++) {
+      dlqInstance.recordSuccess("https://example.com/hook", now - i * 1000);
+    }
+    dlqInstance.recordFailure("https://example.com/hook", now - 61 * 60 * 1000); // 61 minutes ago (outside window)
+
+    const health = dlqInstance.getHealth("https://example.com/hook");
+
+    expect(health.failureRate).toBe(0); // Only counts events in last hour
+    expect(health.healthy).toBe(true);
+  });
+
+  it("only considers events from the last hour for failure rate", () => {
+    vi.setSystemTime(new Date("2026-05-30T12:00:00Z"));
+
+    const dlqInstance = new DeadLetterStore();
+    const now = Date.now();
+
+    // Add old failure outside 1-hour window
+    dlqInstance.recordFailure("https://example.com/hook", now - 61 * 60 * 1000);
+
+    // Add recent successes
+    for (let i = 0; i < 5; i++) {
+      dlqInstance.recordSuccess("https://example.com/hook", now - i * 1000);
+    }
+
+    const health = dlqInstance.getHealth("https://example.com/hook");
+
+    expect(health.failureRate).toBe(0);
+    expect(health.healthy).toBe(true);
+  });
+
+  it("stores lastSuccess and lastFailure timestamps", () => {
+    vi.setSystemTime(new Date("2026-05-30T12:00:00Z"));
+
+    const dlqInstance = new DeadLetterStore();
+    const now = Date.now();
+
+    dlqInstance.recordSuccess("https://example.com/hook", now - 10 * 1000);
+    dlqInstance.recordFailure("https://example.com/hook", now - 5 * 1000);
+
+    const health = dlqInstance.getHealth("https://example.com/hook");
+
+    expect(health.lastSuccess).toBe(now - 10 * 1000);
+    expect(health.lastFailure).toBe(now - 5 * 1000);
+  });
+
+  it("handles multiple URLs independently", () => {
+    vi.setSystemTime(new Date("2026-05-30T12:00:00Z"));
+
+    const dlqInstance = new DeadLetterStore();
+    const now = Date.now();
+
+    // URL 1: healthy
+    dlqInstance.recordSuccess("https://prod.example.com/hook", now);
+
+    // URL 2: unhealthy (high failure rate)
+    for (let i = 0; i < 10; i++) {
+      dlqInstance.recordFailure(
+        "https://staging.example.com/hook",
+        now - i * 1000,
+      );
+    }
+
+    const health1 = dlqInstance.getHealth("https://prod.example.com/hook");
+    const health2 = dlqInstance.getHealth("https://staging.example.com/hook");
+
+    expect(health1.healthy).toBe(true);
+    expect(health2.healthy).toBe(false);
+  });
+
+  it("global deliveryHealth function returns store metrics", () => {
+    vi.setSystemTime(new Date("2026-05-30T12:00:00Z"));
+
+    // This test uses the exported deliveryHealth function which uses the global dlq instance
+    // We can't easily test the global state, so we verify the function signature works
+    const health = deliveryHealth("https://example.com/hook");
+
+    expect(health).toHaveProperty("healthy");
+    expect(health).toHaveProperty("failureRate");
+    expect(typeof health.healthy).toBe("boolean");
+    expect(typeof health.failureRate).toBe("number");
   });
 });

@@ -1,9 +1,19 @@
-import type { NormalizedEvent, Watcher, WatcherNotification } from "@orbital/pulse-core";
+import type {
+  NormalizedEvent,
+  Watcher,
+  WatcherNotification,
+} from "@orbital/pulse-core";
 import { createHmac, timingSafeEqual } from "crypto";
 
+import { DeadLetterStore, type DeliveryHealth } from "./DeadLetterStore.js";
 import type { WebhookConfig } from "./types.js";
 export { verifyWebhookEdge } from "./edge.js";
 export type { WebhookConfig } from "./types.js";
+export type { DeliveryHealth } from "./DeadLetterStore.js";
+export { DeadLetterStore } from "./DeadLetterStore.js";
+
+// Global singleton for tracking delivery health across all WebhookDelivery instances
+const dlq = new DeadLetterStore();
 
 type ResolvedWebhookConfig = Omit<Required<WebhookConfig>, "url"> & {
   urls: string[];
@@ -13,7 +23,10 @@ export class WebhookDelivery {
   private config: ResolvedWebhookConfig;
   private watcher: Watcher;
   // Map of timer -> event so we can evict the newest entry when the cap is hit.
-  private retryTimers: Map<ReturnType<typeof setTimeout>, { event: NormalizedEvent; url: string }> = new Map();
+  private retryTimers: Map<
+    ReturnType<typeof setTimeout>,
+    { event: NormalizedEvent; url: string }
+  > = new Map();
 
   constructor(watcher: Watcher, config: WebhookConfig) {
     this.watcher = watcher;
@@ -25,7 +38,10 @@ export class WebhookDelivery {
       ...config,
       urls: Array.isArray(config.url) ? [...config.url] : [config.url],
     };
-    this.config.maxConcurrentRetries = Math.max(1, this.config.maxConcurrentRetries);
+    this.config.maxConcurrentRetries = Math.max(
+      1,
+      this.config.maxConcurrentRetries,
+    );
 
     this.watcher.addStopHandler(() => {
       this.clearRetryTimers();
@@ -68,6 +84,9 @@ export class WebhookDelivery {
       });
 
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+      // Record successful delivery
+      dlq.recordSuccess(url);
     } catch (err) {
       if (this.watcher.stopped) return;
 
@@ -100,6 +119,8 @@ export class WebhookDelivery {
         }, delay);
         this.retryTimers.set(retryTimer, { event, url });
       } else {
+        // Record final failure after exhausting retries
+        dlq.recordFailure(url);
         this.watcher.emit("webhook.failed", {
           ...event,
           raw: {
@@ -162,4 +183,19 @@ export function verifyWebhook(
   } catch {
     return null;
   }
+}
+
+/**
+ * Get delivery health metrics for a webhook URL.
+ *
+ * Health rule:
+ * - healthy = true when:
+ *   - failure rate < 5% in the last hour
+ *   - AND at least one success in the last 15 minutes
+ *
+ * @param url The webhook URL to check
+ * @returns Health metrics: { healthy, lastSuccess, lastFailure, failureRate }
+ */
+export function deliveryHealth(url: string): DeliveryHealth {
+  return dlq.getHealth(url);
 }
