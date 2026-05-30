@@ -1,3 +1,5 @@
+import type { RetryQueue } from "./RetryQueue.js";
+
 export type WebhookConfig = {
   url: string | string[];
   secret: string;
@@ -7,6 +9,12 @@ export type WebhookConfig = {
   maxConcurrentRetries?: number;
   /** Optional RNG for testing jitter. Defaults to `Math.random`. */
   random?: () => number;
+  /**
+   * Optional durable backing store for pending retries. When supplied, its
+   * `ping()` is consulted by {@link WebhookDelivery.healthCheck} — a failing
+   * ping flips delivery health to `unhealthy`. Omit to use in-process timers.
+   */
+  retryQueue?: RetryQueue;
 };
 
 export const DEFAULT_MAX_AGE_MS = 300_000;

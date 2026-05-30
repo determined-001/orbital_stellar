@@ -3,6 +3,9 @@ export { Watcher } from "./Watcher.js";
 export { EngineAlreadyStartedError } from "./errors.js";
 export { StrKey } from "@stellar/stellar-sdk";
 
+
+
+
 /** The Stellar network to connect to. */
 export type Network = "mainnet" | "testnet";
 
@@ -340,4 +343,21 @@ export type SubscribeOptions = {
    *  Return `false` to suppress delivery. If the predicate throws, the event
    *  is suppressed and a warning is logged — the engine continues running. */
   filter?: (event: NormalizedEvent) => boolean;
+};
+
+
+/**
+ * Coarse liveness verdict shared by every Orbital component that exposes a
+ * `healthCheck()`. Probes map these directly: `healthy` → 200,
+ * `degraded` → 200 (serving, self-recovering), `unhealthy` → 503.
+ */
+export type HealthStatus = "healthy" | "degraded" | "unhealthy";
+
+/** Result of `EventEngine.healthCheck()`. */
+export type EngineHealth = {
+  status: HealthStatus;
+  running: boolean;
+  watcherCount: number;
+  lastEventAt: string | null;
+  reconnectAttempt: number;
 };

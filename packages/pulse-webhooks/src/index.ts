@@ -1,13 +1,30 @@
-import type { NormalizedEvent, Watcher, WatcherNotification } from "@orbital/pulse-core";
+import type { HealthStatus, NormalizedEvent, Watcher, WatcherNotification } from "@orbital/pulse-core";
 import { createHmac, timingSafeEqual } from "crypto";
 
 import type { VerifyWebhookOptions, WebhookConfig } from "./types.js";
 import { DEFAULT_MAX_AGE_MS, DEFAULT_CLOCK_SKEW_MS } from "./types.js";
+import type { RetryQueue } from "./RetryQueue.js";
 export { verifyWebhookEdge } from "./edge.js";
+export { InMemoryRetryQueue } from "./RetryQueue.js";
 export type { VerifyWebhookOptions, WebhookConfig } from "./types.js";
+export type { RetryQueue } from "./RetryQueue.js";
 
-type ResolvedWebhookConfig = Omit<Required<WebhookConfig>, "url"> & {
+/**
+ * Result of {@link WebhookDelivery.healthCheck}. Mirrors the shape of
+ * `EventEngine.healthCheck()` — a coarse {@link HealthStatus} verdict plus
+ * the details a probe might surface.
+ */
+export type WebhookHealth = {
+  status: HealthStatus;
+  /** Whether the backing retry queue answered its `ping()`. */
+  queueReachable: boolean;
+  /** Number of retries currently pending. */
+  pendingRetries: number;
+};
+
+type ResolvedWebhookConfig = Omit<Required<WebhookConfig>, "url" | "retryQueue"> & {
   urls: string[];
+  retryQueue?: RetryQueue;
 };
 
 export class WebhookDelivery {
@@ -39,6 +56,46 @@ export class WebhookDelivery {
         }
       }
     });
+  }
+
+  /**
+   * Liveness verdict for this delivery, mirroring `EventEngine.healthCheck()`.
+   *
+   * - `unhealthy` — the watcher has stopped (no deliveries will be made), or a
+   *                 configured retry queue failed its `ping()` (backing store
+   *                 unreachable).
+   * - `degraded`  — pending retries have reached `maxConcurrentRetries`, so new
+   *                 retries are being dropped.
+   * - `healthy`   — delivering normally.
+   *
+   * A failing queue ping is the dominant signal: it flips health to
+   * `unhealthy` regardless of pending-retry pressure.
+   */
+  async healthCheck(): Promise<WebhookHealth> {
+    const queue = this.config.retryQueue;
+    const pendingRetries = queue ? await queue.size() : this.retryTimers.size;
+
+    let queueReachable = true;
+    let status: HealthStatus = "healthy";
+
+    if (this.watcher.stopped) {
+      status = "unhealthy";
+    }
+
+    if (queue?.ping) {
+      try {
+        await queue.ping();
+      } catch {
+        queueReachable = false;
+        status = "unhealthy";
+      }
+    }
+
+    if (status === "healthy" && pendingRetries >= this.config.maxConcurrentRetries) {
+      status = "degraded";
+    }
+
+    return { status, queueReachable, pendingRetries };
   }
 
   private async deliverToUrl(

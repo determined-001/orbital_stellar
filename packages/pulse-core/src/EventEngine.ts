@@ -15,7 +15,9 @@ import type {
   CoreConfig,
   DataEvent,
   DataEventType,
+  EngineHealth,
   EngineStatus,
+  HealthStatus,
   LiquidityPoolDepositEvent,
   LiquidityPoolWithdrawEvent,
   Network,
@@ -187,6 +189,44 @@ export class EventEngine {
 
   status(): EngineStatus {
     return {
+      running: this.isRunning,
+      watcherCount: this.registry.size,
+      lastEventAt: this.lastEventAt,
+      reconnectAttempt: this.reconnectAttempt,
+    };
+  }
+
+  /**
+   * Distils the engine's connection state into a single liveness verdict,
+   * intended for health/liveness probes.
+   *
+   * - `healthy`   — the SSE stream is open and confirmed (no reconnect pending).
+   * - `degraded`  — the stream is recovering: either a reconnect is scheduled
+   *                 within the retry budget, or a reconnect just re-opened the
+   *                 stream but no confirming event has arrived yet. Transient.
+   * - `unhealthy` — the engine is not serving events: never started, stopped,
+   *                 or the reconnect budget has been exhausted.
+   *
+   * Unlike {@link status}, which exposes raw telemetry, this returns a
+   * coarse verdict suitable for wiring directly into a probe endpoint.
+   */
+  healthCheck(): EngineHealth {
+    let status: HealthStatus;
+    if (this.reconnectTimer !== null) {
+      // Stream dropped; backoff scheduled but still within the retry budget.
+      status = "degraded";
+    } else if (!this.isRunning) {
+      // Never started, explicitly stopped, or reconnect budget exhausted.
+      status = "unhealthy";
+    } else if (this.reconnectAttempt > 0) {
+      // Reconnect re-opened the stream but no confirming event has arrived yet.
+      status = "degraded";
+    } else {
+      status = "healthy";
+    }
+
+    return {
+      status,
       running: this.isRunning,
       watcherCount: this.registry.size,
       lastEventAt: this.lastEventAt,
