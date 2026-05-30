@@ -184,6 +184,6 @@ useStellarEvent(serverUrl, address, {
 ## Connection lifecycle
 
 - The browser's `EventSource` reconnects automatically on disconnect
-- Each hook instance opens one connection — share the address across components if possible to avoid duplicate connections
+- Hook instances with the same `serverUrl`, `address`, and `token` share one browser connection while keeping their own event filters
 - Clean shutdown: when your backend exits, send a custom `shutdown` event so clients can distinguish planned restarts from network failures
 - Heartbeats every ~30 seconds keep the connection alive through proxies and load balancers

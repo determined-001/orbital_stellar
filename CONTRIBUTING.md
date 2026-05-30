@@ -12,6 +12,7 @@ Thank you for your interest in contributing. This guide covers everything you ne
 - [Testing](#testing)
 - [Opening a pull request](#opening-a-pull-request)
 - [Stellar Wave Program](#stellar-wave-program)
+- [Adding yourself to the contributors list](#adding-yourself-to-the-contributors-list)
 
 ---
 
@@ -26,8 +27,8 @@ Thank you for your interest in contributing. This guide covers everything you ne
 ## Setting up the repo
 
 ```bash
-git clone https://github.com/orbital/orbital.git
-cd orbital
+git clone https://github.com/determined-001/orbital_stellar.git
+cd orbital_stellar
 pnpm install
 ```
 
@@ -151,3 +152,47 @@ Orbital participates in the [Drips Stellar Wave Program](https://drips.network).
 4. Issues tagged `good-first-issue` are scoped for newcomers — start there if this is your first contribution.
 
 One open issue per contributor at a time for `good-first-issue` items.
+
+---
+
+## Adding yourself to the contributors list
+
+Orbital uses the [all-contributors](https://allcontributors.org) specification to recognize every kind of contribution — code, docs, design, infrastructure, bug reports, reviews, ideas, and more.
+
+The contributor table in the [README](README.md#contributors) is maintained by the all-contributors GitHub Action. If your work has been merged and your name is not in the table, you can add yourself in one of two ways.
+
+### Option 1 — Ask the bot (recommended)
+
+Comment on any open issue or pull request:
+
+```
+@all-contributors please add @your-github-username for code, doc
+```
+
+Use as many [contribution types](https://allcontributors.org/docs/en/emoji-key) as apply, separated by commas. The bot will open a pull request that updates `.all-contributorsrc` and re-renders the README table. A maintainer merges it.
+
+**Common contribution types:**
+
+| Type | Emoji | When to use |
+|---|---|---|
+| `code` | 💻 | Merged code in any package |
+| `doc` | 📖 | Docs, READMEs, this file, the marketing site content |
+| `infra` | 🏗️ | CI workflows, Dependabot config, tooling |
+| `maintenance` | 🚧 | Issue triage, PR review, dependency upkeep |
+| `test` | ⚠️ | New or significantly expanded tests |
+| `review` | 👀 | Reviewed pull requests |
+| `bug` | 🐛 | Reported a confirmed bug |
+| `ideas` | 🤔 | Proposed a feature that shipped |
+| `design` | 🎨 | UI / visual / brand work |
+
+The full key lives at [allcontributors.org/docs/en/emoji-key](https://allcontributors.org/docs/en/emoji-key).
+
+### Option 2 — Open a pull request manually
+
+Edit `.all-contributorsrc`, add an entry under `"contributors"` with your GitHub login, display name, avatar URL (`https://github.com/<username>.png?size=100`), profile URL, and a `contributions` array. Then run `npx all-contributors generate` to re-render the README table and commit both files together.
+
+### What the table represents
+
+The curated table in the README is the **all-contributors** set — explicitly recognized contributions across every category. It is not the same as the full git author list. For the complete commit history including everyone who has ever pushed code, see the [GitHub contributor graph](https://github.com/determined-001/orbital_stellar/graphs/contributors).
+
+If you contributed before all-contributors was adopted (`v0.1.0` release timeframe) and your name is in the git history but not the table, please open an issue or comment on a PR with your preferred GitHub login — we will add you.

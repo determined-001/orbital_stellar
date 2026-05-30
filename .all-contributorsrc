@@ -63,6 +63,24 @@
       "contributions": [
         "code"
       ]
+    },
+    {
+      "login": "newmattock",
+      "name": "newmattock",
+      "avatar_url": "https://github.com/newmattock.png?size=100",
+      "profile": "https://github.com/newmattock",
+      "contributions": [
+        "code"
+      ]
+    },
+    {
+      "login": "tun1r",
+      "name": "tunir",
+      "avatar_url": "https://github.com/tun1r.png?size=100",
+      "profile": "https://github.com/tun1r",
+      "contributions": [
+        "code"
+      ]
     }
   ]
 }

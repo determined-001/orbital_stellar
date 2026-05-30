@@ -147,7 +147,7 @@ The hooks are client-only — they rely on `EventSource`, which doesn't exist in
 
 ## Connection behavior
 
-- One `EventSource` connection per hook instance
+- Hook instances with the same `serverUrl`, `address`, and `token` share one `EventSource`
 - Browser handles reconnection automatically on transient network errors
 - Connections are cleaned up on unmount or when `address` / `serverUrl` change
 - Each render returns the *most recent* event — accumulate history yourself in component state if needed
