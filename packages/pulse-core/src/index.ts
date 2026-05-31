@@ -460,6 +460,18 @@ export class UnknownNetworkError extends Error {
   }
 }
 
+<<<<<<< HEAD
+=======
+export type EngineStatus = {
+  running: boolean;
+  watcherCount: number;
+  contractWatcherCount?: number;
+  lastEventAt: string | null;
+  reconnectAttempt: number;
+  pausedSources?: ("horizon" | "soroban")[];
+};
+
+>>>>>>> c4d0792 (feat(#312): add per-source pause/resume with cursor persistence and status tracking (#526))
 export type HealthCheckResult = {
   ok: boolean;
   reasons: string[];
