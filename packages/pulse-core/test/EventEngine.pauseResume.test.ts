@@ -57,9 +57,13 @@ function makePaymentRecord(overrides: Record<string, unknown> = {}): Record<stri
   };
 }
 
+<<<<<<< HEAD
 function makeContractInvokedRecord(
   overrides: Record<string, unknown> = {},
 ): Record<string, unknown> {
+=======
+function makeContractInvokedRecord(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+>>>>>>> c4d0792 (feat(#312): add per-source pause/resume with cursor persistence and status tracking (#526))
   return {
     type: "contract_invocation",
     contract_id: "CABC1234",
@@ -71,9 +75,13 @@ function makeContractInvokedRecord(
   };
 }
 
+<<<<<<< HEAD
 function makeContractEmittedRecord(
   overrides: Record<string, unknown> = {},
 ): Record<string, unknown> {
+=======
+function makeContractEmittedRecord(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+>>>>>>> c4d0792 (feat(#312): add per-source pause/resume with cursor persistence and status tracking (#526))
   return {
     type: "contract_event",
     contract_id: "CABC1234",
@@ -220,9 +228,13 @@ describe("EventEngine — pause/resume per source", () => {
       watcher.on("payment.sent", (e) => received.push(e));
 
       // Emit first event
+<<<<<<< HEAD
       latestStream().handlers.onmessage(
         makePaymentRecord({ from: "GABC", to: "GDEF", amount: "10" }),
       );
+=======
+      latestStream().handlers.onmessage(makePaymentRecord({ from: "GABC", to: "GDEF", amount: "10" }));
+>>>>>>> c4d0792 (feat(#312): add per-source pause/resume with cursor persistence and status tracking (#526))
       expect(received).toHaveLength(1);
       expect((received[0] as any).amount).toBe("10");
 
@@ -230,18 +242,26 @@ describe("EventEngine — pause/resume per source", () => {
       engine.pauseSource("horizon");
 
       // Emit second event while paused — should be dropped
+<<<<<<< HEAD
       latestStream().handlers.onmessage(
         makePaymentRecord({ from: "GABC", to: "GDEF", amount: "20" }),
       );
+=======
+      latestStream().handlers.onmessage(makePaymentRecord({ from: "GABC", to: "GDEF", amount: "20" }));
+>>>>>>> c4d0792 (feat(#312): add per-source pause/resume with cursor persistence and status tracking (#526))
       expect(received).toHaveLength(1);
 
       // Resume Horizon source
       engine.resumeSource("horizon");
 
       // Emit third event — should be received
+<<<<<<< HEAD
       latestStream().handlers.onmessage(
         makePaymentRecord({ from: "GABC", to: "GDEF", amount: "30" }),
       );
+=======
+      latestStream().handlers.onmessage(makePaymentRecord({ from: "GABC", to: "GDEF", amount: "30" }));
+>>>>>>> c4d0792 (feat(#312): add per-source pause/resume with cursor persistence and status tracking (#526))
       expect(received).toHaveLength(2);
       expect((received[1] as any).amount).toBe("30");
     });
@@ -288,7 +308,11 @@ describe("EventEngine — pause/resume per source", () => {
 
       engine.pauseSource("horizon");
       expect(log.warn).toHaveBeenCalledWith(
+<<<<<<< HEAD
         expect.stringContaining('pauseSource("horizon") called but source is already paused'),
+=======
+        expect.stringContaining('pauseSource("horizon") called but source is already paused')
+>>>>>>> c4d0792 (feat(#312): add per-source pause/resume with cursor persistence and status tracking (#526))
       );
     });
 
@@ -299,7 +323,11 @@ describe("EventEngine — pause/resume per source", () => {
 
       engine.resumeSource("horizon");
       expect(log.warn).toHaveBeenCalledWith(
+<<<<<<< HEAD
         expect.stringContaining('resumeSource("horizon") called but source is not paused'),
+=======
+        expect.stringContaining('resumeSource("horizon") called but source is not paused')
+>>>>>>> c4d0792 (feat(#312): add per-source pause/resume with cursor persistence and status tracking (#526))
       );
     });
 
