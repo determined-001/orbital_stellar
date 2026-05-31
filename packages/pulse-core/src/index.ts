@@ -6,6 +6,12 @@ export { StrKey } from "@stellar/stellar-sdk";
 /** The Stellar network to connect to. */
 export type Network = "mainnet" | "testnet";
 
+/** Passphrase strings for each supported Stellar network. */
+export const NETWORK_PASSPHRASES = {
+  mainnet: "Public Global Stellar Network ; September 2015",
+  testnet: "Test SDF Network ; September 2015",
+} as const satisfies Record<Network, string>;
+
 /** Event types for payment-related events (received, sent, or self-payment). */
 export type PaymentEventType =
   | "payment.received"

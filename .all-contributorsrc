@@ -81,6 +81,60 @@
       "contributions": [
         "code"
       ]
+    },
+    {
+      "login": "brite-side0",
+      "name": "brite-side0",
+      "avatar_url": "https://github.com/brite-side0.png?size=100",
+      "profile": "https://github.com/brite-side0",
+      "contributions": [
+        "code"
+      ]
+    },
+    {
+      "login": "temisan0x",
+      "name": "temisan0x",
+      "avatar_url": "https://github.com/temisan0x.png?size=100",
+      "profile": "https://github.com/temisan0x",
+      "contributions": [
+        "code"
+      ]
+    },
+    {
+      "login": "MAN7A-afk",
+      "name": "MAN7A-afk",
+      "avatar_url": "https://github.com/MAN7A-afk.png?size=100",
+      "profile": "https://github.com/MAN7A-afk",
+      "contributions": [
+        "code"
+      ]
+    },
+    {
+      "login": "sorinc03",
+      "name": "Sorin Cioban",
+      "avatar_url": "https://github.com/sorinc03.png?size=100",
+      "profile": "https://github.com/sorinc03",
+      "contributions": [
+        "code"
+      ]
+    },
+    {
+      "login": "dotmantissa",
+      "name": "dotmantissa",
+      "avatar_url": "https://github.com/dotmantissa.png?size=100",
+      "profile": "https://github.com/dotmantissa",
+      "contributions": [
+        "code"
+      ]
+    },
+    {
+      "login": "martoniel",
+      "name": "Martin Obe",
+      "avatar_url": "https://github.com/martoniel.png?size=100",
+      "profile": "https://github.com/martoniel",
+      "contributions": [
+        "code"
+      ]
     }
   ]
 }
