@@ -11,3 +11,5 @@ export type {
 } from "./RegistryPublisher.js";
 
 export { LocalFilePublisher } from "./RegistryPublisher.js";
+
+export { scvalToJs, jsToScval } from "./scval.js";
