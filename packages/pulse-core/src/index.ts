@@ -1,6 +1,6 @@
 export { EventEngine } from "./EventEngine.js";
 export { Watcher } from "./Watcher.js";
-export { EngineAlreadyStartedError } from "./errors.js";
+export { EngineAlreadyStartedError, HorizonStreamError } from "./errors.js";
 export { StrKey } from "@stellar/stellar-sdk";
 
 /** The Stellar network to connect to. */
