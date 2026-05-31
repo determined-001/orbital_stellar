@@ -88,16 +88,17 @@ export class EventEngine {
   private server: Horizon.Server;
   private registry: Map<string, Watcher> = new Map();
   private contractRegistry: Map<string, { watcher: Watcher; filters: ContractSubscriptionFilter[] }> = new Map();
+  private subscriptionNames: Map<string, string> = new Map();
   private stopStream: HorizonStreamStopper | null = null;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private reconnectAttempt = 0;
   private pendingReconnectSuccessAttempt: number | null = null;
   private readonly reconnectConfig: Required<ReconnectConfig>;
   private isRunning = false;
+  private lastEventAt: string | null = null;
+  private horizonCursor?: string;
   private filters: Map<string, (event: NormalizedEvent) => boolean> = new Map();
   private log: Logger;
-  private lastEventAt: string | null = null;
-  private pausedSources: Set<"horizon" | "soroban"> = new Set();
 
   /**
    * Creates a new EventEngine instance.
@@ -142,19 +143,23 @@ export class EventEngine {
     if (existingWatcher) {
       if (options?.filter) {
         this.log.warn(
-          `[pulse-core] subscribe() called for address ${address} which already has an active watcher — filter option ignored.`
+          `[pulse-core] subscribe() called for ${this.describeSubscription(address)} which already has an active watcher — filter option ignored.`
         );
       }
       return existingWatcher;
     }
 
     const watcher = new Watcher(address);
+    if (options?.name !== undefined) {
+      this.subscriptionNames.set(address, options.name);
+    }
     if (options?.filter) {
       this.filters.set(address, options.filter);
     }
     watcher.addStopHandler(() => {
       this.registry.delete(address);
       this.filters.delete(address);
+      this.subscriptionNames.delete(address);
     });
     this.registry.set(address, watcher);
     return watcher;
@@ -193,8 +198,12 @@ export class EventEngine {
 
     const watcher = new Watcher(id);
     const filters = options?.filters ?? [];
+    if (options?.name !== undefined) {
+      this.subscriptionNames.set(id, options.name);
+    }
     watcher.addStopHandler(() => {
       this.contractRegistry.delete(id);
+      this.subscriptionNames.delete(id);
     });
     this.contractRegistry.set(id, { watcher, filters });
     return watcher;
@@ -214,12 +223,14 @@ export class EventEngine {
    * tearing it down.
    */
   unsubscribeAllContracts(): void {
-    const notification = {
-      type: "engine.stopped" as const,
-      attempt: 0,
-      emittedAt: new Date().toISOString(),
-    };
-    for (const entry of this.contractRegistry.values()) {
+    for (const [id, entry] of this.contractRegistry.entries()) {
+      const name = this.subscriptionNames.get(id);
+      const notification = {
+        type: "engine.stopped" as const,
+        attempt: 0,
+        emittedAt: new Date().toISOString(),
+        ...(name !== undefined ? { name } : {}),
+      };
       entry.watcher.emit("engine.stopped", notification);
       entry.watcher.stop();
     }
@@ -310,7 +321,7 @@ export class EventEngine {
     this.lastEventAt = null;
     this.closeStream();
     this.isRunning = false;
-    this.pausedSources.clear();
+    this.horizonCursor = undefined;
 
     this.notifyWatchers("engine.stopped", {
       type: "engine.stopped",
@@ -323,10 +334,41 @@ export class EventEngine {
     }
   }
 
+  status(): EngineStatus {
+    const horizon = {
+      running: this.isRunning,
+      lastEventAt: this.lastEventAt,
+      reconnectAttempt: this.reconnectAttempt,
+      cursor: this.horizonCursor,
+    };
+
+    const soroban = {
+      running: false,
+      lastEventAt: null,
+      reconnectAttempt: 0,
+    };
+
+    const sources = { horizon, soroban };
+    const lastEventAt = [horizon.lastEventAt, soroban.lastEventAt].filter(
+      (value): value is string => value !== null
+    );
+
+    return {
+      running: horizon.running || soroban.running,
+      watcherCount: this.registry.size,
+      lastEventAt: lastEventAt.length
+        ? lastEventAt.sort()[lastEventAt.length - 1]
+        : null,
+      reconnectAttempt: Math.max(horizon.reconnectAttempt, soroban.reconnectAttempt),
+      sources,
+    };
+  }
+
   private openStream(isReconnect: boolean): void {
     this.closeStream();
     this.clearReconnectTimer();
     this.isRunning = true;
+    this.horizonCursor = "now";
     this.pendingReconnectSuccessAttempt = isReconnect
       ? this.reconnectAttempt
       : null;
@@ -352,6 +394,7 @@ export class EventEngine {
           return;
         }
 
+        this.lastEventAt = event.timestamp;
         this.route(event);
       },
       onerror: (error) => {
@@ -546,9 +589,26 @@ export class EventEngine {
     eventType: WatcherNotificationType,
     event: WatcherNotification
   ): void {
-    for (const watcher of this.registry.values()) {
-      watcher.emit(eventType, event);
+    for (const [address, watcher] of this.registry.entries()) {
+      const name = this.subscriptionNames.get(address);
+      watcher.emit(
+        eventType,
+        name !== undefined ? { ...event, name } : event
+      );
     }
+
+    for (const [id, { watcher }] of this.contractRegistry.entries()) {
+      const name = this.subscriptionNames.get(id);
+      watcher.emit(
+        eventType,
+        name !== undefined ? { ...event, name } : event
+      );
+    }
+  }
+
+  private describeSubscription(key: string): string {
+    const name = this.subscriptionNames.get(key);
+    return name !== undefined ? `${name} (${key})` : key;
   }
 
   private normalize(record: unknown): NormalizedEventOrPending | null {
@@ -1124,7 +1184,7 @@ export class EventEngine {
       return filter(event);
     } catch (err) {
       this.log.warn(
-        `[pulse-core] subscribe() filter threw for address ${address} — treating as reject.`,
+        `[pulse-core] subscribe() filter threw for ${this.describeSubscription(address)} — treating as reject.`,
         err
       );
       return false;

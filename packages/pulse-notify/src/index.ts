@@ -31,14 +31,19 @@ export function useStellarEvent<T extends NormalizedEvent = NormalizedEvent>(
 export function useStellarEvent<T extends NormalizedEvent = NormalizedEvent>(
   serverUrl: string,
   address: string,
-  options?: Pick<UseEventConfig<T>, "event" | "token" | "initialEvent" | "filter" | "withCredentials" | "onEvent">
+  options?: Pick<
+    UseEventConfig<T>,
+    "event" | "token" | "initialEvent" | "filter" | "withCredentials" | "onEvent"
+  >
 ): EventState<T>;
 export function useStellarEvent<T extends NormalizedEvent = NormalizedEvent>(
   configOrUrl: UseEventConfig<T> | string,
   address?: string,
-  options?: Pick<UseEventConfig<T>, "event" | "token" | "initialEvent" | "filter" | "withCredentials" | "onEvent">
+  options?: Pick<
+    UseEventConfig<T>,
+    "event" | "token" | "initialEvent" | "filter" | "withCredentials" | "onEvent"
+  >
 ): EventState<T> {
-  // Normalise the two call signatures down to four primitives.
   const serverUrl =
     typeof configOrUrl === "string" ? configOrUrl : configOrUrl.serverUrl;
   const addr =
@@ -64,17 +69,19 @@ export function useStellarEvent<T extends NormalizedEvent = NormalizedEvent>(
   const onEvent =
     typeof configOrUrl === "string" ? options?.onEvent : configOrUrl.onEvent;
 
-  const filterRef = useRef(filter);
-  useEffect(() => { filterRef.current = filter; });
-  const onEventRef = useRef(onEvent);
-  useEffect(() => { onEventRef.current = onEvent; });
-
-  // Serialise eventType to a stable string for the dep array.
-  // An array literal passed by the caller would otherwise be a new reference
-  // every render and re-run the effect continuously.
   const eventKey = Array.isArray(eventType)
     ? [...eventType].sort().join(",")
     : eventType;
+
+  const filterRef = useRef(filter);
+  useEffect(() => {
+    filterRef.current = filter;
+  });
+
+  const onEventRef = useRef(onEvent);
+  useEffect(() => {
+    onEventRef.current = onEvent;
+  });
 
   const [state, setState] = useState<EventState<T>>({
     event: initialEvent,
@@ -92,8 +99,6 @@ export function useStellarEvent<T extends NormalizedEvent = NormalizedEvent>(
         onEvent: (incoming) => {
           onEventRef.current?.(incoming);
 
-          // Filter by event type: pass if "*", if type matches the string,
-          // or if type is included in the allowlist array.
           const allowed =
             eventType === "*" ||
             (Array.isArray(eventType)
@@ -129,16 +134,19 @@ export function useStellarEvent<T extends NormalizedEvent = NormalizedEvent>(
     // an array literal, which would otherwise be a new reference every render.
   }, [serverUrl, addr, eventKey, token, withCredentials]);
 
-
   return state;
 }
 
-type PaymentEvent = Extract<NormalizedEvent, { type: "payment.received" }>;
+export type PaymentEvent = Extract<NormalizedEvent, { type: "payment.received" }>;
 
 export function useStellarPayment(
   serverUrl: string,
   address: string,
-  options?: { initialEvent?: PaymentEvent | null; filter?: (event: NormalizedEvent) => boolean; withCredentials?: boolean }
+  options?: {
+    initialEvent?: PaymentEvent | null;
+    filter?: (event: NormalizedEvent) => boolean;
+    withCredentials?: boolean;
+  }
 ) {
   const base = useStellarEvent<PaymentEvent>(serverUrl, address, {
     event: "payment.received",
@@ -156,7 +164,11 @@ export function useStellarPayment(
 export function useStellarActivity(
   serverUrl: string,
   address: string,
-  options?: { initialEvent?: NormalizedEvent | null; filter?: (event: NormalizedEvent) => boolean; withCredentials?: boolean }
+  options?: {
+    initialEvent?: NormalizedEvent | null;
+    filter?: (event: NormalizedEvent) => boolean;
+    withCredentials?: boolean;
+  }
 ) {
   return useStellarEvent(serverUrl, address, {
     event: "*",

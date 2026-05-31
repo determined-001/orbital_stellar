@@ -1,4 +1,5 @@
 export { EventEngine } from "./EventEngine.js";
+export { validateContractFilters } from "./contractFilters.js";
 export { Watcher } from "./Watcher.js";
 export { EngineAlreadyStartedError, HorizonStreamError } from "./errors.js";
 export { StrKey } from "@stellar/stellar-sdk";
@@ -10,6 +11,25 @@ export type { ClaimPredicate } from "./claimPredicate.js";
 /** The Stellar network to connect to. */
 export type Network = "mainnet" | "testnet";
 
+export type SourceStatus = {
+  running: boolean;
+  lastEventAt: string | null;
+  reconnectAttempt: number;
+  cursor?: string;
+};
+
+export type EngineStatus = {
+  running: boolean;
+  watcherCount: number;
+  lastEventAt: string | null;
+  reconnectAttempt: number;
+  sources: {
+    horizon: SourceStatus;
+    soroban: SourceStatus;
+  };
+};
+
+export type PaymentEventType = "payment.received" | "payment.sent";
 /** Passphrase strings for each supported Stellar network. */
 export const NETWORK_PASSPHRASES = {
   mainnet: "Public Global Stellar Network ; September 2015",
@@ -288,6 +308,8 @@ export type NormalizedEvent =
 export type WatcherNotification = {
   /** The type of reconnection notification. */
   type: WatcherNotificationType;
+  /** Human-friendly label of the subscription that received this notification, if one was set. */
+  name?: string;
   /** The current reconnection attempt number. */
   attempt: number;
   /** The delay in milliseconds before the next reconnection attempt (for "engine.reconnecting" events). */
@@ -361,6 +383,8 @@ export type SubscribeOptions = {
    *  Return `false` to suppress delivery. If the predicate throws, the event
    *  is suppressed and a warning is logged — the engine continues running. */
   filter?: (event: NormalizedEvent) => boolean;
+  /** Optional human-friendly label for observability — appears in log lines and lifecycle notifications. */
+  name?: string;
 };
 
 // ---------------------------------------------------------------------------
@@ -428,4 +452,6 @@ export type ContractSubscriptionFilter = {
 /** Options for subscribeContract(). */
 export type ContractSubscribeOptions = {
   filters?: ContractSubscriptionFilter[];
+  /** Optional human-friendly label for observability — appears in log lines and lifecycle notifications. */
+  name?: string;
 };
