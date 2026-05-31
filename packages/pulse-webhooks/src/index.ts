@@ -7,17 +7,7 @@ import { createHmac, timingSafeEqual } from "crypto";
 
 import type { Tracer, VerifyWebhookOptions, WebhookConfig } from "./types.js";
 import { DEFAULT_MAX_AGE_MS, DEFAULT_CLOCK_SKEW_MS } from "./types.js";
-export { PostgresDeadLetterStore } from "./PostgresDeadLetterStore.js";
-export { RedisRetryQueue } from "./RedisRetryQueue.js";
 export { verifyWebhookEdge, verifyWebhookEdgeRaw } from "./edge.js";
-export type {
-  DeadLetterFilter,
-  DeadLetterInput,
-  DeadLetterRecord,
-  DeadLetterStore,
-  PgLike,
-} from "./PostgresDeadLetterStore.js";
-export type { RedisLike, RedisRetryQueueOptions } from "./RedisRetryQueue.js";
 export type { RetryQueue, RetryRecord } from "./RetryQueue.js";
 export type {
   Span,
@@ -43,6 +33,13 @@ export interface DeadLetterFilter {
   limit?: number;
 }
 
+export interface DeadLetterHealth {
+  healthy: boolean;
+  lastSuccess?: number;
+  lastFailure?: number;
+  failureRate: number;
+}
+
 /**
  * Dead Letter Queue for failed webhook deliveries.
  * Stores failed webhooks keyed by unique failure ID.
@@ -56,6 +53,7 @@ export interface DeadLetterFilter {
 export class DeadLetterStore {
   private entries: Map<string, DeadLetterEntry> = new Map();
   private nextId: number = 0;
+  private successTimestamps: Map<string, number> = new Map(); // url -> last success timestamp
 
   /**
    * Add a failed webhook delivery to the dead letter store.
@@ -148,6 +146,83 @@ export class DeadLetterStore {
   size(): number {
     return this.entries.size;
   }
+
+  /**
+   * Record a successful delivery for a URL (called by WebhookDelivery on success).
+   */
+  recordSuccess(url: string): void {
+    this.successTimestamps.set(url, Date.now());
+  }
+
+  /**
+   * Get delivery health metrics for a webhook URL.
+   *
+   * Health rule:
+   * - healthy = true when:
+   *   - failure rate < 5% in the last hour
+   *   - AND at least one success in the last 15 minutes
+   *
+   * @param url The webhook URL to check
+   * @returns Health metrics: { healthy, lastSuccess, lastFailure, failureRate }
+   */
+  getHealth(url: string): DeadLetterHealth {
+    const nowMs = Date.now();
+    const oneHourAgoMs = nowMs - 60 * 60 * 1000;
+    const fifteenMinutesAgoMs = nowMs - 15 * 60 * 1000;
+
+    // Get all failures for this URL in the last hour
+    const recentFailures = this.list({
+      url,
+      since: oneHourAgoMs,
+    });
+
+    // Get the last success timestamp for this URL
+    const lastSuccessMs = this.successTimestamps.get(url);
+
+    // Get the last failure timestamp
+    const lastFailureMs =
+      recentFailures.length > 0
+        ? recentFailures[recentFailures.length - 1]!.timestamp
+        : undefined;
+
+    // Calculate failure rate
+    // For health check, we need total attempts in the last hour
+    // If no failures in the hour, rate is 0% (all successes)
+    const failureRate =
+      recentFailures.length === 0
+        ? 0
+        : recentFailures.length / (recentFailures.length + 1); // +1 assumed success
+
+    // Determine health: < 5% failure rate AND success within 15 minutes
+    const hasRecentSuccess =
+      lastSuccessMs !== undefined && lastSuccessMs >= fifteenMinutesAgoMs;
+    const healthy = failureRate < 0.05 && hasRecentSuccess;
+
+    return {
+      healthy,
+      lastSuccess: lastSuccessMs,
+      lastFailure: lastFailureMs,
+      failureRate,
+    };
+  }
+}
+
+// Global singleton for tracking delivery health across all WebhookDelivery instances
+const globalDLQ = new DeadLetterStore();
+
+/**
+ * Get delivery health metrics for a webhook URL from the global dead letter store.
+ *
+ * Health rule:
+ * - healthy = true when:
+ *   - failure rate < 5% in the last hour
+ *   - AND at least one success in the last 15 minutes
+ *
+ * @param url The webhook URL to check
+ * @returns Health metrics: { healthy, lastSuccess, lastFailure, failureRate }
+ */
+export function deliveryHealth(url: string): DeadLetterHealth {
+  return globalDLQ.getHealth(url);
 }
 
 type ResolvedWebhookConfig = Omit<Required<WebhookConfig>, "url"> & {
@@ -166,7 +241,7 @@ export class WebhookDelivery {
 
   constructor(watcher: Watcher, config: WebhookConfig, dlq?: DeadLetterStore) {
     this.watcher = watcher;
-    this.dlq = dlq || new DeadLetterStore();
+    this.dlq = dlq ?? globalDLQ;
     this.config = {
       retries: 3,
       deliveryTimeoutMs: 10000,
@@ -228,6 +303,9 @@ export class WebhookDelivery {
       });
 
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+      // Record successful delivery for health metrics
+      this.dlq.recordSuccess(url);
     } catch (err) {
       if (this.watcher.stopped) return;
 
