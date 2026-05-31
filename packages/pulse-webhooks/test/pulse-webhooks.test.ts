@@ -23,8 +23,9 @@ const deliveryEvent = {
 } as const;
 
 async function flushAsyncWork(): Promise<void> {
-  await Promise.resolve();
-  await Promise.resolve();
+  for (let i = 0; i < 100; i++) {
+    await Promise.resolve();
+  }
 }
 
 function signWebhookPayload(

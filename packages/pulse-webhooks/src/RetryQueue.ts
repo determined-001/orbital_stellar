@@ -1,19 +1,21 @@
-export type RetryRecord<Event = unknown> = {
-  id: string;
-  event: Event;
-  url: string;
-  attempt: number;
-  nextRetryAt: number;
-  lastError?: string;
-  createdAt?: number;
-  metadata?: Record<string, unknown>;
-};
+import type { RetryQueue, RetryRecord } from "./types.js";
 
-export type RetryQueue = {
-  enqueue(record: RetryRecord): Promise<void>;
-  dequeue(nowMs?: number): Promise<RetryRecord | null>;
-  ack(recordId: string): Promise<void>;
-  nack(recordId: string, requeueDelayMs: number): Promise<void>;
-  evictNewest(): Promise<RetryRecord | null>;
-  size(): Promise<number>;
-};
+export class MemoryRetryQueue implements RetryQueue {
+  private queue: RetryRecord[] = [];
+
+  async enqueue(record: RetryRecord): Promise<void> {
+    this.queue.push(record);
+  }
+
+  async dequeue(): Promise<RetryRecord | null> {
+    return this.queue.shift() || null;
+  }
+
+  async evictNewest(): Promise<RetryRecord | null> {
+    return this.queue.pop() || null;
+  }
+
+  async size(): Promise<number> {
+    return this.queue.length;
+  }
+}
