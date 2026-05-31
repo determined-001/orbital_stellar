@@ -1,3 +1,5 @@
+export { SorobanRpcClient } from "./SorobanRpcClient.js";
+export type { SorobanRpcClientOptions } from "./SorobanRpcClient.js";
 export { EventEngine } from "./EventEngine.js";
 export { validateContractFilters } from "./contractFilters.js";
 export { Watcher } from "./Watcher.js";
@@ -7,6 +9,7 @@ export { CursorStore } from "./CursorStore.js";
 export { PostgresCursorStore, PgLike } from "./PostgresCursorStore.js";
 export { evaluatePredicate, normalizeClaimPredicate, isClaimPredicateType } from "./claimPredicate.js";
 export type { ClaimPredicate } from "./claimPredicate.js";
+export { isEventType } from "./eventTypeGuard.js";
 
 /** The Stellar network to connect to. */
 export type Network = "mainnet" | "testnet";
@@ -29,7 +32,6 @@ export type EngineStatus = {
   };
 };
 
-export type PaymentEventType = "payment.received" | "payment.sent";
 /** Passphrase strings for each supported Stellar network. */
 export const NETWORK_PASSPHRASES = {
   mainnet: "Public Global Stellar Network ; September 2015",
@@ -375,8 +377,10 @@ export class UnknownNetworkError extends Error {
 export type EngineStatus = {
   running: boolean;
   watcherCount: number;
+  contractWatcherCount?: number;
   lastEventAt: string | null;
   reconnectAttempt: number;
+  pausedSources?: ("horizon" | "soroban")[];
 };
 
 export type HealthCheckResult = {
