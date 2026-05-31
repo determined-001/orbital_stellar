@@ -246,6 +246,7 @@ export class EventEngine {
     return {
       running: this.isRunning,
       watcherCount: this.registry.size,
+      contractWatcherCount: this.contractRegistry.size,
       lastEventAt: this.lastEventAt,
       reconnectAttempt: this.reconnectAttempt,
     };
@@ -525,7 +526,7 @@ export class EventEngine {
       const requiredFields = ["to", "from", "amount", "created_at"] as const;
       for (const field of requiredFields) {
         if (typeof r[field] !== "string" || r[field] === "") {
-          this.log.warn("[pulse-core] normalize() dropping payment record.", { field, record: raw });
+          this.log.warn("[pulse-core] normalize() dropping payment record.", { field, record: r });
           return null;
         }
       }
@@ -1092,7 +1093,7 @@ export class EventEngine {
     } catch (err) {
       this.log.warn(
         `[pulse-core] subscribe() filter threw for address ${address} — treating as reject.`,
-        err
+        { error: err }
       );
       return false;
     }
@@ -1314,7 +1315,7 @@ export class EventEngine {
   }
 }
 
-export interface ContractInvokedEvent {
+export interface SorobanContractInvokedEvent {
   type: "contract_invoked";
   id: string;
   pagingToken: string;
@@ -1326,7 +1327,7 @@ export interface ContractInvokedEvent {
   raw: any;
 }
 
-export interface ContractEmittedEvent {
+export interface SorobanContractEmittedEvent {
   type: "contract_emitted";
   id: string;
   pagingToken: string;
@@ -1344,7 +1345,7 @@ export interface ContractEmittedEvent {
  * Normalizes a raw Soroban RPC event into a typed domain event structure.
  * Handles malformed fields safely by writing warnings and returning null.
  */
-export function normalizeContractEvent(rawRpcEvent: any): ContractInvokedEvent | ContractEmittedEvent | null {
+export function normalizeContractEvent(rawRpcEvent: any): SorobanContractInvokedEvent | SorobanContractEmittedEvent | null {
   // 1. Structural check patterns
   if (!rawRpcEvent || typeof rawRpcEvent !== "object") {
     console.warn("[pulse-core] Dropping malformed Soroban event: payload is not a valid object.", rawRpcEvent);

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import type { NormalizedEvent } from "@orbital/pulse-core";
+import type { NormalizedEvent, PaymentEvent } from "@orbital/pulse-core";
 import { acquireEventConnection } from "./connectionPool.js";
 export { useStellarEventSuspense } from "./useStellarEventSuspense.js";
 
@@ -132,8 +132,6 @@ export function useStellarEvent<T extends NormalizedEvent = NormalizedEvent>(
 
   return state;
 }
-
-type PaymentEvent = Extract<NormalizedEvent, { type: "payment.received" }>;
 
 export function useStellarPayment(
   serverUrl: string,

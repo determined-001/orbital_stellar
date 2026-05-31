@@ -7,6 +7,7 @@ import {
   verifyWebhookEdge,
   WebhookDelivery,
 } from "../src/index.js";
+import type { RetryQueue, RetryRecord } from "../src/index.js";
 
 const deliveryEvent = {
   type: "payment.received",
@@ -310,6 +311,126 @@ describe("pulse-webhooks WebhookDelivery", () => {
     const attempt2Delay = allCallsAfterRetry[1][1] as number;
     expect(attempt2Delay).toBeGreaterThanOrEqual(0);
     expect(attempt2Delay).toBeLessThan(2000);
+  });
+
+  describe("Durable Retry Queue", () => {
+    class MockRetryQueue implements RetryQueue {
+      records: RetryRecord[] = [];
+      enqueueCalls: RetryRecord[] = [];
+      dequeueCalls: number[] = [];
+      evictCalls = 0;
+
+      async enqueue(record: RetryRecord): Promise<void> {
+        this.enqueueCalls.push(record);
+        this.records.push(record);
+      }
+
+      async dequeue(nowMs = Date.now()): Promise<RetryRecord | null> {
+        this.dequeueCalls.push(nowMs);
+        const idx = this.records.findIndex((r) => r.nextRetryAt <= nowMs);
+        if (idx === -1) return null;
+        const [record] = this.records.splice(idx, 1);
+        return record;
+      }
+
+      async evictNewest(): Promise<RetryRecord | null> {
+        this.evictCalls++;
+        if (this.records.length === 0) return null;
+        const sorted = [...this.records].sort((a, b) => b.nextRetryAt - a.nextRetryAt);
+        const newest = sorted[0];
+        this.records = this.records.filter((r) => r.id !== newest.id);
+        return newest;
+      }
+
+      async size(): Promise<number> {
+        return this.records.length;
+      }
+    }
+
+    it("enqueues retries into the durable queue and dequeues/polls them successfully", async () => {
+      const fetchMock = vi.fn()
+        .mockRejectedValueOnce(new Error("conn error")) // attempt 1
+        .mockResolvedValueOnce({ ok: true, status: 200 }); // attempt 2 (poll)
+      vi.stubGlobal("fetch", fetchMock);
+
+      const retryQueue = new MockRetryQueue();
+      const watcher = new Watcher("GABC");
+      new WebhookDelivery(watcher, {
+        url: "https://example.com/webhooks/stellar",
+        secret: "top-secret",
+        retries: 3,
+        pollIntervalMs: 50,
+        retryQueue,
+      });
+
+      watcher.emit("*", deliveryEvent);
+      await flushAsyncWork();
+
+      // Attempt 1 should have failed
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      // It should have enqueued retry instead of using setTimeout
+      expect(retryQueue.enqueueCalls.length).toBe(1);
+      expect(retryQueue.enqueueCalls[0].attempt).toBe(2);
+      expect(retryQueue.enqueueCalls[0].url).toBe("https://example.com/webhooks/stellar");
+
+      // Advance timers past the nextRetryAt of the enqueued record and pollIntervalMs
+      const record = retryQueue.enqueueCalls[0];
+      vi.setSystemTime(record.nextRetryAt + 10);
+      vi.advanceTimersByTime(60);
+      await flushAsyncWork();
+
+      // Dequeue should have been called and the retry delivered!
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(retryQueue.records.length).toBe(0);
+    });
+
+    it("evicts the newest retry when maxConcurrentRetries cap is reached", async () => {
+      const fetchMock = vi.fn().mockRejectedValue(new Error("conn error"));
+      vi.stubGlobal("fetch", fetchMock);
+
+      const retryQueue = new MockRetryQueue();
+      const watcher = new Watcher("GABC");
+      new WebhookDelivery(watcher, {
+        url: "https://example.com/webhooks/stellar",
+        secret: "top-secret",
+        retries: 3,
+        maxConcurrentRetries: 1,
+        retryQueue,
+      });
+
+      let droppedEvent: any = null;
+      watcher.on("webhook.dropped", (evt) => {
+        droppedEvent = evt;
+      });
+
+      // Send first event -> fails and enqueues (size becomes 1)
+      watcher.emit("*", deliveryEvent);
+      await flushAsyncWork();
+      expect(retryQueue.records.length).toBe(1);
+
+      // Send second event -> fails, checks size (1 >= maxConcurrentRetries), evicts the newest
+      watcher.emit("*", { ...deliveryEvent, raw: { id: "evt_2" } });
+      await flushAsyncWork();
+
+      expect(retryQueue.evictCalls).toBe(1);
+      expect(droppedEvent).not.toBeNull();
+      expect(droppedEvent.raw.reason).toBe("retry_cap_exceeded");
+    });
+
+    it("stops polling when the watcher stops", async () => {
+      const retryQueue = new MockRetryQueue();
+      const watcher = new Watcher("GABC");
+      new WebhookDelivery(watcher, {
+        url: "https://example.com/webhooks/stellar",
+        secret: "top-secret",
+        retryQueue,
+      });
+
+      const clearIntervalSpy = vi.spyOn(globalThis, "clearInterval");
+      watcher.stop();
+
+      expect(clearIntervalSpy).toHaveBeenCalled();
+    });
   });
 });
 

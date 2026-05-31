@@ -1,3 +1,5 @@
+import type { RetryQueue } from "./RetryQueue.js";
+
 export type Span = {
   setAttribute(key: string, value: string | number | boolean): void;
   end(): void;
@@ -20,6 +22,10 @@ export type WebhookConfig = {
   tracer?: Tracer;
   /** Optional custom URL validator for additional block-lists. Return an error message to reject, or null to allow. */
   urlValidator?: (url: string) => Promise<string | null>;
+  /** Pluggable durable retry queue. */
+  retryQueue?: RetryQueue;
+  /** Interval in milliseconds at which the durable queue is polled. Defaults to 1000ms. */
+  pollIntervalMs?: number;
 };
 
 export const DEFAULT_MAX_AGE_MS = 300_000;
