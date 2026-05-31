@@ -15,6 +15,8 @@ export type UseEventConfig<T extends NormalizedEvent = NormalizedEvent> = {
   filter?: (event: NormalizedEvent) => boolean;
   /** Enable cookie-based auth for same-origin or CORS-credentialed SSE */
   withCredentials?: boolean;
+  /** Side-effect callback fired for every incoming event, before filter is applied */
+  onEvent?: (event: NormalizedEvent) => void;
 };
 
 export type EventState<T extends NormalizedEvent = NormalizedEvent> = {
@@ -29,12 +31,12 @@ export function useStellarEvent<T extends NormalizedEvent = NormalizedEvent>(
 export function useStellarEvent<T extends NormalizedEvent = NormalizedEvent>(
   serverUrl: string,
   address: string,
-  options?: Pick<UseEventConfig<T>, "event" | "token" | "initialEvent" | "filter" | "withCredentials">
+  options?: Pick<UseEventConfig<T>, "event" | "token" | "initialEvent" | "filter" | "withCredentials" | "onEvent">
 ): EventState<T>;
 export function useStellarEvent<T extends NormalizedEvent = NormalizedEvent>(
   configOrUrl: UseEventConfig<T> | string,
   address?: string,
-  options?: Pick<UseEventConfig<T>, "event" | "token" | "initialEvent" | "filter" | "withCredentials">
+  options?: Pick<UseEventConfig<T>, "event" | "token" | "initialEvent" | "filter" | "withCredentials" | "onEvent">
 ): EventState<T> {
   // Normalise the two call signatures down to four primitives.
   const serverUrl =
@@ -59,9 +61,13 @@ export function useStellarEvent<T extends NormalizedEvent = NormalizedEvent>(
     typeof configOrUrl === "string"
       ? options?.withCredentials
       : configOrUrl.withCredentials;
+  const onEvent =
+    typeof configOrUrl === "string" ? options?.onEvent : configOrUrl.onEvent;
 
   const filterRef = useRef(filter);
   useEffect(() => { filterRef.current = filter; });
+  const onEventRef = useRef(onEvent);
+  useEffect(() => { onEventRef.current = onEvent; });
 
   // Serialise eventType to a stable string for the dep array.
   // An array literal passed by the caller would otherwise be a new reference
@@ -84,6 +90,8 @@ export function useStellarEvent<T extends NormalizedEvent = NormalizedEvent>(
           setState((prev) => ({ ...prev, connected: true, error: null }));
         },
         onEvent: (incoming) => {
+          onEventRef.current?.(incoming);
+
           // Filter by event type: pass if "*", if type matches the string,
           // or if type is included in the allowlist array.
           const allowed =

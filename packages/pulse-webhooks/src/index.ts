@@ -5,9 +5,27 @@ import type {
 } from "@orbital/pulse-core";
 import { createHmac, timingSafeEqual } from "crypto";
 
-import type { WebhookConfig } from "./types.js";
+import type { Tracer, VerifyWebhookOptions, WebhookConfig } from "./types.js";
+import { DEFAULT_MAX_AGE_MS, DEFAULT_CLOCK_SKEW_MS } from "./types.js";
+export { PostgresDeadLetterStore } from "./PostgresDeadLetterStore.js";
+export { RedisRetryQueue } from "./RedisRetryQueue.js";
 export { verifyWebhookEdge, verifyWebhookEdgeRaw } from "./edge.js";
-export type { WebhookConfig } from "./types.js";
+export type {
+  DeadLetterFilter,
+  DeadLetterInput,
+  DeadLetterRecord,
+  DeadLetterStore,
+  PgLike,
+} from "./PostgresDeadLetterStore.js";
+export type { RedisLike, RedisRetryQueueOptions } from "./RedisRetryQueue.js";
+export type { RetryQueue, RetryRecord } from "./RetryQueue.js";
+export type {
+  Span,
+  Tracer,
+  VerifierSignatureVersion,
+  VerifyWebhookOptions,
+  WebhookConfig,
+} from "./types.js";
 
 export interface DeadLetterEntry {
   id: string;
