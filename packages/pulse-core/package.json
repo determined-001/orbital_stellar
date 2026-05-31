@@ -11,7 +11,8 @@
     "test:coverage": "vitest run --coverage",
     "test:integration": "INTEGRATION_TESTS=true vitest run test/integration",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "bench:throughput": "tsx bench/throughput.ts"
+    "bench:throughput": "tsx bench/throughput.ts",
+    "bench:soroban-throughput": "tsx bench/soroban-throughput.ts"
   },
   "dependencies": {
     "@stellar/stellar-sdk": "^15.0.1"

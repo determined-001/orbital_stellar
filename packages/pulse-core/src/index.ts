@@ -2,8 +2,9 @@ export { EventEngine } from "./EventEngine.js";
 export { Watcher } from "./Watcher.js";
 export { EngineAlreadyStartedError, HorizonStreamError } from "./errors.js";
 export { StrKey } from "@stellar/stellar-sdk";
-export { CursorStore } from "./CursorStore.js";
-export { PostgresCursorStore, PgLike } from "./PostgresCursorStore.js";
+export type { CursorStore } from "./CursorStore.js";
+export { PostgresCursorStore } from "./PostgresCursorStore.js";
+export type { PgLike } from "./PostgresCursorStore.js";
 export { evaluatePredicate, normalizeClaimPredicate, isClaimPredicateType } from "./claimPredicate.js";
 export type { ClaimPredicate } from "./claimPredicate.js";
 
@@ -318,9 +319,9 @@ export type ReconnectConfig = {
  * };
  */
 export interface Logger {
-  info(message: string, meta?: Record<string, unknown>): void;
-  warn(message: string, meta?: Record<string, unknown>): void;
-  error(message: string, meta?: Record<string, unknown>): void;
+  info(message: string, meta?: unknown): void;
+  warn(message: string, meta?: unknown): void;
+  error(message: string, meta?: unknown): void;
 }
 
 export type CoreConfig = {
@@ -345,6 +346,7 @@ export class UnknownNetworkError extends Error {
 export type EngineStatus = {
   running: boolean;
   watcherCount: number;
+  contractWatcherCount: number;
   lastEventAt: string | null;
   reconnectAttempt: number;
 };

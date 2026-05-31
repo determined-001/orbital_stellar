@@ -1,4 +1,4 @@
-import { CursorStore } from "./CursorStore.js";
+import type { CursorStore } from "./CursorStore.js";
 
 /**
  * Minimal interface required from a PostgreSQL client.

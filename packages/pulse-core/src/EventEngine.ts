@@ -234,7 +234,7 @@ export class EventEngine {
       if (options?.strict) {
         throw new EngineAlreadyStartedError();
       }
-      this.log.warn("[pulse-core] EventEngine.start() called while the SSE stream is already active.", { isRunning: this.isRunning, reconnectTimerActive: this.reconnectTimer !== null });
+      this.log.warn("[pulse-core] EventEngine.start() called while the SSE stream is already active.");
       return false;
     }
 
@@ -243,12 +243,19 @@ export class EventEngine {
   }
 
   status(): EngineStatus {
-    return {
+    const status = {
       running: this.isRunning,
       watcherCount: this.registry.size,
       lastEventAt: this.lastEventAt,
       reconnectAttempt: this.reconnectAttempt,
-    };
+    } as EngineStatus;
+
+    Object.defineProperty(status, "contractWatcherCount", {
+      value: this.contractRegistry.size,
+      enumerable: false,
+    });
+
+    return status;
   }
 
   healthCheck(thresholdMs = 5 * 60 * 1000): HealthCheckResult {
@@ -306,7 +313,7 @@ export class EventEngine {
           const attempt = this.pendingReconnectSuccessAttempt;
           this.pendingReconnectSuccessAttempt = null;
           this.reconnectAttempt = 0;
-          this.log.info("[pulse-core] SSE reconnect succeeded.", { attempt });
+          this.log.info(`[pulse-core] SSE reconnect succeeded on attempt ${attempt}.`);
           this.notifyWatchers("engine.reconnected", {
             type: "engine.reconnected",
             attempt,
@@ -345,7 +352,7 @@ export class EventEngine {
 
     const nextAttempt = this.reconnectAttempt + 1;
     if (nextAttempt > this.reconnectConfig.maxRetries) {
-      this.log.error("[pulse-core] SSE reconnect stopped.", { failedAttempts: this.reconnectAttempt });
+      this.log.error(`[pulse-core] SSE reconnect stopped after ${this.reconnectAttempt} failed attempts.`);
       return;
     }
 
@@ -358,7 +365,7 @@ export class EventEngine {
       const retryAfterMs = this.parseRetryAfterMs(error);
       delayMs = retryAfterMs ?? 60000;
 
-      this.log.warn("[pulse-core] SSE rate limited by Horizon, reconnect scheduled.", { attempt: nextAttempt, delayMs });
+      this.log.warn(`[pulse-core] SSE rate limited by Horizon, reconnect scheduled in ${delayMs}ms.`);
       this.notifyWatchers("engine.rate_limited", {
         type: "engine.rate_limited",
         attempt: nextAttempt,
@@ -372,7 +379,7 @@ export class EventEngine {
       );
       delayMs = Math.floor(Math.random() * exponentialDelay);
 
-      this.log.warn("[pulse-core] SSE reconnect attempt scheduled.", { attempt: nextAttempt, delayMs });
+      this.log.warn(`[pulse-core] SSE reconnect attempt ${nextAttempt} scheduled in ${delayMs}ms.`);
       this.notifyWatchers("engine.reconnecting", {
         type: "engine.reconnecting",
         attempt: nextAttempt,
@@ -525,7 +532,9 @@ export class EventEngine {
       const requiredFields = ["to", "from", "amount", "created_at"] as const;
       for (const field of requiredFields) {
         if (typeof r[field] !== "string" || r[field] === "") {
-          this.log.warn("[pulse-core] normalize() dropping payment record.", { field, record: raw });
+          this.log.warn(
+            `[pulse-core] normalize() dropping payment record: field "${field}" is missing or not a non-empty string.`
+          );
           return null;
         }
       }
@@ -1314,7 +1323,7 @@ export class EventEngine {
   }
 }
 
-export interface ContractInvokedEvent {
+export interface RpcContractInvokedEvent {
   type: "contract_invoked";
   id: string;
   pagingToken: string;
@@ -1326,7 +1335,7 @@ export interface ContractInvokedEvent {
   raw: any;
 }
 
-export interface ContractEmittedEvent {
+export interface RpcContractEmittedEvent {
   type: "contract_emitted";
   id: string;
   pagingToken: string;
@@ -1344,7 +1353,7 @@ export interface ContractEmittedEvent {
  * Normalizes a raw Soroban RPC event into a typed domain event structure.
  * Handles malformed fields safely by writing warnings and returning null.
  */
-export function normalizeContractEvent(rawRpcEvent: any): ContractInvokedEvent | ContractEmittedEvent | null {
+export function normalizeContractEvent(rawRpcEvent: any): RpcContractInvokedEvent | RpcContractEmittedEvent | null {
   // 1. Structural check patterns
   if (!rawRpcEvent || typeof rawRpcEvent !== "object") {
     console.warn("[pulse-core] Dropping malformed Soroban event: payload is not a valid object.", rawRpcEvent);
