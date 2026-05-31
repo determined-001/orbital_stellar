@@ -11,6 +11,34 @@ export type { RedisLike, RedisRetryQueueOptions } from "./RedisRetryQueue.js";
 export type { RetryQueue, RetryRecord } from "./RetryQueue.js";
 export type { Span, Tracer, VerifierSignatureVersion, VerifyWebhookOptions, WebhookConfig } from "./types.js";
 
+/**
+ * Payload for the `raw` field of a `webhook.failed` event.
+ */
+export type WebhookFailureRaw = {
+  /** Summary of the error that caused delivery to fail. */
+  error: string;
+  /** The target URL that failed delivery. */
+  url: string;
+  /** Total number of attempts made before giving up. */
+  attempts: number;
+  /** The original event that we tried to deliver. */
+  originalEvent: NormalizedEvent;
+};
+
+/**
+ * Payload for the `raw` field of a `webhook.dropped` event.
+ */
+export type WebhookDroppedRaw = {
+  /** The reason the webhook was dropped. Currently only `retry_cap_exceeded`. */
+  reason: "retry_cap_exceeded";
+  /** The target URL that was dropped. */
+  url: string;
+  /** The `maxConcurrentRetries` limit that was hit. */
+  maxConcurrentRetries: number;
+  /** The original event that was dropped. */
+  originalEvent: NormalizedEvent;
+};
+
 type ResolvedWebhookConfig = Omit<Required<WebhookConfig>, "url" | "tracer" | "urlValidator"> & {
   urls: string[];
   tracer?: Tracer;
@@ -133,7 +161,7 @@ export class WebhookDelivery {
               url: newest.url,
               maxConcurrentRetries: this.config.maxConcurrentRetries,
               originalEvent: newest.event,
-            },
+            } satisfies WebhookDroppedRaw,
           } as unknown as NormalizedEvent);
         }
 
@@ -174,7 +202,7 @@ export class WebhookDelivery {
         url,
         attempts: attempt,
         originalEvent: event,
-      },
+      } satisfies WebhookFailureRaw,
     } as unknown as NormalizedEvent);
   }
 

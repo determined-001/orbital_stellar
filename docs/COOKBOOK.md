@@ -240,7 +240,7 @@ When a delivery exhausts its retries, the watcher emits `webhook.failed` with th
 
 ```ts
 import { EventEngine, type NormalizedEvent } from "@orbital/pulse-core";
-import { WebhookDelivery } from "@orbital/pulse-webhooks";
+import { WebhookDelivery, type WebhookFailureRaw } from "@orbital/pulse-webhooks";
 
 const engine = new EventEngine({ network: "mainnet" });
 engine.start();
@@ -253,8 +253,8 @@ new WebhookDelivery(watcher, {
   retries: 3,
 });
 
-watcher.on("webhook.failed", async (event: NormalizedEvent & { raw: { error: string; url: string; attempts: number; originalEvent: NormalizedEvent } }) => {
-  const { url, error, attempts, originalEvent } = event.raw;
+watcher.on("webhook.failed", async (event) => {
+  const { url, error, attempts, originalEvent } = event.raw as WebhookFailureRaw;
   await persistToDLQ({
     url,
     error,

@@ -145,6 +145,37 @@ The optional `options.version` field mirrors `verifyWebhook` — `"v1"` (default
 
 Uses constant-time comparison and Web Crypto for HMAC-SHA256 verification.
 
+### Failure events
+
+When a delivery cannot be completed, the `Watcher` emits special events for routing and debugging.
+
+#### `webhook.failed`
+
+Emitted after all retry attempts are exhausted for a given URL. The event payload is a `NormalizedEvent` where the `raw` field is a `WebhookFailureRaw` object:
+
+```ts
+import type { WebhookFailureRaw } from "@orbital/pulse-webhooks";
+
+watcher.on("webhook.failed", (event) => {
+  const meta = event.raw as WebhookFailureRaw;
+  console.error(`Delivery failed to ${meta.url}: ${meta.error}`);
+  console.log(`Original event: ${meta.originalEvent.type}`);
+});
+```
+
+#### `webhook.dropped`
+
+Emitted when a pending retry is dropped because the `maxConcurrentRetries` cap has been reached. This happens before the retry is even attempted. The `raw` field is a `WebhookDroppedRaw` object:
+
+```ts
+import type { WebhookDroppedRaw } from "@orbital/pulse-webhooks";
+
+watcher.on("webhook.dropped", (event) => {
+  const meta = event.raw as WebhookDroppedRaw;
+  console.warn(`Dropped event for ${meta.url} (retry cap of ${meta.maxConcurrentRetries} hit)`);
+});
+```
+
 ## Delivery contract
 
 - **Request method:** `POST`
