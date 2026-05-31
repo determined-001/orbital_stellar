@@ -9,6 +9,8 @@ export type WebhookConfig = {
   random?: () => number;
   /** Optional custom URL validator for additional block-lists. Return an error message to reject, or null to allow. */
   urlValidator?: (url: string) => Promise<string | null>;
+  /** Pluggable retry queue for durable webhooks replay. */
+  retryQueue?: RetryQueue;
 };
 
 export const DEFAULT_MAX_AGE_MS = 300_000;
@@ -23,16 +25,17 @@ export type VerifyWebhookOptions = {
   nowMs?: number;
 };
 
-export interface RetryJob {
-  id: string | number;
+export interface RetryRecord {
+  id?: string | number;
   url: string;
   event: any;
   attempt: number;
+  nextAttemptAt: number;
 }
 
 export interface RetryQueue {
-  enqueue(url: string, event: any, attempt: number, nextAttemptAt: Date): Promise<void>;
-  dequeue(limit: number, leaseDurationMs: number): Promise<RetryJob[]>;
-  complete(id: string | number): Promise<void>;
-  fail(id: string | number, nextAttemptAt: Date | null): Promise<void>;
+  enqueue(record: RetryRecord): Promise<void>;
+  dequeue(): Promise<RetryRecord | null>;
+  evictNewest(): Promise<RetryRecord | null>;
+  size(): Promise<number>;
 }
