@@ -2,6 +2,8 @@ export { EventEngine } from "./EventEngine.js";
 export { Watcher } from "./Watcher.js";
 export { EngineAlreadyStartedError } from "./errors.js";
 export { StrKey } from "@stellar/stellar-sdk";
+export { CursorStore } from "./CursorStore.js";
+export { PostgresCursorStore, PgLike } from "./PostgresCursorStore.js";
 
 /** The Stellar network to connect to. */
 export type Network = "mainnet" | "testnet";
