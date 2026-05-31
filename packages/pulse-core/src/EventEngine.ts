@@ -1149,3 +1149,100 @@ export class EventEngine {
     };
   }
 }
+
+export interface ContractInvokedEvent {
+  type: "contract_invoked";
+  id: string;
+  pagingToken: string;
+  contractId: string;
+  txHash: string;
+  ledger: number;
+  ledgerClosedAt: string;
+  inSuccessfulContractCall: boolean;
+  raw: any;
+}
+
+export interface ContractEmittedEvent {
+  type: "contract_emitted";
+  id: string;
+  pagingToken: string;
+  contractId: string;
+  txHash: string;
+  ledger: number;
+  ledgerClosedAt: string;
+  topics: string[];
+  value: string;
+  inSuccessfulContractCall: boolean;
+  raw: any;
+}
+
+/**
+ * Normalizes a raw Soroban RPC event into a typed domain event structure.
+ * Handles malformed fields safely by writing warnings and returning null.
+ */
+export function normalizeContractEvent(rawRpcEvent: any): ContractInvokedEvent | ContractEmittedEvent | null {
+  // 1. Structural check patterns
+  if (!rawRpcEvent || typeof rawRpcEvent !== "object") {
+    console.warn("[pulse-core] Dropping malformed Soroban event: payload is not a valid object.", rawRpcEvent);
+    return null;
+  }
+
+  // 2. Validate mandatory base identification parameters
+  const requiredFields = ["id", "pagingToken", "contractId", "txHash", "ledger", "ledgerClosedAt", "type"];
+  for (const field of requiredFields) {
+    if (rawRpcEvent[field] === undefined || rawRpcEvent[field] === null) {
+      console.warn(`[pulse-core] Dropping malformed Soroban event: missing required field "${field}".`, rawRpcEvent);
+      return null;
+    }
+  }
+
+  const {
+    id,
+    pagingToken,
+    contractId,
+    txHash,
+    ledger,
+    ledgerClosedAt,
+    type,
+    inSuccessfulContractCall,
+    topic,
+    value
+  } = rawRpcEvent;
+
+  // 3. Conditional evaluation mappings based on the event subtype
+  if (type === "system" || type === "diagnostic") {
+    return {
+      type: "contract_invoked",
+      id: String(id),
+      pagingToken: String(pagingToken),
+      contractId: String(contractId),
+      txHash: String(txHash),
+      ledger: Number(ledger),
+      ledgerClosedAt: String(ledgerClosedAt),
+      inSuccessfulContractCall: Boolean(inSuccessfulContractCall),
+      raw: rawRpcEvent,
+    };
+  } else if (type === "contract") {
+    if (!Array.isArray(topic) || value === undefined || value === null) {
+      console.warn("[pulse-core] Dropping malformed contract emitted event: missing topics array or data payload.", rawRpcEvent);
+      return null;
+    }
+
+    return {
+      type: "contract_emitted",
+      id: String(id),
+      pagingToken: String(pagingToken),
+      contractId: String(contractId),
+      txHash: String(txHash),
+      ledger: Number(ledger),
+      ledgerClosedAt: String(ledgerClosedAt),
+      topics: topic.map((t: any) => String(t)),
+      value: String(value),
+      inSuccessfulContractCall: Boolean(inSuccessfulContractCall),
+      raw: rawRpcEvent,
+    };
+  }
+
+  console.warn(`[pulse-core] Dropping malformed Soroban event: unknown event type category "${type}".`, rawRpcEvent);
+  return null;
+}
