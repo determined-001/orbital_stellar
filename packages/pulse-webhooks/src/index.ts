@@ -1,10 +1,12 @@
 import type { NormalizedEvent, Watcher, WatcherNotification } from "@orbital/pulse-core";
 import { createHmac, timingSafeEqual } from "crypto";
 
-import type { VerifyWebhookOptions, WebhookConfig } from "./types.js";
+import type { VerifyWebhookOptions, WebhookConfig, RetryJob, RetryQueue } from "./types.js";
 import { DEFAULT_MAX_AGE_MS, DEFAULT_CLOCK_SKEW_MS } from "./types.js";
 export { verifyWebhookEdge } from "./edge.js";
-export type { VerifyWebhookOptions, WebhookConfig } from "./types.js";
+export { PostgresRetryQueue } from "./PostgresRetryQueue.js";
+export type { PgLike, PostgresRetryQueueOptions } from "./PostgresRetryQueue.js";
+export type { VerifyWebhookOptions, WebhookConfig, RetryJob, RetryQueue } from "./types.js";
 
 type ResolvedWebhookConfig = Omit<Required<WebhookConfig>, "url" | "urlValidator"> & {
   urls: string[];

@@ -22,3 +22,17 @@ export type VerifyWebhookOptions = {
   /** Override current time for testing. Defaults to Date.now(). */
   nowMs?: number;
 };
+
+export interface RetryJob {
+  id: string | number;
+  url: string;
+  event: any;
+  attempt: number;
+}
+
+export interface RetryQueue {
+  enqueue(url: string, event: any, attempt: number, nextAttemptAt: Date): Promise<void>;
+  dequeue(limit: number, leaseDurationMs: number): Promise<RetryJob[]>;
+  complete(id: string | number): Promise<void>;
+  fail(id: string | number, nextAttemptAt: Date | null): Promise<void>;
+}
