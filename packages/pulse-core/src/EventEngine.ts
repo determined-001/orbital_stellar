@@ -1,6 +1,6 @@
 import { Horizon } from "@stellar/stellar-sdk";
 import { Watcher } from "./Watcher.js";
-import { EngineAlreadyStartedError } from "./errors.js";
+import { EngineAlreadyStartedError, HorizonStreamError } from "./errors.js";
 import type {
   AccountCreatedEvent,
   AccountEventType,
@@ -12,11 +12,17 @@ import type {
   ClaimableBalanceClaimant,
   ClaimableClaimedEvent,
   ClaimableCreatedEvent,
+  ContractEmittedEvent,
+  ContractInvokedEvent,
+  ContractSubscribeOptions,
+  ContractSubscriptionFilter,
   CoreConfig,
   DataEvent,
   DataEventType,
   EngineStatus,
+  HealthCheckResult,
   LiquidityPoolDepositEvent,
+  LiquidityPoolReserve,
   LiquidityPoolWithdrawEvent,
   Network,
   NormalizedEvent,
@@ -32,6 +38,7 @@ import type {
   TrustlineEventType,
   WatcherNotification,
   WatcherNotificationType,
+  Logger,
 } from "./index.js";
 import { UnknownNetworkError } from "./index.js";
 
@@ -49,7 +56,9 @@ type NormalizedEventOrPending =
   | ClaimableClaimedEvent
   | LiquidityPoolDepositEvent
   | LiquidityPoolWithdrawEvent
-  | TrustAuthEvent;
+  | TrustAuthEvent
+  | ContractInvokedEvent
+  | ContractEmittedEvent;
 
 type StreamCallbacks = {
   onmessage: (record: unknown) => void;
@@ -73,11 +82,12 @@ const DEFAULT_RECONNECT: Required<ReconnectConfig> = {
 
 const STELLAR_MAX_TRUSTLINE_LIMIT = "922337203685.4775807";
 
-const noop = { info: () => {}, warn: () => {}, error: () => {} };
+const noop: Logger = { info: () => {}, warn: () => {}, error: () => {} };
 
 export class EventEngine {
   private server: Horizon.Server;
   private registry: Map<string, Watcher> = new Map();
+  private contractRegistry: Map<string, { watcher: Watcher; filters: ContractSubscriptionFilter[] }> = new Map();
   private stopStream: HorizonStreamStopper | null = null;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private reconnectAttempt = 0;
@@ -85,7 +95,7 @@ export class EventEngine {
   private readonly reconnectConfig: Required<ReconnectConfig>;
   private isRunning = false;
   private filters: Map<string, (event: NormalizedEvent) => boolean> = new Map();
-  private log: Required<NonNullable<CoreConfig["logger"]>>;
+  private log: Logger;
   private lastEventAt: string | null = null;
 
   /**
@@ -168,6 +178,53 @@ export class EventEngine {
   }
 
   /**
+   * Subscribes to Soroban contract events matching the given filters.
+   * Returns a Watcher that emits "contract.invoked", "contract.emitted", and "*".
+   * Multiple calls with different filters create independent subscriptions.
+   * @param id - A caller-chosen identifier for this subscription (used to unsubscribe).
+   * @param options - Optional filters; omitting filters matches all contract events.
+   */
+  subscribeContract(id: string, options?: ContractSubscribeOptions): Watcher {
+    const existing = this.contractRegistry.get(id);
+    if (existing) {
+      return existing.watcher;
+    }
+
+    const watcher = new Watcher(id);
+    const filters = options?.filters ?? [];
+    watcher.addStopHandler(() => {
+      this.contractRegistry.delete(id);
+    });
+    this.contractRegistry.set(id, { watcher, filters });
+    return watcher;
+  }
+
+  /**
+   * Removes a contract subscription by its id.
+   */
+  unsubscribeContract(id: string): void {
+    this.contractRegistry.get(id)?.watcher.stop();
+  }
+
+  /**
+   * Stops all active contract watchers without halting the Soroban subscriber
+   * or the underlying Horizon SSE stream.
+   * Emits an `engine.stopped` notification to each contract watcher before
+   * tearing it down.
+   */
+  unsubscribeAllContracts(): void {
+    const notification = {
+      type: "engine.stopped" as const,
+      attempt: 0,
+      emittedAt: new Date().toISOString(),
+    };
+    for (const entry of this.contractRegistry.values()) {
+      entry.watcher.emit("engine.stopped", notification);
+      entry.watcher.stop();
+    }
+  }
+
+  /**
    * Starts the SSE stream to listen for Stellar network events.
    * Returns true if started, false if already running.
    * Pass `{ strict: true }` to throw EngineAlreadyStartedError instead of returning false.
@@ -177,7 +234,7 @@ export class EventEngine {
       if (options?.strict) {
         throw new EngineAlreadyStartedError();
       }
-      this.log.warn("[pulse-core] EventEngine.start() called while the SSE stream is already active.");
+      this.log.warn("[pulse-core] EventEngine.start() called while the SSE stream is already active.", { isRunning: this.isRunning, reconnectTimerActive: this.reconnectTimer !== null });
       return false;
     }
 
@@ -192,6 +249,22 @@ export class EventEngine {
       lastEventAt: this.lastEventAt,
       reconnectAttempt: this.reconnectAttempt,
     };
+  }
+
+  healthCheck(thresholdMs = 5 * 60 * 1000): HealthCheckResult {
+    const reasons: string[] = [];
+    if (!this.isRunning) {
+      reasons.push("engine is not running");
+    }
+    if (this.lastEventAt === null) {
+      reasons.push("no events received yet");
+    } else {
+      const age = Date.now() - new Date(this.lastEventAt).getTime();
+      if (age > thresholdMs) {
+        reasons.push(`last event was ${Math.floor(age / 1000)}s ago (threshold ${Math.floor(thresholdMs / 1000)}s)`);
+      }
+    }
+    return { ok: reasons.length === 0, reasons };
   }
 
   /**
@@ -233,7 +306,7 @@ export class EventEngine {
           const attempt = this.pendingReconnectSuccessAttempt;
           this.pendingReconnectSuccessAttempt = null;
           this.reconnectAttempt = 0;
-          this.log.info(`[pulse-core] SSE reconnect succeeded on attempt ${attempt}.`);
+          this.log.info("[pulse-core] SSE reconnect succeeded.", { attempt });
           this.notifyWatchers("engine.reconnected", {
             type: "engine.reconnected",
             attempt,
@@ -249,8 +322,9 @@ export class EventEngine {
         this.route(event);
       },
       onerror: (error) => {
-        this.log.error(`[pulse-core] SSE error: ${error}`);
-        this.handleStreamError(error);
+        const wrappedError = error instanceof HorizonStreamError ? error : new HorizonStreamError(error);
+        this.log.error("[pulse-core] SSE error.", { error: wrappedError });
+        this.handleStreamError(wrappedError);
       },
     };
 
@@ -271,7 +345,7 @@ export class EventEngine {
 
     const nextAttempt = this.reconnectAttempt + 1;
     if (nextAttempt > this.reconnectConfig.maxRetries) {
-      this.log.error(`[pulse-core] SSE reconnect stopped after ${this.reconnectAttempt} failed attempts.`);
+      this.log.error("[pulse-core] SSE reconnect stopped.", { failedAttempts: this.reconnectAttempt });
       return;
     }
 
@@ -284,7 +358,7 @@ export class EventEngine {
       const retryAfterMs = this.parseRetryAfterMs(error);
       delayMs = retryAfterMs ?? 60000;
 
-      this.log.warn(`[pulse-core] SSE rate limited by Horizon, reconnect scheduled in ${delayMs}ms.`);
+      this.log.warn("[pulse-core] SSE rate limited by Horizon, reconnect scheduled.", { attempt: nextAttempt, delayMs });
       this.notifyWatchers("engine.rate_limited", {
         type: "engine.rate_limited",
         attempt: nextAttempt,
@@ -298,7 +372,7 @@ export class EventEngine {
       );
       delayMs = Math.floor(Math.random() * exponentialDelay);
 
-      this.log.warn(`[pulse-core] SSE reconnect attempt ${nextAttempt} scheduled in ${delayMs}ms.`);
+      this.log.warn("[pulse-core] SSE reconnect attempt scheduled.", { attempt: nextAttempt, delayMs });
       this.notifyWatchers("engine.reconnecting", {
         type: "engine.reconnecting",
         attempt: nextAttempt,
@@ -318,26 +392,87 @@ export class EventEngine {
     return status === 429;
   }
 
+  private isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === "object" && value !== null;
+  }
+
+  private getNumericField(record: Record<string, unknown>, field: string): number | undefined {
+    const value = record[field];
+    return typeof value === "number" ? value : undefined;
+  }
+
+  private getStringField(record: Record<string, unknown>, field: string): string | null {
+    const value = record[field];
+    return typeof value === "string" ? value : null;
+  }
+
+  private isHeaderMap(value: unknown): value is { get(name: string): string | null } {
+    return (
+      typeof value === "object" &&
+      value !== null &&
+      typeof (value as { get?: unknown }).get === "function"
+    );
+  }
+
   private extractStatus(error: unknown): number | undefined {
-    const e = error as Record<string, unknown>;
-    if (typeof e.status === "number") {
-      return e.status;
-    }
-    if (typeof e.statusCode === "number") {
-      return e.statusCode;
+    if (!this.isRecord(error)) {
+      return undefined;
     }
 
-    const response = e.response as Record<string, unknown> | undefined;
-    if (response) {
-      if (typeof response.status === "number") {
-        return response.status;
-      }
-      if (typeof response.statusCode === "number") {
-        return response.statusCode;
+    return (
+      this.getNumericField(error, "status") ??
+      this.getNumericField(error, "statusCode") ??
+      (this.isRecord(error.response)
+        ? this.getNumericField(error.response, "status") ??
+          this.getNumericField(error.response, "statusCode")
+        : undefined)
+    );
+  }
+
+  private getHeaderValue(error: unknown, headerName: string): string | null {
+    if (!this.isRecord(error)) {
+      return null;
+    }
+
+    const lowerName = headerName.toLowerCase();
+    const directHeader =
+      this.getStringField(error, headerName) ??
+      this.getStringField(error, lowerName);
+    if (directHeader) {
+      return directHeader;
+    }
+
+    const responseHeaders =
+      this.isRecord(error.response) && this.isRecord(error.response.headers)
+        ? error.response.headers
+        : undefined;
+
+    for (const headers of [error.headers, responseHeaders]) {
+      const value = this.getHeaderValueFromHeaders(headers, headerName);
+      if (value) {
+        return value;
       }
     }
 
-    return undefined;
+    return null;
+  }
+
+  private getHeaderValueFromHeaders(headers: unknown, headerName: string): string | null {
+    const lowerName = headerName.toLowerCase();
+
+    if (this.isHeaderMap(headers)) {
+      const value = headers.get(headerName) ?? headers.get(lowerName);
+      return typeof value === "string" ? value : null;
+    }
+
+    if (!this.isRecord(headers)) {
+      return null;
+    }
+
+    return (
+      this.getStringField(headers, headerName) ??
+      this.getStringField(headers, lowerName)
+    );
   }
 
   private parseRetryAfterMs(error: unknown): number | null {
@@ -353,48 +488,6 @@ export class EventEngine {
 
     const date = new Date(header).getTime();
     return Number.isNaN(date) ? null : Math.max(date - Date.now(), 0);
-  }
-
-  private getHeaderValue(error: unknown, headerName: string): string | null {
-    const e = error as Record<string, unknown>;
-    const directHeader = typeof e[headerName.toLowerCase()] === "string"
-      ? (e[headerName.toLowerCase()] as string)
-      : typeof e[headerName] === "string"
-      ? (e[headerName] as string)
-      : null;
-    if (directHeader) {
-      return directHeader;
-    }
-
-    const response = e.response as Record<string, unknown> | undefined;
-    const candidates = [e.headers, response?.headers];
-
-    for (const headers of candidates) {
-      if (!headers || typeof headers !== "object") {
-        continue;
-      }
-
-      if (typeof (headers as any).get === "function") {
-        const value = (headers as any).get(headerName) ??
-          (headers as any).get(headerName.toLowerCase());
-        if (typeof value === "string") {
-          return value;
-        }
-      }
-
-      const value =
-        typeof (headers as any)[headerName] === "string"
-          ? (headers as any)[headerName]
-          : typeof (headers as any)[headerName.toLowerCase()] === "string"
-          ? (headers as any)[headerName.toLowerCase()]
-          : null;
-
-      if (typeof value === "string") {
-        return value;
-      }
-    }
-
-    return null;
   }
 
   private closeStream(): void {
@@ -432,7 +525,7 @@ export class EventEngine {
       const requiredFields = ["to", "from", "amount", "created_at"] as const;
       for (const field of requiredFields) {
         if (typeof r[field] !== "string" || r[field] === "") {
-          this.log.warn(`[pulse-core] normalize() dropping payment record: field "${field}" is missing or not a non-empty string.`);
+          this.log.warn("[pulse-core] normalize() dropping payment record.", { field, record: raw });
           return null;
         }
       }
@@ -510,6 +603,14 @@ export class EventEngine {
 
     if (r.type === "set_trust_line_flags") {
       return this.normalizeSetTrustLineFlags(r, record);
+    }
+
+    if (r.type === "contract_invocation") {
+      return this.normalizeContractInvoked(r, record);
+    }
+
+    if (r.type === "contract_event") {
+      return this.normalizeContractEmitted(r, record);
     }
 
     return null;
@@ -601,12 +702,12 @@ export class EventEngine {
     raw: unknown
   ): DataEvent | null {
     if (typeof r.source_account !== "string" || r.source_account === "") {
-      this.log.warn("[pulse-core] normalize() dropping manage_data record: source_account is missing.");
+      this.log.warn("[pulse-core] normalize() dropping manage_data record.", { field: "source_account", record: raw });
       return null;
     }
 
     if (typeof r.data_name !== "string" || r.data_name === "") {
-      this.log.warn("[pulse-core] normalize() dropping manage_data record: data_name is missing.");
+      this.log.warn("[pulse-core] normalize() dropping manage_data record.", { field: "data_name", record: raw });
       return null;
     }
 
@@ -835,7 +936,7 @@ export class EventEngine {
       type: "lp.deposited",
       source: r.source_account as string,
       pool_id: r.liquidity_pool_id as string,
-      reserves_deposited: r.reserves_deposited as Array<{ asset: string; amount: string }>,
+      reserves_deposited: r.reserves_deposited as LiquidityPoolReserve[],
       shares_received: r.shares_received as string,
       timestamp: r.created_at as string,
       raw,
@@ -875,7 +976,7 @@ export class EventEngine {
       type: "lp.withdrawn",
       source: r.source_account as string,
       pool_id: r.liquidity_pool_id as string,
-      reserves_received: r.reserves_received as Array<{ asset: string; amount: string }>,
+      reserves_received: r.reserves_received as LiquidityPoolReserve[],
       shares_redeemed: r.shares as string,
       timestamp: r.created_at as string,
       raw,
@@ -950,6 +1051,38 @@ export class EventEngine {
     };
   }
 
+  private normalizeContractInvoked(
+    r: Record<string, unknown>,
+    raw: unknown
+  ): ContractInvokedEvent | null {
+    if (typeof r.contract_id !== "string" || r.contract_id === "") return null;
+    if (typeof r.function !== "string") return null;
+    return {
+      type: "contract.invoked",
+      contractId: r.contract_id,
+      function: r.function,
+      topics: Array.isArray(r.topics) ? (r.topics as string[]) : [],
+      data: r.data ?? null,
+      timestamp: typeof r.created_at === "string" ? r.created_at : "",
+      raw,
+    };
+  }
+
+  private normalizeContractEmitted(
+    r: Record<string, unknown>,
+    raw: unknown
+  ): ContractEmittedEvent | null {
+    if (typeof r.contract_id !== "string" || r.contract_id === "") return null;
+    return {
+      type: "contract.emitted",
+      contractId: r.contract_id,
+      topics: Array.isArray(r.topics) ? (r.topics as string[]) : [],
+      data: r.data ?? null,
+      timestamp: typeof r.created_at === "string" ? r.created_at : "",
+      raw,
+    };
+  }
+
   private passesFilter(address: string, event: NormalizedEvent): boolean {
     const filter = this.filters.get(address);
     if (!filter) return true;
@@ -963,6 +1096,27 @@ export class EventEngine {
       );
       return false;
     }
+  }
+
+  private matchesContractFilters(
+    event: { type: string; contractId: string; topics: string[] },
+    filters: ContractSubscriptionFilter[]
+  ): boolean {
+    // No filters = match everything
+    if (filters.length === 0) return true;
+
+    // At least one filter must match (OR across filters)
+    return filters.some((f) => {
+      if (f.type !== undefined && f.type !== event.type) return false;
+      if (f.contractIds !== undefined && !f.contractIds.includes(event.contractId)) return false;
+      if (f.topicFilters !== undefined) {
+        for (let i = 0; i < f.topicFilters.length; i++) {
+          const pattern = f.topicFilters[i];
+          if (pattern !== null && pattern !== event.topics[i]) return false;
+        }
+      }
+      return true;
+    });
   }
 
   private route(event: NormalizedEventOrPending): void {
@@ -1104,6 +1258,16 @@ export class EventEngine {
       return;
     }
 
+    if (event.type === "contract.invoked" || event.type === "contract.emitted") {
+      for (const { watcher, filters } of this.contractRegistry.values()) {
+        if (this.matchesContractFilters(event, filters)) {
+          watcher.emit(event.type, event);
+          watcher.emit("*", event);
+        }
+      }
+      return;
+    }
+
     if (event.type !== "unknown") {
       return;
     }
@@ -1148,4 +1312,101 @@ export class EventEngine {
       type,
     };
   }
+}
+
+export interface ContractInvokedEvent {
+  type: "contract_invoked";
+  id: string;
+  pagingToken: string;
+  contractId: string;
+  txHash: string;
+  ledger: number;
+  ledgerClosedAt: string;
+  inSuccessfulContractCall: boolean;
+  raw: any;
+}
+
+export interface ContractEmittedEvent {
+  type: "contract_emitted";
+  id: string;
+  pagingToken: string;
+  contractId: string;
+  txHash: string;
+  ledger: number;
+  ledgerClosedAt: string;
+  topics: string[];
+  value: string;
+  inSuccessfulContractCall: boolean;
+  raw: any;
+}
+
+/**
+ * Normalizes a raw Soroban RPC event into a typed domain event structure.
+ * Handles malformed fields safely by writing warnings and returning null.
+ */
+export function normalizeContractEvent(rawRpcEvent: any): ContractInvokedEvent | ContractEmittedEvent | null {
+  // 1. Structural check patterns
+  if (!rawRpcEvent || typeof rawRpcEvent !== "object") {
+    console.warn("[pulse-core] Dropping malformed Soroban event: payload is not a valid object.", rawRpcEvent);
+    return null;
+  }
+
+  // 2. Validate mandatory base identification parameters
+  const requiredFields = ["id", "pagingToken", "contractId", "txHash", "ledger", "ledgerClosedAt", "type"];
+  for (const field of requiredFields) {
+    if (rawRpcEvent[field] === undefined || rawRpcEvent[field] === null) {
+      console.warn(`[pulse-core] Dropping malformed Soroban event: missing required field "${field}".`, rawRpcEvent);
+      return null;
+    }
+  }
+
+  const {
+    id,
+    pagingToken,
+    contractId,
+    txHash,
+    ledger,
+    ledgerClosedAt,
+    type,
+    inSuccessfulContractCall,
+    topic,
+    value
+  } = rawRpcEvent;
+
+  // 3. Conditional evaluation mappings based on the event subtype
+  if (type === "system" || type === "diagnostic") {
+    return {
+      type: "contract_invoked",
+      id: String(id),
+      pagingToken: String(pagingToken),
+      contractId: String(contractId),
+      txHash: String(txHash),
+      ledger: Number(ledger),
+      ledgerClosedAt: String(ledgerClosedAt),
+      inSuccessfulContractCall: Boolean(inSuccessfulContractCall),
+      raw: rawRpcEvent,
+    };
+  } else if (type === "contract") {
+    if (!Array.isArray(topic) || value === undefined || value === null) {
+      console.warn("[pulse-core] Dropping malformed contract emitted event: missing topics array or data payload.", rawRpcEvent);
+      return null;
+    }
+
+    return {
+      type: "contract_emitted",
+      id: String(id),
+      pagingToken: String(pagingToken),
+      contractId: String(contractId),
+      txHash: String(txHash),
+      ledger: Number(ledger),
+      ledgerClosedAt: String(ledgerClosedAt),
+      topics: topic.map((t: any) => String(t)),
+      value: String(value),
+      inSuccessfulContractCall: Boolean(inSuccessfulContractCall),
+      raw: rawRpcEvent,
+    };
+  }
+
+  console.warn(`[pulse-core] Dropping malformed Soroban event: unknown event type category "${type}".`, rawRpcEvent);
+  return null;
 }
