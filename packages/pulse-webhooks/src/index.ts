@@ -2,6 +2,9 @@ import { createHmac, timingSafeEqual } from "crypto";
 import type { NormalizedEvent, Watcher } from "@orbital/pulse-core";
 import type { WebhookConfig } from "./types.js";
 export type { WebhookConfig } from "./types.js";
+export { DlqStore } from "./DlqStore.js";
+export { createDlqRoutes } from "./dlqRoutes.js";
+export type { DlqEntry, PgClient } from "./dlq.types.js";
 
 // --- WebhookDelivery ---
 
@@ -19,7 +22,7 @@ export class WebhookDelivery {
     });
 
     this.watcher.on("*", (event) => {
-      this.deliver(event);
+      this.deliver(event as NormalizedEvent);
     });
   }
 
