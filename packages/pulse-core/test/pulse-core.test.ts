@@ -214,4 +214,52 @@ describe("pulse-core EventEngine", () => {
       })
     );
   });
+
+  it("reports per-source status and preserves flat fields for compatibility", () => {
+    const engine = new EventEngine({ network: "testnet" });
+
+    expect(engine.status()).toEqual({
+      running: false,
+      watcherCount: 0,
+      lastEventAt: null,
+      reconnectAttempt: 0,
+      sources: {
+        horizon: {
+          running: false,
+          lastEventAt: null,
+          reconnectAttempt: 0,
+          cursor: undefined,
+        },
+        soroban: {
+          running: false,
+          lastEventAt: null,
+          reconnectAttempt: 0,
+        },
+      },
+    });
+
+    engine.start();
+
+    expect(engine.status().running).toBe(true);
+    expect(engine.status().sources.horizon.running).toBe(true);
+    expect(engine.status().sources.soroban.running).toBe(false);
+
+    latestStream().handlers.onmessage({
+      type: "payment",
+      to: "GABC",
+      from: "GSRC",
+      amount: "10",
+      asset_type: "native",
+      created_at: "2026-03-26T20:00:00.000Z",
+    });
+
+    expect(engine.status()).toMatchObject({
+      lastEventAt: "2026-03-26T20:00:00.000Z",
+      sources: {
+        horizon: {
+          lastEventAt: "2026-03-26T20:00:00.000Z",
+        },
+      },
+    });
+  });
 });

@@ -2,6 +2,7 @@ import { Horizon } from "@stellar/stellar-sdk";
 import { Watcher } from "./Watcher.js";
 import type {
   CoreConfig,
+  EngineStatus,
   Network,
   NormalizedEvent,
   PaymentEventType,
@@ -41,6 +42,8 @@ export class EventEngine {
   private pendingReconnectSuccessAttempt: number | null = null;
   private readonly reconnectConfig: Required<ReconnectConfig>;
   private isRunning = false;
+  private lastEventAt: string | null = null;
+  private horizonCursor?: string;
 
   constructor(config: CoreConfig) {
     this.server = new Horizon.Server(HORIZON_URLS[config.network]);
@@ -85,6 +88,7 @@ export class EventEngine {
     this.reconnectAttempt = 0;
     this.closeStream();
     this.isRunning = false;
+    this.horizonCursor = undefined;
 
     for (const watcher of this.registry.values()) {
       watcher.stop();
@@ -93,10 +97,41 @@ export class EventEngine {
     this.registry.clear();
   }
 
+  status(): EngineStatus {
+    const horizon = {
+      running: this.isRunning,
+      lastEventAt: this.lastEventAt,
+      reconnectAttempt: this.reconnectAttempt,
+      cursor: this.horizonCursor,
+    };
+
+    const soroban = {
+      running: false,
+      lastEventAt: null,
+      reconnectAttempt: 0,
+    };
+
+    const sources = { horizon, soroban };
+    const lastEventAt = [horizon.lastEventAt, soroban.lastEventAt].filter(
+      (value): value is string => value !== null
+    );
+
+    return {
+      running: horizon.running || soroban.running,
+      watcherCount: this.registry.size,
+      lastEventAt: lastEventAt.length
+        ? lastEventAt.sort()[lastEventAt.length - 1]
+        : null,
+      reconnectAttempt: Math.max(horizon.reconnectAttempt, soroban.reconnectAttempt),
+      sources,
+    };
+  }
+
   private openStream(isReconnect: boolean): void {
     this.closeStream();
     this.clearReconnectTimer();
     this.isRunning = true;
+    this.horizonCursor = "now";
     this.pendingReconnectSuccessAttempt = isReconnect
       ? this.reconnectAttempt
       : null;
@@ -122,6 +157,7 @@ export class EventEngine {
           return;
         }
 
+        this.lastEventAt = event.timestamp;
         this.route(event);
       },
       onerror: (error) => {

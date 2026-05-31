@@ -4,6 +4,24 @@ export { StrKey } from "@stellar/stellar-sdk";
 
 export type Network = "mainnet" | "testnet";
 
+export type SourceStatus = {
+  running: boolean;
+  lastEventAt: string | null;
+  reconnectAttempt: number;
+  cursor?: string;
+};
+
+export type EngineStatus = {
+  running: boolean;
+  watcherCount: number;
+  lastEventAt: string | null;
+  reconnectAttempt: number;
+  sources: {
+    horizon: SourceStatus;
+    soroban: SourceStatus;
+  };
+};
+
 export type PaymentEventType = "payment.received" | "payment.sent";
 export type WatcherNotificationType =
   | "engine.reconnecting"
