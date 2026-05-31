@@ -126,6 +126,7 @@ Attaches a delivery driver to a `Watcher`. Every event the watcher emits is deli
 | `config.retries`              | `number`             | `3`      | Number of retry attempts before emitting `webhook.failed`                             |
 | `config.deliveryTimeoutMs`    | `number`             | `10_000` | Abort threshold for each HTTP attempt                                                 |
 | `config.allowPrivateNetworks` | `boolean`            | `false`  | If true, bypass SSRF checks for local/private IP ranges                               |
+| `config.random`               | `() => number`       | `random` | Optional RNG for testing jitter. Defaults to `Math.random`.                           |
 
 ### `verifyWebhook(payload, signature, secret, timestamp)` → `NormalizedEvent | null`
 
@@ -138,6 +139,37 @@ Uses `crypto.timingSafeEqual` under the hood — do not roll your own comparison
 Edge-compatible version of `verifyWebhook` using Web Crypto API. Works in Cloudflare Workers, Deno, and browsers. Returns a Promise that resolves to the parsed event on success, `null` on any failure.
 
 Uses constant-time comparison and Web Crypto for HMAC-SHA256 verification.
+
+### Failure events
+
+When a delivery cannot be completed, the `Watcher` emits special events for routing and debugging.
+
+#### `webhook.failed`
+
+Emitted after all retry attempts are exhausted for a given URL. The event payload is a `NormalizedEvent` where the `raw` field is a `WebhookFailureRaw` object:
+
+```ts
+import type { WebhookFailureRaw } from "@orbital/pulse-webhooks";
+
+watcher.on("webhook.failed", (event) => {
+  const meta = event.raw as WebhookFailureRaw;
+  console.error(`Delivery failed to ${meta.url}: ${meta.error}`);
+  console.log(`Original event: ${meta.originalEvent.type}`);
+});
+```
+
+#### `webhook.dropped`
+
+Emitted when a pending retry is dropped because the `maxConcurrentRetries` cap has been reached. This happens before the retry is even attempted. The `raw` field is a `WebhookDroppedRaw` object:
+
+```ts
+import type { WebhookDroppedRaw } from "@orbital/pulse-webhooks";
+
+watcher.on("webhook.dropped", (event) => {
+  const meta = event.raw as WebhookDroppedRaw;
+  console.warn(`Dropped event for ${meta.url} (retry cap of ${meta.maxConcurrentRetries} hit)`);
+});
+```
 
 ## Delivery contract
 
