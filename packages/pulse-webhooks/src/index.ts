@@ -1,13 +1,14 @@
 import type { NormalizedEvent, Watcher, WatcherNotification } from "@orbital/pulse-core";
 import { createHmac, timingSafeEqual } from "crypto";
 
-import type { VerifyWebhookOptions, WebhookConfig } from "./types.js";
+import type { Tracer, VerifyWebhookOptions, WebhookConfig } from "./types.js";
 import { DEFAULT_MAX_AGE_MS, DEFAULT_CLOCK_SKEW_MS } from "./types.js";
 export { verifyWebhookEdge } from "./edge.js";
-export type { VerifyWebhookOptions, WebhookConfig } from "./types.js";
+export type { Span, Tracer, VerifyWebhookOptions, WebhookConfig } from "./types.js";
 
-type ResolvedWebhookConfig = Omit<Required<WebhookConfig>, "url"> & {
+type ResolvedWebhookConfig = Omit<Required<WebhookConfig>, "url" | "tracer"> & {
   urls: string[];
+  tracer?: Tracer;
 };
 
 export class WebhookDelivery {
@@ -24,6 +25,7 @@ export class WebhookDelivery {
       maxConcurrentRetries: 100,
       random: Math.random,
       ...config,
+      tracer: config.tracer,
       urls: Array.isArray(config.url) ? [...config.url] : [config.url],
     };
     this.config.maxConcurrentRetries = Math.max(1, this.config.maxConcurrentRetries);
@@ -55,6 +57,17 @@ export class WebhookDelivery {
     const timeoutMs = this.config.deliveryTimeoutMs;
     const abortTimer = setTimeout(() => controller.abort(), timeoutMs);
 
+    const parentTraceId = this.extractTraceId(event);
+    const spanAttrs: Record<string, string | number | boolean> = {
+      "webhook.url": url,
+      "webhook.attempt": attempt,
+    };
+    if (parentTraceId !== undefined) {
+      spanAttrs["webhook.parent_trace_id"] = parentTraceId;
+    }
+    const span = this.config.tracer?.startSpan("webhook.delivery", spanAttrs);
+    const startMs = Date.now();
+
     try {
       const res = await fetch(url, {
         method: "POST",
@@ -69,7 +82,13 @@ export class WebhookDelivery {
       });
 
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+      span?.setAttribute("webhook.status", res.status);
+      span?.setAttribute("webhook.latency_ms", Date.now() - startMs);
     } catch (err) {
+      span?.setAttribute("webhook.latency_ms", Date.now() - startMs);
+      span?.setAttribute("webhook.error", this.getErrorMessage(err));
+
       if (this.watcher.stopped) return;
 
       const errorMessage = this.getErrorMessage(err);
@@ -113,7 +132,16 @@ export class WebhookDelivery {
       }
     } finally {
       clearTimeout(abortTimer);
+      span?.end();
     }
+  }
+
+  private extractTraceId(event: NormalizedEvent): string | undefined {
+    const raw = event.raw;
+    if (raw !== null && typeof raw === "object" && "traceId" in raw && typeof (raw as Record<string, unknown>).traceId === "string") {
+      return (raw as Record<string, string>).traceId;
+    }
+    return undefined;
   }
 
   private clearRetryTimers(): void {

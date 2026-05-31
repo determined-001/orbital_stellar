@@ -1,3 +1,12 @@
+export type Span = {
+  setAttribute(key: string, value: string | number | boolean): void;
+  end(): void;
+};
+
+export type Tracer = {
+  startSpan(name: string, attrs?: Record<string, string | number | boolean>): Span;
+};
+
 export type WebhookConfig = {
   url: string | string[];
   secret: string;
@@ -7,6 +16,8 @@ export type WebhookConfig = {
   maxConcurrentRetries?: number;
   /** Optional RNG for testing jitter. Defaults to `Math.random`. */
   random?: () => number;
+  /** Optional OpenTelemetry-compatible tracer. When provided, one span is emitted per delivery attempt. */
+  tracer?: Tracer;
 };
 
 export const DEFAULT_MAX_AGE_MS = 300_000;

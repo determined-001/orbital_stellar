@@ -275,6 +275,146 @@ describe("pulse-webhooks WebhookDelivery", () => {
   });
 });
 
+describe("pulse-webhooks WebhookDelivery tracer", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  it("emits one span per successful delivery attempt with url, attempt, status, and latency", async () => {
+    vi.setSystemTime(new Date("2026-04-27T00:00:00.000Z"));
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200 });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const span = { setAttribute: vi.fn(), end: vi.fn() };
+    const tracer = { startSpan: vi.fn().mockReturnValue(span) };
+
+    const watcher = new Watcher("GABC");
+    new WebhookDelivery(watcher, {
+      url: "https://example.com/hook",
+      secret: "top-secret",
+      tracer,
+    });
+
+    watcher.emit("*", deliveryEvent);
+    await flushAsyncWork();
+
+    expect(tracer.startSpan).toHaveBeenCalledTimes(1);
+    expect(tracer.startSpan).toHaveBeenCalledWith("webhook.delivery", expect.objectContaining({
+      "webhook.url": "https://example.com/hook",
+      "webhook.attempt": 1,
+    }));
+    expect(span.setAttribute).toHaveBeenCalledWith("webhook.status", 200);
+    expect(span.setAttribute).toHaveBeenCalledWith("webhook.latency_ms", expect.any(Number));
+    expect(span.end).toHaveBeenCalledTimes(1);
+  });
+
+  it("emits a span per attempt on retry, recording error on failure", async () => {
+    const fetchMock = vi.fn().mockRejectedValue(new Error("network down"));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const span = { setAttribute: vi.fn(), end: vi.fn() };
+    const tracer = { startSpan: vi.fn().mockReturnValue(span) };
+
+    const watcher = new Watcher("GABC");
+    new WebhookDelivery(watcher, {
+      url: "https://example.com/hook",
+      secret: "top-secret",
+      retries: 2,
+      tracer,
+    });
+
+    watcher.emit("*", deliveryEvent);
+    await flushAsyncWork();
+
+    // attempt 1 span is started and ended
+    expect(tracer.startSpan).toHaveBeenCalledTimes(1);
+    expect(span.setAttribute).toHaveBeenCalledWith("webhook.error", "network down");
+    expect(span.setAttribute).toHaveBeenCalledWith("webhook.latency_ms", expect.any(Number));
+    expect(span.end).toHaveBeenCalledTimes(1);
+
+    // advance to trigger retry (attempt 2)
+    vi.advanceTimersByTime(2000);
+    await flushAsyncWork();
+
+    expect(tracer.startSpan).toHaveBeenCalledTimes(2);
+    expect(tracer.startSpan).toHaveBeenNthCalledWith(2, "webhook.delivery", expect.objectContaining({
+      "webhook.url": "https://example.com/hook",
+      "webhook.attempt": 2,
+    }));
+    expect(span.end).toHaveBeenCalledTimes(2);
+  });
+
+  it("propagates parent trace id from event.raw when present", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200 });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const span = { setAttribute: vi.fn(), end: vi.fn() };
+    const tracer = { startSpan: vi.fn().mockReturnValue(span) };
+
+    const eventWithTrace = {
+      ...deliveryEvent,
+      raw: { id: "evt_1", traceId: "abc123" },
+    };
+
+    const watcher = new Watcher("GABC");
+    new WebhookDelivery(watcher, {
+      url: "https://example.com/hook",
+      secret: "top-secret",
+      tracer,
+    });
+
+    watcher.emit("*", eventWithTrace);
+    await flushAsyncWork();
+
+    expect(tracer.startSpan).toHaveBeenCalledWith("webhook.delivery", expect.objectContaining({
+      "webhook.parent_trace_id": "abc123",
+    }));
+  });
+
+  it("does not include parent_trace_id when event.raw has no traceId", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200 });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const span = { setAttribute: vi.fn(), end: vi.fn() };
+    const tracer = { startSpan: vi.fn().mockReturnValue(span) };
+
+    const watcher = new Watcher("GABC");
+    new WebhookDelivery(watcher, {
+      url: "https://example.com/hook",
+      secret: "top-secret",
+      tracer,
+    });
+
+    watcher.emit("*", deliveryEvent);
+    await flushAsyncWork();
+
+    const startSpanAttrs = tracer.startSpan.mock.calls[0][1] as Record<string, unknown>;
+    expect(startSpanAttrs).not.toHaveProperty("webhook.parent_trace_id");
+  });
+
+  it("does not throw when no tracer is configured", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200 });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const watcher = new Watcher("GABC");
+    new WebhookDelivery(watcher, {
+      url: "https://example.com/hook",
+      secret: "top-secret",
+    });
+
+    watcher.emit("*", deliveryEvent);
+    await flushAsyncWork();
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe("pulse-webhooks verifyWebhook", () => {
   it("returns parsed event when signature matches timestamped payload", () => {
     const payload = JSON.stringify(deliveryEvent);
