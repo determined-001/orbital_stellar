@@ -78,6 +78,7 @@ const noop = { info: () => {}, warn: () => {}, error: () => {} };
 export class EventEngine {
   private server: Horizon.Server;
   private registry: Map<string, Watcher> = new Map();
+  private subscriptionNames: Map<string, string> = new Map();
   private stopStream: HorizonStreamStopper | null = null;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private reconnectAttempt = 0;
@@ -131,19 +132,23 @@ export class EventEngine {
     if (existingWatcher) {
       if (options?.filter) {
         this.log.warn(
-          `[pulse-core] subscribe() called for address ${address} which already has an active watcher — filter option ignored.`
+          `[pulse-core] subscribe() called for ${this.describeSubscription(address)} which already has an active watcher — filter option ignored.`
         );
       }
       return existingWatcher;
     }
 
     const watcher = new Watcher(address);
+    if (options?.name !== undefined) {
+      this.subscriptionNames.set(address, options.name);
+    }
     if (options?.filter) {
       this.filters.set(address, options.filter);
     }
     watcher.addStopHandler(() => {
       this.registry.delete(address);
       this.filters.delete(address);
+      this.subscriptionNames.delete(address);
     });
     this.registry.set(address, watcher);
     return watcher;
@@ -420,9 +425,18 @@ export class EventEngine {
     eventType: WatcherNotificationType,
     event: WatcherNotification
   ): void {
-    for (const watcher of this.registry.values()) {
-      watcher.emit(eventType, event);
+    for (const [address, watcher] of this.registry.entries()) {
+      const name = this.subscriptionNames.get(address);
+      watcher.emit(
+        eventType,
+        name !== undefined ? { ...event, name } : event
+      );
     }
+  }
+
+  private describeSubscription(address: string): string {
+    const name = this.subscriptionNames.get(address);
+    return name !== undefined ? `${name} (${address})` : `address ${address}`;
   }
 
   private normalize(record: unknown): NormalizedEventOrPending | null {
@@ -601,7 +615,9 @@ export class EventEngine {
     raw: unknown
   ): DataEvent | null {
     if (typeof r.source_account !== "string" || r.source_account === "") {
-      this.log.warn("[pulse-core] normalize() dropping manage_data record: source_account is missing.");
+      this.log.warn(
+        "[pulse-core] normalize() dropping manage_data record: source_account is missing."
+      );
       return null;
     }
 
@@ -958,7 +974,7 @@ export class EventEngine {
       return filter(event);
     } catch (err) {
       this.log.warn(
-        `[pulse-core] subscribe() filter threw for address ${address} — treating as reject.`,
+        `[pulse-core] subscribe() filter threw for ${this.describeSubscription(address)} — treating as reject.`,
         err
       );
       return false;

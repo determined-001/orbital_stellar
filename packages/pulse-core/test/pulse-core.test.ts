@@ -805,6 +805,34 @@ describe("pulse-core EventEngine", () => {
         "[pulse-core] subscribe() called for address GDEST which already has an active watcher — filter option ignored."
       );
     });
+
+    it("includes the subscription name in lifecycle notifications and duplicate-subscribe warnings", () => {
+      const engine = new EventEngine({ network: "testnet", logger: log });
+      const watcher = engine.subscribe("GDEST", { name: "treasury-feed" });
+      const reconnecting = vi.fn();
+      watcher.on("engine.reconnecting", reconnecting);
+
+      engine.start();
+      latestStream().handlers.onerror(new Error("stream dropped"));
+
+      expect(reconnecting).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: "engine.reconnecting",
+          name: "treasury-feed",
+          attempt: 1,
+        })
+      );
+
+      const duplicate = engine.subscribe("GDEST", {
+        name: "ignored",
+        filter: () => false,
+      });
+
+      expect(duplicate).toBe(watcher);
+      expect(log.warn).toHaveBeenCalledWith(
+        "[pulse-core] subscribe() called for treasury-feed (GDEST) which already has an active watcher — filter option ignored."
+      );
+    });
   });
 
   describe("create_account → account.created", () => {
