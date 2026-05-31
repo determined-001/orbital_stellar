@@ -85,6 +85,16 @@ export class EventEngine {
   private readonly reconnectConfig: Required<ReconnectConfig>;
   private isRunning = false;
   private filters: Map<string, (event: NormalizedEvent) => boolean> = new Map();
+  // Waiters for contract subscription activation: map contractId -> array of waiters
+  private contractPollWaiters: Map<
+    string,
+    Array<{
+      topics?: string[] | undefined;
+      resolve: () => void;
+      reject: (err: unknown) => void;
+      timeout?: ReturnType<typeof setTimeout> | null;
+    }>
+  > = new Map();
   private log: Required<NonNullable<CoreConfig["logger"]>>;
   private lastEventAt: string | null = null;
 
@@ -120,6 +130,97 @@ export class EventEngine {
   }
 
   /**
+   * Wait until a contract subscription has been observed in a poll/getEvents call.
+   * Resolves when a poll covering the supplied filter (contractId + topics)
+   * has been observed via `notifyContractPolled`.
+   * Rejects on timeout.
+   */
+  awaitContractSubscriptionActive(
+    config: { contractId: string; topics?: string[] },
+    opts?: { timeoutMs?: number },
+  ): Promise<void> {
+    const timeoutMs = opts?.timeoutMs ?? 5000;
+    const { contractId, topics } = config;
+
+    return new Promise<void>((resolve, reject) => {
+      const waiter = {
+        topics: topics ?? undefined,
+        resolve: () => {
+          this.clearContractWaiter(contractId, waiter);
+          resolve();
+        },
+        reject: (err: unknown) => {
+          this.clearContractWaiter(contractId, waiter);
+          reject(err);
+        },
+        timeout: null as ReturnType<typeof setTimeout> | null,
+      };
+
+      // start timeout
+      const t = setTimeout(() => {
+        waiter.timeout = null;
+        waiter.reject(new Error("awaitContractSubscriptionActive: timeout"));
+      }, timeoutMs);
+      waiter.timeout = t;
+
+      const arr = this.contractPollWaiters.get(contractId) ?? [];
+      arr.push(waiter);
+      this.contractPollWaiters.set(contractId, arr);
+    });
+  }
+
+  private clearContractWaiter(
+    contractId: string,
+    waiter: { timeout?: ReturnType<typeof setTimeout> | null },
+  ) {
+    const arr = this.contractPollWaiters.get(contractId);
+    if (!arr) return;
+    const idx = arr.indexOf(waiter as any);
+    if (idx !== -1) arr.splice(idx, 1);
+    if (arr.length === 0) this.contractPollWaiters.delete(contractId);
+    if (waiter.timeout) {
+      clearTimeout(waiter.timeout);
+      waiter.timeout = null;
+    }
+  }
+
+  /**
+   * Notify the engine that a polling/getEvents call for `contractId` occurred.
+   * `polledTopics` is the topics array used in that call (may be undefined/null to mean "all topics").
+   * This will resolve any pending `awaitContractSubscriptionActive` promises whose
+   * requested topics are covered by the polled topics.
+   */
+  notifyContractPolled(
+    contractId: string,
+    polledTopics?: string[] | null,
+  ): void {
+    const waiters = this.contractPollWaiters.get(contractId);
+    if (!waiters || waiters.length === 0) return;
+
+    for (const waiter of [...waiters]) {
+      const want = waiter.topics;
+      // If the waiter didn't request specific topics, any poll for the contract satisfies it.
+      if (!want || want.length === 0) {
+        waiter.resolve();
+        continue;
+      }
+
+      // If the poll had no topic restriction (polledTopics null/undefined), it covers everything.
+      if (!polledTopics || polledTopics.length === 0) {
+        waiter.resolve();
+        continue;
+      }
+
+      // Otherwise ensure all requested topics are included in the polled topics.
+      const polledSet = new Set(polledTopics);
+      const allIncluded = want.every((t) => polledSet.has(t));
+      if (allIncluded) {
+        waiter.resolve();
+      }
+    }
+  }
+
+  /**
    * Subscribes to events for a given Stellar address.
    * Returns an existing Watcher if one already exists for the address.
    * @param address - The Stellar address to watch.
@@ -131,7 +232,7 @@ export class EventEngine {
     if (existingWatcher) {
       if (options?.filter) {
         this.log.warn(
-          `[pulse-core] subscribe() called for address ${address} which already has an active watcher — filter option ignored.`
+          `[pulse-core] subscribe() called for address ${address} which already has an active watcher — filter option ignored.`,
         );
       }
       return existingWatcher;
@@ -177,7 +278,9 @@ export class EventEngine {
       if (options?.strict) {
         throw new EngineAlreadyStartedError();
       }
-      this.log.warn("[pulse-core] EventEngine.start() called while the SSE stream is already active.");
+      this.log.warn(
+        "[pulse-core] EventEngine.start() called while the SSE stream is already active.",
+      );
       return false;
     }
 
@@ -233,7 +336,9 @@ export class EventEngine {
           const attempt = this.pendingReconnectSuccessAttempt;
           this.pendingReconnectSuccessAttempt = null;
           this.reconnectAttempt = 0;
-          this.log.info(`[pulse-core] SSE reconnect succeeded on attempt ${attempt}.`);
+          this.log.info(
+            `[pulse-core] SSE reconnect succeeded on attempt ${attempt}.`,
+          );
           this.notifyWatchers("engine.reconnected", {
             type: "engine.reconnected",
             attempt,
@@ -254,10 +359,7 @@ export class EventEngine {
       },
     };
 
-    this.stopStream = this.server
-      .operations()
-      .cursor("now")
-      .stream(callbacks);
+    this.stopStream = this.server.operations().cursor("now").stream(callbacks);
   }
 
   private handleStreamError(error?: unknown): void {
@@ -271,7 +373,9 @@ export class EventEngine {
 
     const nextAttempt = this.reconnectAttempt + 1;
     if (nextAttempt > this.reconnectConfig.maxRetries) {
-      this.log.error(`[pulse-core] SSE reconnect stopped after ${this.reconnectAttempt} failed attempts.`);
+      this.log.error(
+        `[pulse-core] SSE reconnect stopped after ${this.reconnectAttempt} failed attempts.`,
+      );
       return;
     }
 
@@ -284,7 +388,9 @@ export class EventEngine {
       const retryAfterMs = this.parseRetryAfterMs(error);
       delayMs = retryAfterMs ?? 60000;
 
-      this.log.warn(`[pulse-core] SSE rate limited by Horizon, reconnect scheduled in ${delayMs}ms.`);
+      this.log.warn(
+        `[pulse-core] SSE rate limited by Horizon, reconnect scheduled in ${delayMs}ms.`,
+      );
       this.notifyWatchers("engine.rate_limited", {
         type: "engine.rate_limited",
         attempt: nextAttempt,
@@ -294,11 +400,13 @@ export class EventEngine {
     } else {
       const exponentialDelay = Math.min(
         this.reconnectConfig.initialDelayMs * 2 ** (nextAttempt - 1),
-        this.reconnectConfig.maxDelayMs
+        this.reconnectConfig.maxDelayMs,
       );
       delayMs = Math.floor(Math.random() * exponentialDelay);
 
-      this.log.warn(`[pulse-core] SSE reconnect attempt ${nextAttempt} scheduled in ${delayMs}ms.`);
+      this.log.warn(
+        `[pulse-core] SSE reconnect attempt ${nextAttempt} scheduled in ${delayMs}ms.`,
+      );
       this.notifyWatchers("engine.reconnecting", {
         type: "engine.reconnecting",
         attempt: nextAttempt,
@@ -357,11 +465,12 @@ export class EventEngine {
 
   private getHeaderValue(error: unknown, headerName: string): string | null {
     const e = error as Record<string, unknown>;
-    const directHeader = typeof e[headerName.toLowerCase()] === "string"
-      ? (e[headerName.toLowerCase()] as string)
-      : typeof e[headerName] === "string"
-      ? (e[headerName] as string)
-      : null;
+    const directHeader =
+      typeof e[headerName.toLowerCase()] === "string"
+        ? (e[headerName.toLowerCase()] as string)
+        : typeof e[headerName] === "string"
+          ? (e[headerName] as string)
+          : null;
     if (directHeader) {
       return directHeader;
     }
@@ -375,7 +484,8 @@ export class EventEngine {
       }
 
       if (typeof (headers as any).get === "function") {
-        const value = (headers as any).get(headerName) ??
+        const value =
+          (headers as any).get(headerName) ??
           (headers as any).get(headerName.toLowerCase());
         if (typeof value === "string") {
           return value;
@@ -386,8 +496,8 @@ export class EventEngine {
         typeof (headers as any)[headerName] === "string"
           ? (headers as any)[headerName]
           : typeof (headers as any)[headerName.toLowerCase()] === "string"
-          ? (headers as any)[headerName.toLowerCase()]
-          : null;
+            ? (headers as any)[headerName.toLowerCase()]
+            : null;
 
       if (typeof value === "string") {
         return value;
@@ -418,7 +528,7 @@ export class EventEngine {
 
   private notifyWatchers(
     eventType: WatcherNotificationType,
-    event: WatcherNotification
+    event: WatcherNotification,
   ): void {
     for (const watcher of this.registry.values()) {
       watcher.emit(eventType, event);
@@ -432,15 +542,15 @@ export class EventEngine {
       const requiredFields = ["to", "from", "amount", "created_at"] as const;
       for (const field of requiredFields) {
         if (typeof r[field] !== "string" || r[field] === "") {
-          this.log.warn(`[pulse-core] normalize() dropping payment record: field "${field}" is missing or not a non-empty string.`);
+          this.log.warn(
+            `[pulse-core] normalize() dropping payment record: field "${field}" is missing or not a non-empty string.`,
+          );
           return null;
         }
       }
 
       const asset =
-        r.asset_type === "native"
-          ? "XLM"
-          : `${r.asset_code}:${r.asset_issuer}`;
+        r.asset_type === "native" ? "XLM" : `${r.asset_code}:${r.asset_issuer}`;
 
       return {
         // Route resolution assigns the payment direction after normalization.
@@ -517,9 +627,12 @@ export class EventEngine {
 
   private normalizeOffer(
     r: Record<string, unknown>,
-    raw: unknown
+    raw: unknown,
   ): OfferEvent | null {
-    if (typeof r.source_account !== "string" || typeof r.created_at !== "string") {
+    if (
+      typeof r.source_account !== "string" ||
+      typeof r.created_at !== "string"
+    ) {
       return null;
     }
 
@@ -560,7 +673,7 @@ export class EventEngine {
 
   private normalizeCreateAccount(
     r: Record<string, unknown>,
-    raw: unknown
+    raw: unknown,
   ): AccountCreatedEvent | null {
     if (
       typeof r.funder !== "string" ||
@@ -582,9 +695,12 @@ export class EventEngine {
 
   private normalizeBumpSequence(
     r: Record<string, unknown>,
-    raw: unknown
+    raw: unknown,
   ): BumpSequenceEvent | null {
-    if (typeof r.source_account !== "string" || typeof r.created_at !== "string") {
+    if (
+      typeof r.source_account !== "string" ||
+      typeof r.created_at !== "string"
+    ) {
       return null;
     }
     return {
@@ -598,15 +714,19 @@ export class EventEngine {
 
   private normalizeManageData(
     r: Record<string, unknown>,
-    raw: unknown
+    raw: unknown,
   ): DataEvent | null {
     if (typeof r.source_account !== "string" || r.source_account === "") {
-      this.log.warn("[pulse-core] normalize() dropping manage_data record: source_account is missing.");
+      this.log.warn(
+        "[pulse-core] normalize() dropping manage_data record: source_account is missing.",
+      );
       return null;
     }
 
     if (typeof r.data_name !== "string" || r.data_name === "") {
-      this.log.warn("[pulse-core] normalize() dropping manage_data record: data_name is missing.");
+      this.log.warn(
+        "[pulse-core] normalize() dropping manage_data record: data_name is missing.",
+      );
       return null;
     }
 
@@ -625,7 +745,7 @@ export class EventEngine {
 
   private normalizeChangeTrust(
     r: Record<string, unknown>,
-    raw: unknown
+    raw: unknown,
   ): TrustlineEvent | null {
     if (typeof r.source_account !== "string") {
       return null;
@@ -673,7 +793,7 @@ export class EventEngine {
 
   private normalizeSetOptions(
     r: Record<string, unknown>,
-    raw: unknown
+    raw: unknown,
   ): AccountOptionsEvent | null {
     const changes: AccountOptionsChanges = {};
 
@@ -716,7 +836,7 @@ export class EventEngine {
 
   private normalizeCreateClaimableBalance(
     r: Record<string, unknown>,
-    raw: unknown
+    raw: unknown,
   ): ClaimableCreatedEvent | null {
     const requiredStringFields = [
       "source_account",
@@ -729,7 +849,7 @@ export class EventEngine {
       if (typeof r[field] !== "string" || r[field] === "") {
         this.log.warn(
           `[pulse-core] normalize() dropping create_claimable_balance record: field "${field}" is missing or not a non-empty string.`,
-          { record: raw }
+          { record: raw },
         );
         return null;
       }
@@ -743,20 +863,18 @@ export class EventEngine {
           typeof c === "object" &&
           c !== null &&
           typeof (c as Record<string, unknown>).destination === "string" &&
-          (c as Record<string, unknown>).destination !== ""
+          (c as Record<string, unknown>).destination !== "",
       )
     ) {
       this.log.warn(
         '[pulse-core] normalize() dropping create_claimable_balance record: field "claimants" is missing or invalid.',
-        { record: raw }
+        { record: raw },
       );
       return null;
     }
 
     const asset =
-      r.asset_type === "native"
-        ? "XLM"
-        : `${r.asset_code}:${r.asset_issuer}`;
+      r.asset_type === "native" ? "XLM" : `${r.asset_code}:${r.asset_issuer}`;
 
     return {
       type: "claimable.created",
@@ -775,7 +893,7 @@ export class EventEngine {
 
   private normalizeClaimClaimableBalance(
     r: Record<string, unknown>,
-    raw: unknown
+    raw: unknown,
   ): ClaimableClaimedEvent | null {
     const requiredStringFields = [
       "source_account",
@@ -787,7 +905,7 @@ export class EventEngine {
       if (typeof r[field] !== "string" || r[field] === "") {
         this.log.warn(
           `[pulse-core] normalize() dropping claim_claimable_balance record: field "${field}" is missing or not a non-empty string.`,
-          { record: raw }
+          { record: raw },
         );
         return null;
       }
@@ -804,7 +922,7 @@ export class EventEngine {
 
   private normalizeLiquidityPoolDeposit(
     r: Record<string, unknown>,
-    raw: unknown
+    raw: unknown,
   ): LiquidityPoolDepositEvent | null {
     const requiredFields = [
       "source_account",
@@ -817,7 +935,7 @@ export class EventEngine {
       if (typeof r[field] !== "string" || r[field] === "") {
         this.log.warn(
           `[pulse-core] normalize() dropping liquidity_pool_deposit record: field "${field}" is missing.`,
-          { record: raw }
+          { record: raw },
         );
         return null;
       }
@@ -826,7 +944,7 @@ export class EventEngine {
     if (!Array.isArray(r.reserves_deposited)) {
       this.log.warn(
         "[pulse-core] normalize() dropping liquidity_pool_deposit record: reserves_deposited is not an array.",
-        { record: raw }
+        { record: raw },
       );
       return null;
     }
@@ -835,7 +953,10 @@ export class EventEngine {
       type: "lp.deposited",
       source: r.source_account as string,
       pool_id: r.liquidity_pool_id as string,
-      reserves_deposited: r.reserves_deposited as Array<{ asset: string; amount: string }>,
+      reserves_deposited: r.reserves_deposited as Array<{
+        asset: string;
+        amount: string;
+      }>,
       shares_received: r.shares_received as string,
       timestamp: r.created_at as string,
       raw,
@@ -844,7 +965,7 @@ export class EventEngine {
 
   private normalizeLiquidityPoolWithdraw(
     r: Record<string, unknown>,
-    raw: unknown
+    raw: unknown,
   ): LiquidityPoolWithdrawEvent | null {
     const requiredFields = [
       "source_account",
@@ -857,7 +978,7 @@ export class EventEngine {
       if (typeof r[field] !== "string" || r[field] === "") {
         this.log.warn(
           `[pulse-core] normalize() dropping liquidity_pool_withdraw record: field "${field}" is missing.`,
-          { record: raw }
+          { record: raw },
         );
         return null;
       }
@@ -866,7 +987,7 @@ export class EventEngine {
     if (!Array.isArray(r.reserves_received)) {
       this.log.warn(
         "[pulse-core] normalize() dropping liquidity_pool_withdraw record: reserves_received is not an array.",
-        { record: raw }
+        { record: raw },
       );
       return null;
     }
@@ -875,7 +996,10 @@ export class EventEngine {
       type: "lp.withdrawn",
       source: r.source_account as string,
       pool_id: r.liquidity_pool_id as string,
-      reserves_received: r.reserves_received as Array<{ asset: string; amount: string }>,
+      reserves_received: r.reserves_received as Array<{
+        asset: string;
+        amount: string;
+      }>,
       shares_redeemed: r.shares as string,
       timestamp: r.created_at as string,
       raw,
@@ -884,7 +1008,7 @@ export class EventEngine {
 
   private normalizeAllowTrust(
     r: Record<string, unknown>,
-    raw: unknown
+    raw: unknown,
   ): TrustAuthEvent | null {
     const trustor = r.trustor;
     const issuer = r.trustee ?? r.source_account;
@@ -896,11 +1020,11 @@ export class EventEngine {
     if (typeof r.created_at !== "string") return null;
 
     const asset =
-      r.asset_type === "native"
-        ? "XLM"
-        : `${r.asset_code}:${r.asset_issuer}`;
+      r.asset_type === "native" ? "XLM" : `${r.asset_code}:${r.asset_issuer}`;
 
-    const type: TrustAuthEventType = authorize ? "trustline.authorized" : "trustline.deauthorized";
+    const type: TrustAuthEventType = authorize
+      ? "trustline.authorized"
+      : "trustline.deauthorized";
 
     return {
       type,
@@ -915,7 +1039,7 @@ export class EventEngine {
 
   private normalizeSetTrustLineFlags(
     r: Record<string, unknown>,
-    raw: unknown
+    raw: unknown,
   ): TrustAuthEvent | null {
     const trustor = r.trustor;
     const issuer = r.source_account;
@@ -932,12 +1056,12 @@ export class EventEngine {
 
     if (isSettingAuth === isClearingAuth) return null;
 
-    const type: TrustAuthEventType = isSettingAuth ? "trustline.authorized" : "trustline.deauthorized";
+    const type: TrustAuthEventType = isSettingAuth
+      ? "trustline.authorized"
+      : "trustline.deauthorized";
 
     const asset =
-      r.asset_type === "native"
-        ? "XLM"
-        : `${r.asset_code}:${r.asset_issuer}`;
+      r.asset_type === "native" ? "XLM" : `${r.asset_code}:${r.asset_issuer}`;
 
     return {
       type,
@@ -959,7 +1083,7 @@ export class EventEngine {
     } catch (err) {
       this.log.warn(
         `[pulse-core] subscribe() filter threw for address ${address} — treating as reject.`,
-        err
+        err,
       );
       return false;
     }
@@ -974,7 +1098,11 @@ export class EventEngine {
       }
 
       const accountWatcher = this.registry.get(event.account);
-      if (accountWatcher && event.account !== event.funder && this.passesFilter(event.account, event)) {
+      if (
+        accountWatcher &&
+        event.account !== event.funder &&
+        this.passesFilter(event.account, event)
+      ) {
         accountWatcher.emit("account.created", event);
         accountWatcher.emit("*", event);
       }
@@ -1054,7 +1182,11 @@ export class EventEngine {
 
       for (const claimant of event.claimants) {
         const watcher = this.registry.get(claimant.destination);
-        if (watcher && !notified.has(claimant.destination) && this.passesFilter(claimant.destination, event)) {
+        if (
+          watcher &&
+          !notified.has(claimant.destination) &&
+          this.passesFilter(claimant.destination, event)
+        ) {
           notified.add(claimant.destination);
           watcher.emit("claimable.created", event);
           watcher.emit("*", event);
@@ -1089,7 +1221,10 @@ export class EventEngine {
       return;
     }
 
-    if (event.type === "trustline.authorized" || event.type === "trustline.deauthorized") {
+    if (
+      event.type === "trustline.authorized" ||
+      event.type === "trustline.deauthorized"
+    ) {
       const issuerWatcher = this.registry.get(event.issuer);
       if (issuerWatcher && this.passesFilter(event.issuer, event)) {
         issuerWatcher.emit(event.type, event);
@@ -1097,7 +1232,11 @@ export class EventEngine {
       }
 
       const trustorWatcher = this.registry.get(event.trustor);
-      if (trustorWatcher && event.trustor !== event.issuer && this.passesFilter(event.trustor, event)) {
+      if (
+        trustorWatcher &&
+        event.trustor !== event.issuer &&
+        this.passesFilter(event.trustor, event)
+      ) {
         trustorWatcher.emit(event.type, event);
         trustorWatcher.emit("*", event);
       }
@@ -1141,7 +1280,7 @@ export class EventEngine {
 
   private withResolvedType(
     event: PendingPaymentEvent,
-    type: PaymentEventType
+    type: PaymentEventType,
   ): PaymentEvent {
     return {
       ...event,
