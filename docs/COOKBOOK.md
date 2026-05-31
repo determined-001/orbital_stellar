@@ -24,6 +24,7 @@
 10. [Render live payments in React with type narrowing](#10-render-live-payments-in-react-with-type-narrowing)
 11. [Stand up an SSE endpoint in Next.js](#11-stand-up-an-sse-endpoint-in-nextjs)
 12. [Subscribe to Soroban contract events 🛠️](#12-subscribe-to-soroban-contract-events-)
+13. [Unit test webhooks with deterministic jitter](#13-unit-test-webhooks-with-deterministic-jitter)
 
 ---
 
@@ -397,6 +398,36 @@ watcher.on("contract.emitted", (event) => {
 ```
 
 Decoding to typed `decodedData` requires the ABI Registry client (also Phase 1). Until then, raw XDR is exposed in `event.raw`. Track Phase 1 progress in [`ROADMAP.md`](../ROADMAP.md).
+
+---
+
+## 13. Unit test webhooks with deterministic jitter
+
+Inject a custom RNG into `WebhookDelivery` to make exponential backoff delays deterministic in your test suite. ✅
+
+```ts
+import { Watcher } from "@orbital/pulse-core";
+import { WebhookDelivery } from "@orbital/pulse-webhooks";
+import { vi } from "vitest";
+
+// A simple seeded RNG for deterministic results
+let seed = 12345;
+const seededRandom = () => {
+  seed = (seed * 16807) % 2147483647;
+  return (seed - 1) / 2147483646;
+};
+
+const watcher = new Watcher("GABC...");
+
+new WebhookDelivery(watcher, {
+  url: "https://example.com/webhook",
+  secret: "top-secret",
+  retries: 3,
+  random: seededRandom, // 👈 Inject RNG here
+});
+```
+
+Combine this with `vi.useFakeTimers()` to verify that retries happen after the exact jittered delay you expect without waiting for real-world wall clock time.
 
 ---
 
