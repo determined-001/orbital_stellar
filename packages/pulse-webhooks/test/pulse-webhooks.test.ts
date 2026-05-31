@@ -803,6 +803,19 @@ describe("pulse-webhooks DeadLetterStore", () => {
     vi.useRealTimers();
   });
 
+  it("returns healthy when recent success and no failures", () => {
+    vi.setSystemTime(new Date("2026-05-30T12:00:00Z"));
+
+    const dlqInstance = new DeadLetterStore();
+    dlqInstance.recordSuccess("https://example.com/hook");
+
+    const health = dlqInstance.getHealth("https://example.com/hook");
+
+    expect(health.healthy).toBe(true);
+    expect(health.failureRate).toBe(0);
+    expect(health.lastSuccess).toBeDefined();
+  });
+
   it("tracks failed deliveries in the store automatically", async () => {
     vi.useFakeTimers();
     const fetchMock = vi.fn().mockRejectedValue(new Error("network error"));
