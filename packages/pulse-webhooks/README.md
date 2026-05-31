@@ -123,15 +123,25 @@ Attaches a delivery driver to a `Watcher`. Every event the watcher emits is deli
 | `config.deliveryTimeoutMs`    | `number`             | `10_000` | Abort threshold for each HTTP attempt                                                 |
 | `config.allowPrivateNetworks` | `boolean`            | `false`  | If true, bypass SSRF checks for local/private IP ranges                               |
 
-### `verifyWebhook(payload, signature, secret, timestamp)` → `NormalizedEvent | null`
+### `new RedisRetryQueue(client, options?)`
+
+Provides a Redis-backed `RetryQueue` adapter without bundling a Redis client. Pass any client that implements the small `RedisLike` sorted-set surface: `zadd`, `zrangebyscore`, `zrevrange`, `zrem`, and `zcard`.
+
+Records are stored in a sorted set keyed by `nextRetryAt`. The key convention is `<keyPrefix>:retry-queue:<queueName>` — defaults to `orbital:pulse-webhooks:retry-queue:default`.
+
+### `verifyWebhook(payload, signature, secret, timestamp, options?)` → `NormalizedEvent | null`
 
 Verifies that `payload` was signed with `secret` using `timestamp + "." + payload`. Returns the parsed event on success, `null` on any failure (bad signature, malformed JSON, invalid timestamp, length mismatch).
 
+The optional `options.version` field is a negotiation hook for future signature header formats. `"v1"` (default) preserves current `x-orbital-signature` behavior; `"v2"` is a reserved placeholder for a future `x-orbital-signature-v2` implementation.
+
 Uses `crypto.timingSafeEqual` under the hood — do not roll your own comparison.
 
-### `verifyWebhookEdge(payload, signature, secret, timestamp)` → `Promise<NormalizedEvent | null>`
+### `verifyWebhookEdge(payload, signature, secret, timestamp, options?)` → `Promise<NormalizedEvent | null>`
 
 Edge-compatible version of `verifyWebhook` using Web Crypto API. Works in Cloudflare Workers, Deno, and browsers. Returns a Promise that resolves to the parsed event on success, `null` on any failure.
+
+The optional `options.version` field mirrors `verifyWebhook` — `"v1"` (default) is current behavior; `"v2"` is reserved.
 
 Uses constant-time comparison and Web Crypto for HMAC-SHA256 verification.
 

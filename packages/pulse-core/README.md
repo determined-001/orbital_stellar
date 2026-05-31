@@ -62,6 +62,24 @@ Once a watcher has been stopped, it will not accept new listeners. Calling `watc
 
 Stops and removes the watcher for the given address.
 
+### Network passphrases and asset format
+
+`pulse-core` exports `NETWORK_PASSPHRASES` as the source of truth for the supported Stellar network passphrases:
+
+```ts
+import { NETWORK_PASSPHRASES } from "@orbital/pulse-core";
+
+NETWORK_PASSPHRASES.mainnet; // "Public Global Stellar Network ; September 2015"
+NETWORK_PASSPHRASES.testnet; // "Test SDF Network ; September 2015"
+```
+
+Use these constants in tests, signing helpers, or Stellar RPC calls that need the exact network passphrase for the same `network` value passed to `EventEngine`.
+
+Normalized asset strings follow one rule across every event payload:
+
+- Native XLM is emitted as `XLM`.
+- Issued assets are emitted as `CODE:ISSUER`, for example `USDC:G...`.
+
 ### `Watcher` events
 
 | Event | Payload | Fired when |

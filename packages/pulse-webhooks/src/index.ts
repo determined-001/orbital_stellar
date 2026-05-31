@@ -5,28 +5,17 @@ import type {
 } from "@orbital/pulse-core";
 import { createHmac, timingSafeEqual } from "crypto";
 
-import type { VerifyWebhookOptions, WebhookConfig } from "./types.js";
+import type { Tracer, VerifyWebhookOptions, WebhookConfig } from "./types.js";
 import { DEFAULT_MAX_AGE_MS, DEFAULT_CLOCK_SKEW_MS } from "./types.js";
-import { NOOP_WEBHOOK_METRICS, CountingWebhookMetrics } from "./metrics.js";
-import type { BackoffStrategy } from "./backoff.js";
-import { exponentialJittered } from "./backoff.js";
+export { RedisRetryQueue } from "./RedisRetryQueue.js";
 export { verifyWebhookEdge } from "./edge.js";
-export type { VerifyWebhookOptions, WebhookConfig } from "./types.js";
-export type { WebhookMetrics } from "./types.js";
-export type { BackoffStrategy } from "./backoff.js";
-export {
-  exponentialJittered,
-  linear,
-  cappedExponential,
-  constant,
-} from "./backoff.js";
-export { NOOP_WEBHOOK_METRICS, CountingWebhookMetrics } from "./metrics.js";
+export type { RedisLike, RedisRetryQueueOptions } from "./RedisRetryQueue.js";
+export type { RetryQueue, RetryRecord } from "./RetryQueue.js";
+export type { Span, Tracer, VerifierSignatureVersion, VerifyWebhookOptions, WebhookConfig } from "./types.js";
 
-type ResolvedWebhookConfig = Omit<
-  Required<WebhookConfig>,
-  "url" | "urlValidator"
-> & {
+type ResolvedWebhookConfig = Omit<Required<WebhookConfig>, "url" | "tracer" | "urlValidator"> & {
   urls: string[];
+  tracer?: Tracer;
   urlValidator?: WebhookConfig["urlValidator"];
   backoff: BackoffStrategy;
 };
@@ -50,6 +39,7 @@ export class WebhookDelivery {
       backoff: exponentialJittered,
       metrics: NOOP_WEBHOOK_METRICS,
       ...config,
+      tracer: config.tracer,
       urls: Array.isArray(config.url) ? [...config.url] : [config.url],
     };
     this.config.maxConcurrentRetries = Math.max(
@@ -105,6 +95,17 @@ export class WebhookDelivery {
     const abortTimer = setTimeout(() => controller.abort(), timeoutMs);
     const attemptStartedAt = Date.now();
 
+    const parentTraceId = this.extractTraceId(event);
+    const spanAttrs: Record<string, string | number | boolean> = {
+      "webhook.url": url,
+      "webhook.attempt": attempt,
+    };
+    if (parentTraceId !== undefined) {
+      spanAttrs["webhook.parent_trace_id"] = parentTraceId;
+    }
+    const span = this.config.tracer?.startSpan("webhook.delivery", spanAttrs);
+    const startMs = Date.now();
+
     try {
       const res = await fetch(url, {
         method: "POST",
@@ -120,15 +121,12 @@ export class WebhookDelivery {
 
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
-      this.config.metrics.recordAttempt(
-        url,
-        attempt,
-        Date.now() - attemptStartedAt,
-        "success",
-      );
-      this.config.metrics.recordTerminal(url, "success");
-      return;
+      span?.setAttribute("webhook.status", res.status);
+      span?.setAttribute("webhook.latency_ms", Date.now() - startMs);
     } catch (err) {
+      span?.setAttribute("webhook.latency_ms", Date.now() - startMs);
+      span?.setAttribute("webhook.error", this.getErrorMessage(err));
+
       if (this.watcher.stopped) return;
 
       const durationMs = Date.now() - attemptStartedAt;
@@ -166,7 +164,16 @@ export class WebhookDelivery {
       }
     } finally {
       clearTimeout(abortTimer);
+      span?.end();
     }
+  }
+
+  private extractTraceId(event: NormalizedEvent): string | undefined {
+    const raw = event.raw;
+    if (raw !== null && typeof raw === "object" && "traceId" in raw && typeof (raw as Record<string, unknown>).traceId === "string") {
+      return (raw as Record<string, string>).traceId;
+    }
+    return undefined;
   }
 
   private emitFailure(
