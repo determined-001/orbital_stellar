@@ -127,15 +127,43 @@ Attaches a delivery driver to a `Watcher`. Every event the watcher emits is deli
 | `config.deliveryTimeoutMs`    | `number`             | `10_000` | Abort threshold for each HTTP attempt                                                 |
 | `config.allowPrivateNetworks` | `boolean`            | `false`  | If true, bypass SSRF checks for local/private IP ranges                               |
 
-### `verifyWebhook(payload, signature, secret, timestamp)` → `NormalizedEvent | null`
+### `new RedisRetryQueue(client, options?)`
+
+Provides a Redis-backed `RetryQueue` adapter without bundling a Redis client. Pass any client that implements the small `RedisLike` sorted-set surface: `zadd`, `zrangebyscore`, `zrevrange`, `zrem`, and `zcard`.
+
+Records are stored in a sorted set keyed by `nextRetryAt`. The key convention is `<keyPrefix>:retry-queue:<queueName>` — defaults to `orbital:pulse-webhooks:retry-queue:default`.
+
+### `verifyWebhook(payload, signature, secret, timestamp, options?)` → `NormalizedEvent | null`
 
 Verifies that `payload` was signed with `secret` using `timestamp + "." + payload`. Returns the parsed event on success, `null` on any failure (bad signature, malformed JSON, invalid timestamp, length mismatch).
-
+The optional `options.version` field is a negotiation hook for future signature header formats. `"v1"` (default) preserves current `x-orbital-signature` behavior; `"v2"` is a reserved placeholder for a future `x-orbital-signature-v2` implementation.
 Uses `crypto.timingSafeEqual` under the hood — do not roll your own comparison.
 
-### `verifyWebhookEdge(payload, signature, secret, timestamp)` → `Promise<NormalizedEvent | null>`
+**When to use:** Standard webhook verification when you need access to the event payload immediately.
+
+### `verifyWebhookRaw(payload, signature, secret, timestamp)` → `boolean`
+
+Verifies the signature of `payload` without parsing JSON. Returns `true` if the signature is valid, `false` otherwise.
+
+Use this when routing the raw body to another consumer (e.g., a message queue) to avoid the JSON parse overhead.
+
+```ts
+const isValid = verifyWebhookRaw(rawPayload, signature, secret, timestamp);
+if (isValid) {
+  // Send raw payload to SQS, Kafka, etc. without parsing
+  await queue.send(rawPayload);
+} else {
+  res.sendStatus(401);
+}
+```
+
+**When to use:** When you're routing webhooks to a queue or other service and don't need to access the event data immediately.
+
+### `verifyWebhookEdge(payload, signature, secret, timestamp, options?)` → `Promise<NormalizedEvent | null>`
 
 Edge-compatible version of `verifyWebhook` using Web Crypto API. Works in Cloudflare Workers, Deno, and browsers. Returns a Promise that resolves to the parsed event on success, `null` on any failure.
+
+The optional `options.version` field mirrors `verifyWebhook` — `"v1"` (default) is current behavior; `"v2"` is reserved.
 
 Uses constant-time comparison and Web Crypto for HMAC-SHA256 verification.
 
@@ -255,6 +283,48 @@ CREATE INDEX dlq_url_timestamp_idx ON dead_letter_store(url, timestamp);
 | `list({ since, until, limit })`        | `dlq_timestamp_idx`     |
 
 **Note:** `limit` does not require an index; it just truncates the result set after filtering.
+
+## Health Aggregation
+
+Monitor delivery health for a webhook URL using per-URL failure metrics and success tracking.
+
+### `deliveryHealth(url)` → `DeadLetterHealth`
+
+Returns health metrics for a specific webhook URL.
+
+```ts
+import { deliveryHealth } from "@orbital/pulse-webhooks";
+
+const health = deliveryHealth("https://example.com/webhooks");
+console.log(health);
+// {
+//   healthy: true,
+//   lastSuccess: 1714176000000,
+//   lastFailure: 1714172800000,
+//   failureRate: 0.02  // 2% failure rate
+// }
+```
+
+**Health rule:** A URL is considered `healthy = true` when:
+
+- Failure rate < 5% in the **last hour**, AND
+- At least one successful delivery in the **last 15 minutes**
+
+If no failures exist in the last hour, `failureRate` is 0 (all successes).
+
+**Return fields:**
+| Field | Type | Description |
+|-------|------|-------------|
+| `healthy` | `boolean` | Overall health status per the rule above |
+| `lastSuccess` | `number \| undefined` | Unix ms timestamp of most recent successful delivery, if any |
+| `lastFailure` | `number \| undefined` | Unix ms timestamp of most recent failed delivery in the last hour, if any |
+| `failureRate` | `number` | Ratio of failures to total attempts in the last hour (0–1, e.g., 0.05 = 5%) |
+
+**Use cases:**
+
+- Health dashboards and status pages
+- Alert routing (route alerts if `healthy = false`)
+- Capacity planning (track which webhooks fail most often)
 
 ## Security
 
