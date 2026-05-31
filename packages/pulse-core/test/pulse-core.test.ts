@@ -178,7 +178,8 @@ describe("pulse-core EventEngine", () => {
 
     expect(result).toBeNull();
     expect(log.warn).toHaveBeenCalledWith(
-      '[pulse-core] normalize() dropping payment record: field "to" is missing or not a non-empty string.'
+      '[pulse-core] normalize() dropping payment record.',
+      { field: "to", record: expect.any(Object) }
     );
   });
 
@@ -201,7 +202,8 @@ describe("pulse-core EventEngine", () => {
       const result = normalize(record);
       expect(result).toBeNull();
       expect(log.warn).toHaveBeenCalledWith(
-        `[pulse-core] normalize() dropping payment record: field "${field}" is missing or not a non-empty string.`
+        `[pulse-core] normalize() dropping payment record.`,
+        { field, record: expect.any(Object) }
       );
     }
   });
@@ -298,7 +300,8 @@ describe("pulse-core EventEngine", () => {
     expect(second).toBe(false);
     expect(streamInstances).toHaveLength(1);
     expect(log.warn).toHaveBeenCalledWith(
-      "[pulse-core] EventEngine.start() called while the SSE stream is already active."
+      "[pulse-core] EventEngine.start() called while the SSE stream is already active.",
+      { isRunning: true, reconnectTimerActive: false }
     );
   });
 
@@ -367,7 +370,7 @@ describe("pulse-core EventEngine", () => {
     expect(reconnecting).toHaveBeenCalledWith(
       expect.objectContaining({ type: "engine.reconnecting", attempt: 1, delayMs: expect.any(Number), emittedAt: expect.any(String) })
     );
-    expect(log.warn).toHaveBeenCalledWith("[pulse-core] SSE reconnect attempt 1 scheduled in 1000ms.");
+    expect(log.warn).toHaveBeenCalledWith("[pulse-core] SSE reconnect attempt scheduled.", { attempt: 1, delayMs: 1000 });
     expect(streamInstances).toHaveLength(1);
 
     vi.advanceTimersByTime(1000);
@@ -375,7 +378,7 @@ describe("pulse-core EventEngine", () => {
 
     latestStream().handlers.onerror(new Error("stream dropped again"));
     expect(streamInstances[1]?.close).toHaveBeenCalledTimes(1);
-    expect(log.warn).toHaveBeenLastCalledWith("[pulse-core] SSE reconnect attempt 2 scheduled in 2000ms.");
+    expect(log.warn).toHaveBeenLastCalledWith("[pulse-core] SSE reconnect attempt scheduled.", { attempt: 2, delayMs: 2000 });
 
     vi.advanceTimersByTime(2000);
     expect(streamInstances).toHaveLength(3);
@@ -387,7 +390,7 @@ describe("pulse-core EventEngine", () => {
     expect(reconnected).toHaveBeenCalledWith(
       expect.objectContaining({ type: "engine.reconnected", attempt: 2, emittedAt: expect.any(String) })
     );
-    expect(log.info).toHaveBeenCalledWith("[pulse-core] SSE reconnect succeeded on attempt 2.");
+    expect(log.info).toHaveBeenCalledWith("[pulse-core] SSE reconnect succeeded.", { attempt: 2 });
 
     latestStream().handlers.onerror(new Error("stream dropped after recovery"));
     expect(reconnecting).toHaveBeenLastCalledWith(
@@ -425,7 +428,8 @@ describe("pulse-core EventEngine", () => {
       })
     );
     expect(log.warn).toHaveBeenCalledWith(
-      "[pulse-core] SSE reconnect attempt 1 scheduled in 500ms."
+      "[pulse-core] SSE reconnect attempt scheduled.",
+      { attempt: 1, delayMs: 500 }
     );
 
     // Advance timer to trigger reconnect
@@ -449,7 +453,8 @@ describe("pulse-core EventEngine", () => {
       })
     );
     expect(log.info).toHaveBeenCalledWith(
-      "[pulse-core] SSE reconnect succeeded on attempt 1."
+      "[pulse-core] SSE reconnect succeeded.",
+      { attempt: 1 }
     );
   });
 
@@ -481,7 +486,8 @@ describe("pulse-core EventEngine", () => {
     );
     expect(reconnecting).not.toHaveBeenCalled();
     expect(log.warn).toHaveBeenCalledWith(
-      "[pulse-core] SSE rate limited by Horizon, reconnect scheduled in 5000ms."
+      "[pulse-core] SSE rate limited by Horizon, reconnect scheduled.",
+      { attempt: 1, delayMs: 5000 }
     );
 
     vi.advanceTimersByTime(5000);
@@ -510,7 +516,8 @@ describe("pulse-core EventEngine", () => {
       })
     );
     expect(log.warn).toHaveBeenCalledWith(
-      "[pulse-core] SSE rate limited by Horizon, reconnect scheduled in 60000ms."
+      "[pulse-core] SSE rate limited by Horizon, reconnect scheduled.",
+      { attempt: 1, delayMs: 60000 }
     );
   });
 
@@ -527,19 +534,19 @@ describe("pulse-core EventEngine", () => {
       vi.spyOn(Math, "random").mockReturnValue(0.999999);
 
       latestStream().handlers.onerror(new Error("err"));
-      expect(log.warn).toHaveBeenLastCalledWith(expect.stringContaining("scheduled in 999ms."));
+      expect(log.warn).toHaveBeenLastCalledWith("[pulse-core] SSE reconnect attempt scheduled.", { attempt: 1, delayMs: 999 });
       vi.advanceTimersByTime(1000);
 
       latestStream().handlers.onerror(new Error("err"));
-      expect(log.warn).toHaveBeenLastCalledWith(expect.stringContaining("scheduled in 1999ms."));
+      expect(log.warn).toHaveBeenLastCalledWith("[pulse-core] SSE reconnect attempt scheduled.", { attempt: 2, delayMs: 1999 });
       vi.advanceTimersByTime(2000);
 
       latestStream().handlers.onerror(new Error("err"));
-      expect(log.warn).toHaveBeenLastCalledWith(expect.stringContaining("scheduled in 3999ms."));
+      expect(log.warn).toHaveBeenLastCalledWith("[pulse-core] SSE reconnect attempt scheduled.", { attempt: 3, delayMs: 3999 });
       vi.advanceTimersByTime(4000);
 
       latestStream().handlers.onerror(new Error("err"));
-      expect(log.warn).toHaveBeenLastCalledWith(expect.stringContaining("scheduled in 4999ms."));
+      expect(log.warn).toHaveBeenLastCalledWith("[pulse-core] SSE reconnect attempt scheduled.", { attempt: 4, delayMs: 4999 });
     });
 
     it("max-retries terminates the loop", () => {
@@ -552,15 +559,15 @@ describe("pulse-core EventEngine", () => {
       engine.start();
 
       latestStream().handlers.onerror(new Error("err"));
-      expect(log.warn).toHaveBeenCalledWith(expect.stringContaining("attempt 1 scheduled"));
+      expect(log.warn).toHaveBeenCalledWith("[pulse-core] SSE reconnect attempt scheduled.", { attempt: 1, delayMs: 100 });
       vi.advanceTimersByTime(1000);
 
       latestStream().handlers.onerror(new Error("err"));
-      expect(log.warn).toHaveBeenCalledWith(expect.stringContaining("attempt 2 scheduled"));
+      expect(log.warn).toHaveBeenCalledWith("[pulse-core] SSE reconnect attempt scheduled.", { attempt: 2, delayMs: 200 });
       vi.advanceTimersByTime(1000);
 
       latestStream().handlers.onerror(new Error("err"));
-      expect(log.error).toHaveBeenLastCalledWith("[pulse-core] SSE reconnect stopped after 2 failed attempts.");
+      expect(log.error).toHaveBeenLastCalledWith("[pulse-core] SSE reconnect stopped.", { failedAttempts: 2 });
     });
 
     it("attempt counter resets after engine.reconnected", () => {
@@ -575,18 +582,18 @@ describe("pulse-core EventEngine", () => {
       vi.spyOn(Math, "random").mockReturnValue(0.999999);
 
       latestStream().handlers.onerror(new Error("err"));
-      expect(log.warn).toHaveBeenLastCalledWith(expect.stringContaining("attempt 1 scheduled in 999ms"));
+      expect(log.warn).toHaveBeenLastCalledWith("[pulse-core] SSE reconnect attempt scheduled.", { attempt: 1, delayMs: 999 });
       vi.advanceTimersByTime(1000);
 
       latestStream().handlers.onerror(new Error("err"));
-      expect(log.warn).toHaveBeenLastCalledWith(expect.stringContaining("attempt 2 scheduled in 1999ms"));
+      expect(log.warn).toHaveBeenLastCalledWith("[pulse-core] SSE reconnect attempt scheduled.", { attempt: 2, delayMs: 1999 });
       vi.advanceTimersByTime(2000);
 
       latestStream().handlers.onmessage({ type: "payment", to: "GABC", from: "X", amount: "1", created_at: "now" });
-      expect(log.info).toHaveBeenCalledWith("[pulse-core] SSE reconnect succeeded on attempt 2.");
+      expect(log.info).toHaveBeenCalledWith("[pulse-core] SSE reconnect succeeded.", { attempt: 2 });
 
       latestStream().handlers.onerror(new Error("err"));
-      expect(log.warn).toHaveBeenLastCalledWith(expect.stringContaining("attempt 1 scheduled in 999ms"));
+      expect(log.warn).toHaveBeenLastCalledWith("[pulse-core] SSE reconnect attempt scheduled.", { attempt: 1, delayMs: 999 });
     });
 
     it("jitter test using a seeded-like mock", () => {
@@ -600,12 +607,12 @@ describe("pulse-core EventEngine", () => {
 
       vi.spyOn(Math, "random").mockReturnValue(0.5);
       latestStream().handlers.onerror(new Error("err"));
-      expect(log.warn).toHaveBeenLastCalledWith(expect.stringContaining("scheduled in 500ms."));
+      expect(log.warn).toHaveBeenLastCalledWith("[pulse-core] SSE reconnect attempt scheduled.", { attempt: 1, delayMs: 500 });
 
       vi.advanceTimersByTime(500);
       vi.spyOn(Math, "random").mockReturnValue(0.1);
       latestStream().handlers.onerror(new Error("err"));
-      expect(log.warn).toHaveBeenLastCalledWith(expect.stringContaining("scheduled in 200ms."));
+      expect(log.warn).toHaveBeenLastCalledWith("[pulse-core] SSE reconnect attempt scheduled.", { attempt: 2, delayMs: 200 });
     });
   });
 

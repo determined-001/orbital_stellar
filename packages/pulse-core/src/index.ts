@@ -36,12 +36,13 @@ export type TrustlineEventType =
   | "trustline.updated";
 /** Event type for account merges (one account merged into another). */
 export type AccountMergeEventType = "account.merged";
-/** Notification types emitted by the EventEngine during reconnection. */
+/** Notification types emitted by the EventEngine during reconnection or state changes. */
 export type WatcherNotificationType =
   | "engine.reconnecting"
   | "engine.reconnected"
   | "engine.rate_limited"
-  | "engine.stopped";
+  | "engine.stopped"
+  | "engine.cursor_store_unhealthy";
 
 export type OfferEventType = "offer.created" | "offer.updated" | "offer.deleted";
 export type BumpSequenceEventType = "account.bump_sequence";
@@ -331,6 +332,9 @@ export type CoreConfig = {
   /** Optional reconnection configuration. */
   reconnect?: ReconnectConfig;
   logger?: Logger;
+  cursorStore?: CursorStore;
+  streamKey?: string;
+  cursorFailureThreshold?: number;
 };
 
 // Error class for invalid network validation
@@ -345,6 +349,7 @@ export class UnknownNetworkError extends Error {
 export type EngineStatus = {
   running: boolean;
   watcherCount: number;
+  contractWatcherCount: number;
   lastEventAt: string | null;
   reconnectAttempt: number;
 };

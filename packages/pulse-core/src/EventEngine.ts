@@ -39,6 +39,7 @@ import type {
   WatcherNotification,
   WatcherNotificationType,
   Logger,
+  CursorStore,
 } from "./index.js";
 import { UnknownNetworkError } from "./index.js";
 
@@ -97,6 +98,11 @@ export class EventEngine {
   private filters: Map<string, (event: NormalizedEvent) => boolean> = new Map();
   private log: Logger;
   private lastEventAt: string | null = null;
+  private cursorStore?: CursorStore;
+  private streamKey: string;
+  private cursorFailureThreshold: number;
+  private consecutiveCursorFailures = 0;
+  private isCursorStoreUnhealthy = false;
 
   /**
    * Creates a new EventEngine instance.
@@ -127,6 +133,9 @@ export class EventEngine {
       ...config.reconnect,
     };
     this.log = config.logger ?? noop;
+    this.cursorStore = config.cursorStore;
+    this.streamKey = config.streamKey ?? "pulse-core-cursor";
+    this.cursorFailureThreshold = config.cursorFailureThreshold ?? 5;
   }
 
   /**
@@ -246,6 +255,7 @@ export class EventEngine {
     return {
       running: this.isRunning,
       watcherCount: this.registry.size,
+      contractWatcherCount: this.contractRegistry.size,
       lastEventAt: this.lastEventAt,
       reconnectAttempt: this.reconnectAttempt,
     };
@@ -278,6 +288,8 @@ export class EventEngine {
     this.lastEventAt = null;
     this.closeStream();
     this.isRunning = false;
+    this.consecutiveCursorFailures = 0;
+    this.isCursorStoreUnhealthy = false;
 
     this.notifyWatchers("engine.stopped", {
       type: "engine.stopped",
@@ -290,13 +302,29 @@ export class EventEngine {
     }
   }
 
-  private openStream(isReconnect: boolean): void {
+  private async openStream(isReconnect: boolean): Promise<void> {
     this.closeStream();
     this.clearReconnectTimer();
     this.isRunning = true;
     this.pendingReconnectSuccessAttempt = isReconnect
       ? this.reconnectAttempt
       : null;
+
+    let cursorVal = "now";
+    if (this.cursorStore) {
+      try {
+        const stored = await this.cursorStore.get(this.streamKey);
+        if (stored) {
+          cursorVal = stored;
+        }
+      } catch (err) {
+        this.log.warn(`[pulse-core] Failed to retrieve cursor from store for key ${this.streamKey}: ${(err as Error).message}`);
+      }
+    }
+
+    if (!this.isRunning) {
+      return;
+    }
 
     const callbacks: StreamCallbacks = {
       onmessage: (record) => {
@@ -320,6 +348,21 @@ export class EventEngine {
         }
 
         this.route(event);
+
+        const r = record as { paging_token?: string };
+        if (this.cursorStore && r && typeof r.paging_token === "string" && !this.isCursorStoreUnhealthy) {
+          try {
+            this.cursorStore.set(this.streamKey, r.paging_token)
+              .then(() => {
+                this.consecutiveCursorFailures = 0;
+              })
+              .catch((err) => {
+                this.handleCursorFailure(err);
+              });
+          } catch (err) {
+            this.handleCursorFailure(err);
+          }
+        }
       },
       onerror: (error) => {
         const wrappedError = error instanceof HorizonStreamError ? error : new HorizonStreamError(error);
@@ -330,7 +373,7 @@ export class EventEngine {
 
     this.stopStream = this.server
       .operations()
-      .cursor("now")
+      .cursor(cursorVal)
       .stream(callbacks);
   }
 
@@ -525,7 +568,7 @@ export class EventEngine {
       const requiredFields = ["to", "from", "amount", "created_at"] as const;
       for (const field of requiredFields) {
         if (typeof r[field] !== "string" || r[field] === "") {
-          this.log.warn("[pulse-core] normalize() dropping payment record.", { field, record: raw });
+          this.log.warn("[pulse-core] normalize() dropping payment record.", { field, record: record });
           return null;
         }
       }
@@ -1300,6 +1343,24 @@ export class EventEngine {
         fromWatcher.emit("payment.sent", sentEvent);
         fromWatcher.emit("*", sentEvent);
       }
+    }
+  }
+
+  private handleCursorFailure(err: unknown): void {
+    this.consecutiveCursorFailures++;
+    this.log.warn("[pulse-core] cursorStore.set() failed.", {
+      key: this.streamKey,
+      consecutiveFailures: this.consecutiveCursorFailures,
+      error: err instanceof Error ? err.message : String(err),
+    });
+
+    if (this.consecutiveCursorFailures >= this.cursorFailureThreshold) {
+      this.isCursorStoreUnhealthy = true;
+      this.notifyWatchers("engine.cursor_store_unhealthy", {
+        type: "engine.cursor_store_unhealthy",
+        attempt: 0,
+        emittedAt: new Date().toISOString(),
+      });
     }
   }
 

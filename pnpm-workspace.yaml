@@ -3,3 +3,4 @@ packages:
   - "apps/*"
 allowBuilds:
   esbuild: false
+  sharp: set this to true or false
