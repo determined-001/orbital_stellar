@@ -18,6 +18,8 @@ export type WebhookConfig = {
   random?: () => number;
   /** Optional OpenTelemetry-compatible tracer. When provided, one span is emitted per delivery attempt. */
   tracer?: Tracer;
+  /** Optional custom URL validator for additional block-lists. Return an error message to reject, or null to allow. */
+  urlValidator?: (url: string) => Promise<string | null>;
 };
 
 export const DEFAULT_MAX_AGE_MS = 300_000;
