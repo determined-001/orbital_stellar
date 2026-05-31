@@ -12,6 +12,10 @@ import type {
   ClaimableBalanceClaimant,
   ClaimableClaimedEvent,
   ClaimableCreatedEvent,
+  ContractEmittedEvent,
+  ContractInvokedEvent,
+  ContractSubscribeOptions,
+  ContractSubscriptionFilter,
   CoreConfig,
   DataEvent,
   DataEventType,
@@ -49,7 +53,9 @@ type NormalizedEventOrPending =
   | ClaimableClaimedEvent
   | LiquidityPoolDepositEvent
   | LiquidityPoolWithdrawEvent
-  | TrustAuthEvent;
+  | TrustAuthEvent
+  | ContractInvokedEvent
+  | ContractEmittedEvent;
 
 type StreamCallbacks = {
   onmessage: (record: unknown) => void;
@@ -78,6 +84,7 @@ const noop = { info: () => {}, warn: () => {}, error: () => {} };
 export class EventEngine {
   private server: Horizon.Server;
   private registry: Map<string, Watcher> = new Map();
+  private contractRegistry: Map<string, { watcher: Watcher; filters: ContractSubscriptionFilter[] }> = new Map();
   private stopStream: HorizonStreamStopper | null = null;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private reconnectAttempt = 0;
@@ -165,6 +172,35 @@ export class EventEngine {
     for (const watcher of this.registry.values()) {
       watcher.stop();
     }
+  }
+
+  /**
+   * Subscribes to Soroban contract events matching the given filters.
+   * Returns a Watcher that emits "contract.invoked", "contract.emitted", and "*".
+   * Multiple calls with different filters create independent subscriptions.
+   * @param id - A caller-chosen identifier for this subscription (used to unsubscribe).
+   * @param options - Optional filters; omitting filters matches all contract events.
+   */
+  subscribeContract(id: string, options?: ContractSubscribeOptions): Watcher {
+    const existing = this.contractRegistry.get(id);
+    if (existing) {
+      return existing.watcher;
+    }
+
+    const watcher = new Watcher(id);
+    const filters = options?.filters ?? [];
+    watcher.addStopHandler(() => {
+      this.contractRegistry.delete(id);
+    });
+    this.contractRegistry.set(id, { watcher, filters });
+    return watcher;
+  }
+
+  /**
+   * Removes a contract subscription by its id.
+   */
+  unsubscribeContract(id: string): void {
+    this.contractRegistry.get(id)?.watcher.stop();
   }
 
   /**
@@ -510,6 +546,14 @@ export class EventEngine {
 
     if (r.type === "set_trust_line_flags") {
       return this.normalizeSetTrustLineFlags(r, record);
+    }
+
+    if (r.type === "contract_invocation") {
+      return this.normalizeContractInvoked(r, record);
+    }
+
+    if (r.type === "contract_event") {
+      return this.normalizeContractEmitted(r, record);
     }
 
     return null;
@@ -950,6 +994,38 @@ export class EventEngine {
     };
   }
 
+  private normalizeContractInvoked(
+    r: Record<string, unknown>,
+    raw: unknown
+  ): ContractInvokedEvent | null {
+    if (typeof r.contract_id !== "string" || r.contract_id === "") return null;
+    if (typeof r.function !== "string") return null;
+    return {
+      type: "contract.invoked",
+      contractId: r.contract_id,
+      function: r.function,
+      topics: Array.isArray(r.topics) ? (r.topics as string[]) : [],
+      data: r.data ?? null,
+      timestamp: typeof r.created_at === "string" ? r.created_at : "",
+      raw,
+    };
+  }
+
+  private normalizeContractEmitted(
+    r: Record<string, unknown>,
+    raw: unknown
+  ): ContractEmittedEvent | null {
+    if (typeof r.contract_id !== "string" || r.contract_id === "") return null;
+    return {
+      type: "contract.emitted",
+      contractId: r.contract_id,
+      topics: Array.isArray(r.topics) ? (r.topics as string[]) : [],
+      data: r.data ?? null,
+      timestamp: typeof r.created_at === "string" ? r.created_at : "",
+      raw,
+    };
+  }
+
   private passesFilter(address: string, event: NormalizedEvent): boolean {
     const filter = this.filters.get(address);
     if (!filter) return true;
@@ -963,6 +1039,27 @@ export class EventEngine {
       );
       return false;
     }
+  }
+
+  private matchesContractFilters(
+    event: { type: string; contractId: string; topics: string[] },
+    filters: ContractSubscriptionFilter[]
+  ): boolean {
+    // No filters = match everything
+    if (filters.length === 0) return true;
+
+    // At least one filter must match (OR across filters)
+    return filters.some((f) => {
+      if (f.type !== undefined && f.type !== event.type) return false;
+      if (f.contractIds !== undefined && !f.contractIds.includes(event.contractId)) return false;
+      if (f.topicFilters !== undefined) {
+        for (let i = 0; i < f.topicFilters.length; i++) {
+          const pattern = f.topicFilters[i];
+          if (pattern !== null && pattern !== event.topics[i]) return false;
+        }
+      }
+      return true;
+    });
   }
 
   private route(event: NormalizedEventOrPending): void {
@@ -1100,6 +1197,16 @@ export class EventEngine {
       if (trustorWatcher && event.trustor !== event.issuer && this.passesFilter(event.trustor, event)) {
         trustorWatcher.emit(event.type, event);
         trustorWatcher.emit("*", event);
+      }
+      return;
+    }
+
+    if (event.type === "contract.invoked" || event.type === "contract.emitted") {
+      for (const { watcher, filters } of this.contractRegistry.values()) {
+        if (this.matchesContractFilters(event, filters)) {
+          watcher.emit(event.type, event);
+          watcher.emit("*", event);
+        }
       }
       return;
     }

@@ -263,7 +263,9 @@ export type NormalizedEvent =
   | ClaimableClaimedEvent
   | LiquidityPoolDepositEvent
   | LiquidityPoolWithdrawEvent
-  | TrustAuthEvent;
+  | TrustAuthEvent
+  | ContractInvokedEvent
+  | ContractEmittedEvent;
 
 /**
  * A notification emitted by the EventEngine during reconnection attempts.
@@ -340,4 +342,71 @@ export type SubscribeOptions = {
    *  Return `false` to suppress delivery. If the predicate throws, the event
    *  is suppressed and a warning is logged — the engine continues running. */
   filter?: (event: NormalizedEvent) => boolean;
+};
+
+// ---------------------------------------------------------------------------
+// Contract events (Phase 1 — Soroban)
+// ---------------------------------------------------------------------------
+
+export type ContractEventType = "contract.invoked" | "contract.emitted";
+
+/**
+ * A normalized Soroban contract invocation event.
+ * Emitted when a contract function is called.
+ */
+export type ContractInvokedEvent = {
+  type: "contract.invoked";
+  contractId: string;
+  /** The function name that was invoked. */
+  function: string;
+  /** Ordered list of topic strings (XDR-encoded or decoded). */
+  topics: string[];
+  /** Arbitrary event data payload. */
+  data: unknown;
+  timestamp: string;
+  raw: unknown;
+};
+
+/**
+ * A normalized Soroban contract-emitted event (contract_events in the ledger).
+ */
+export type ContractEmittedEvent = {
+  type: "contract.emitted";
+  contractId: string;
+  /** Ordered list of topic strings (XDR-encoded or decoded). */
+  topics: string[];
+  /** Arbitrary event data payload. */
+  data: unknown;
+  timestamp: string;
+  raw: unknown;
+};
+
+export type ContractEvent = ContractInvokedEvent | ContractEmittedEvent;
+
+/**
+ * Filter criteria for a contract subscription.
+ * All specified fields must match (AND semantics).
+ * Omitting a field means "match any".
+ */
+export type ContractSubscriptionFilter = {
+  /** Match only events of this type. Omit to match both. */
+  type?: ContractEventType;
+  /**
+   * Match only events from one of these contract IDs.
+   * Omit to match any contract.
+   */
+  contractIds?: string[];
+  /**
+   * Topic-pattern match: each entry is matched positionally against the event's
+   * topics array. Use `null` as a wildcard for a position.
+   * Omit to match any topics.
+   *
+   * @example ["transfer", null] — matches events whose first topic is "transfer"
+   */
+  topicFilters?: (string | null)[];
+};
+
+/** Options for subscribeContract(). */
+export type ContractSubscribeOptions = {
+  filters?: ContractSubscriptionFilter[];
 };
