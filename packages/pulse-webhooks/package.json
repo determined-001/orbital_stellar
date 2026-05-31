@@ -1,17 +1,21 @@
 {
   "name": "@orbital/pulse-webhooks",
   "private": true,
+  "type": "module",
   "version": "0.0.0",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "scripts": {
-    "build": "tsc -p tsconfig.json"
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run"
   },
   "dependencies": {
     "@orbital/pulse-core": "workspace:*"
   },
   "devDependencies": {
-    "@types/node": "^25.5.0",
-    "tsx": "^4.0.0"
+    "@types/node": "^25.6.0",
+    "tsx": "^4.0.0",
+    "vite": "^7.3.3",
+    "vitest": "^4.1.7"
   }
 }

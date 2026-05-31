@@ -1,31 +1,51 @@
 ---
 title: Webhooks
-description: Register, secure, and handle webhook deliveries.
+description: Sign, deliver, and verify Stellar event webhooks with @orbital/pulse-webhooks.
 ---
 
 ## Overview
 
-Webhooks let your server receive instant HTTP notifications when a Stellar address sees activity. Orbital Stellar delivers signed `POST` requests to your endpoint with retries on failure.
+`@orbital/pulse-webhooks` is the "push" side of Orbital. Attach it to a `pulse-core` `Watcher` and every event becomes one or more outbound HTTPS POSTs with a verifiable HMAC-SHA256 signature, retry on failure, configurable timeout, and SSRF hardening.
 
-## Registering a webhook
+This guide covers both sides: setting up delivery in your backend, and verifying signatures in the receiving service (Node or edge runtime).
 
-```typescript
-// POST /webhooks/register
-const res = await fetch('http://localhost:3000/webhooks/register', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({
-    address: 'G...',       // Stellar address to watch
-    url: 'https://...',    // Your endpoint URL
-    secret: 'my-secret',  // Used to sign payloads
-  }),
-})
-const registration = await res.json()
+## Sender side — `WebhookDelivery`
+
+```ts
+import { EventEngine } from "@orbital/pulse-core";
+import { WebhookDelivery } from "@orbital/pulse-webhooks";
+
+const engine = new EventEngine({ network: "testnet" });
+engine.start();
+
+const watcher = engine.subscribe("GABC...");
+
+new WebhookDelivery(watcher, {
+  url: [
+    "https://your-app.com/hooks/stellar",
+    "https://staging.your-app.com/hooks/stellar",
+  ],
+  secret: process.env.WEBHOOK_SECRET!,
+  retries: 3,
+  deliveryTimeoutMs: 10_000,
+});
 ```
+
+When `url` is an array, each endpoint is delivered to in parallel and retried independently.
+
+### Configuration
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `url` | `string \| string[]` | — | Destination endpoint(s). Must be HTTPS in production |
+| `secret` | `string` | — | Shared secret used to sign payloads |
+| `retries` | `number` | `3` | Retry attempts before emitting `webhook.failed` |
+| `deliveryTimeoutMs` | `number` | `10_000` | Per-attempt abort threshold |
+| `allowPrivateNetworks` | `boolean` | `false` | Bypass SSRF checks for local/private IPs (dev only) |
 
 ## Webhook payload
 
-Every delivery contains a `NormalizedEvent` object:
+Every delivery is a JSON-serialized `NormalizedEvent`. For example, a payment:
 
 ```json
 {
@@ -34,68 +54,121 @@ Every delivery contains a `NormalizedEvent` object:
   "from": "GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5",
   "amount": "100.0000000",
   "asset": "XLM",
-  "timestamp": "2024-01-15T12:34:56Z",
-  "raw": { ... }
+  "timestamp": "2026-05-07T12:34:56Z",
+  "raw": { "...": "original Horizon record" }
 }
 ```
 
-## Verifying signatures
+Other event types (`account.created`, `trustline.added`, `offer.updated`, etc.) carry their own payload shapes — `switch` on `event.type` to narrow per branch in TypeScript.
 
-Every request includes an `X-Orbital-Signature` header containing an HMAC-SHA256 of the raw body, signed with your secret.
+## Delivery contract
 
-```typescript
-import { verifyWebhook } from '@orbital/pulse-webhooks'
-import express from 'express'
+| Header | Value |
+|---|---|
+| `Content-Type` | `application/json` |
+| `x-orbital-signature` | hex HMAC-SHA256 of `timestamp + "." + raw body` |
+| `x-orbital-timestamp` | Unix epoch milliseconds as a string |
+| `x-orbital-attempt` | `1`, `2`, … up to `retries` |
 
-const app = express()
+- **Success:** any 2xx response
+- **Retry:** any non-2xx, network error, or timeout. Backoff is exponential: `2^(attempt-1) × 1000 ms`
+- **Failure:** after `retries` failed attempts for a URL, the watcher emits `webhook.failed` with the original event in `raw.originalEvent` and the failed target in `raw.url`
+
+## Receiver side — Node.js
+
+Use `verifyWebhook` with raw-body middleware:
+
+```ts
+import { verifyWebhook } from "@orbital/pulse-webhooks";
+import express from "express";
+
+const app = express();
 
 // Use raw body parser — do NOT use express.json() for this route
-app.post('/webhook', express.raw({ type: '*/*' }), (req, res) => {
-  const sig = req.headers['x-orbital-signature'] as string
+app.post("/hooks/stellar", express.raw({ type: "application/json" }), (req, res) => {
+  const signature = req.header("x-orbital-signature");
+  const timestamp = req.header("x-orbital-timestamp");
+  if (!signature || !timestamp) return res.sendStatus(400);
 
-  if (!verifyWebhook(req.body, sig, process.env.WEBHOOK_SECRET!)) {
-    return res.status(401).json({ error: 'Invalid signature' })
-  }
+  const event = verifyWebhook(
+    req.body,
+    signature,
+    process.env.WEBHOOK_SECRET!,
+    timestamp,
+  );
 
-  const event = JSON.parse(req.body.toString())
-  // Handle the event...
+  if (!event) return res.sendStatus(401);
 
-  res.sendStatus(200)
-})
+  // event is a verified NormalizedEvent
+  console.log(`Verified ${event.type}`);
+  res.sendStatus(200);
+});
 ```
 
-> **Important:** Always verify signatures before processing events. This ensures the payload came from Orbital Stellar and has not been tampered with.
+> **Important:** Always verify signatures before processing events. `verifyWebhook` uses `crypto.timingSafeEqual` under the hood — do not roll your own comparison.
 
-## Retry behavior
+## Receiver side — Cloudflare Workers / Vercel Edge
 
-If your endpoint returns a non-2xx response or times out, Orbital Stellar retries the delivery with exponential backoff:
+Cloudflare Workers and Vercel Edge runtimes don't ship Node.js `crypto`. Use `verifyWebhookEdge`, which uses Web Crypto API and is async:
 
-| Attempt | Delay |
-|---------|-------|
-| 1 | Immediate |
-| 2 | 1 second |
-| 3 | 2 seconds |
+```js
+import { verifyWebhookEdge } from "@orbital/pulse-webhooks";
 
-After 3 failures, a `webhook.failed` event is emitted internally. You can listen to this on the `WebhookDelivery` instance.
+export default {
+  async fetch(request, env) {
+    if (request.method !== "POST") {
+      return new Response("Method not allowed", { status: 405 });
+    }
 
-## Unregistering a webhook
+    const signature = request.headers.get("x-orbital-signature");
+    const timestamp = request.headers.get("x-orbital-timestamp");
+    if (!signature || !timestamp) {
+      return new Response("Missing headers", { status: 400 });
+    }
 
-```bash
-curl -X DELETE http://localhost:3000/webhooks/{address}
+    const payload = await request.text();
+    const event = await verifyWebhookEdge(
+      payload,
+      signature,
+      env.WEBHOOK_SECRET,
+      timestamp,
+    );
+
+    if (!event) {
+      return new Response("Invalid signature", { status: 401 });
+    }
+
+    // Handle the verified event...
+    return new Response("ok", { status: 200 });
+  },
+};
 ```
 
-Or via the API:
+Same in Deno or any other Web-Crypto-supporting runtime — `verifyWebhookEdge` has no Node dependency.
 
-```typescript
-await fetch(`http://localhost:3000/webhooks/${address}`, {
-  method: 'DELETE',
-})
+## SSRF protection
+
+`pulse-webhooks` blocks delivery to private network ranges by default to prevent SSRF (Server-Side Request Forgery):
+
+- **Loopback** — `127.0.0.0/8`, `::1`
+- **Private** — `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`
+- **Link-local** — `169.254.0.0/16`
+
+DNS resolution is verified against the blocklist before delivery to defeat DNS rebinding attacks. To allow private networks for local development, set `allowPrivateNetworks: true` on the `WebhookDelivery` config — never enable this in production.
+
+## Listening for delivery failures
+
+After exhausting retries against a URL, `WebhookDelivery` emits a `webhook.failed` event on the watcher you can route to a dead-letter queue:
+
+```ts
+watcher.on("webhook.failed", (notification) => {
+  console.error(
+    `delivery failed for ${notification.raw.url}: ${notification.raw.error}`,
+  );
+  // Forward notification.raw.originalEvent to your DLQ
+});
 ```
 
-## Listing registered webhooks
+## Stopping delivery
 
-```typescript
-const res = await fetch('http://localhost:3000/webhooks')
-const webhooks = await res.json()
-// [{ address, url, registeredAt }, ...]
-```
+`delivery.stop()` removes the delivery driver from the watcher. The underlying watcher continues running — call `engine.unsubscribe(address)` if you also want to tear down the subscription.

@@ -1,26 +1,74 @@
 import { Horizon } from "@stellar/stellar-sdk";
 import { Watcher } from "./Watcher.js";
+import { EngineAlreadyStartedError, HorizonStreamError } from "./errors.js";
 import type {
+  AccountCreatedEvent,
+  AccountEventType,
+  AccountMergeEvent,
+  AccountOptionsChanges,
+  AccountOptionsEvent,
+  BumpSequenceEvent,
+  BumpSequenceEventType,
+  ClaimableBalanceClaimant,
+  ClaimableClaimedEvent,
+  ClaimableCreatedEvent,
+  ContractEmittedEvent,
+  ContractInvokedEvent,
+  ContractSubscribeOptions,
+  ContractSubscriptionFilter,
   CoreConfig,
   EngineStatus,
+  DataEvent,
+  DataEventType,
+  EngineStatus,
+  HealthCheckResult,
+  LiquidityPoolDepositEvent,
+  LiquidityPoolReserve,
+  LiquidityPoolWithdrawEvent,
   Network,
   NormalizedEvent,
+  OfferEvent,
+  OfferEventType,
+  PaymentEvent,
   PaymentEventType,
   ReconnectConfig,
+  SubscribeOptions,
+  TrustAuthEvent,
+  TrustAuthEventType,
+  TrustlineEvent,
+  TrustlineEventType,
   WatcherNotification,
   WatcherNotificationType,
+  Logger,
 } from "./index.js";
+import { UnknownNetworkError } from "./index.js";
 
-type PendingNormalizedEvent = Omit<NormalizedEvent, "type"> & {
-  type: "unknown";
-};
+type PendingPaymentEvent = Omit<PaymentEvent, "type"> & { type: "unknown" };
+type NormalizedEventOrPending =
+  | PendingPaymentEvent
+  | AccountOptionsEvent
+  | AccountCreatedEvent
+  | TrustlineEvent
+  | AccountMergeEvent
+  | OfferEvent
+  | BumpSequenceEvent
+  | DataEvent
+  | ClaimableCreatedEvent
+  | ClaimableClaimedEvent
+  | LiquidityPoolDepositEvent
+  | LiquidityPoolWithdrawEvent
+  | TrustAuthEvent
+  | ContractInvokedEvent
+  | ContractEmittedEvent;
 
 type StreamCallbacks = {
   onmessage: (record: unknown) => void;
   onerror: (error: unknown) => void;
 };
 
-type StreamStopper = () => void;
+type HorizonStreamStopper = ReturnType<
+  ReturnType<Horizon.Server["payments"]>["stream"]
+>;
 
 const HORIZON_URLS: Record<Network, string> = {
   mainnet: "https://horizon.stellar.org",
@@ -33,10 +81,15 @@ const DEFAULT_RECONNECT: Required<ReconnectConfig> = {
   maxRetries: Number.POSITIVE_INFINITY,
 };
 
+const STELLAR_MAX_TRUSTLINE_LIMIT = "922337203685.4775807";
+
+const noop: Logger = { info: () => {}, warn: () => {}, error: () => {} };
+
 export class EventEngine {
   private server: Horizon.Server;
   private registry: Map<string, Watcher> = new Map();
-  private stopStream: StreamStopper | null = null;
+  private contractRegistry: Map<string, { watcher: Watcher; filters: ContractSubscriptionFilter[] }> = new Map();
+  private stopStream: HorizonStreamStopper | null = null;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private reconnectAttempt = 0;
   private pendingReconnectSuccessAttempt: number | null = null;
@@ -44,57 +97,201 @@ export class EventEngine {
   private isRunning = false;
   private lastEventAt: string | null = null;
   private horizonCursor?: string;
+  private filters: Map<string, (event: NormalizedEvent) => boolean> = new Map();
+  private log: Logger;
+  private lastEventAt: string | null = null;
 
+  /**
+   * Creates a new EventEngine instance.
+   * @param config - The core configuration for the engine.
+   */
   constructor(config: CoreConfig) {
-    this.server = new Horizon.Server(HORIZON_URLS[config.network]);
+    let horizonUrl: string;
+    if (config.horizonUrl !== undefined) {
+      try {
+        const parsed = new URL(config.horizonUrl);
+        if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+          throw new Error("must be an http or https URL");
+        }
+      } catch (err) {
+        throw new Error(`Invalid horizonUrl: ${(err as Error).message}`);
+      }
+      horizonUrl = config.horizonUrl;
+    } else {
+      const fromNetwork = HORIZON_URLS[config.network];
+      if (!fromNetwork) {
+        throw new UnknownNetworkError(config.network);
+      }
+      horizonUrl = fromNetwork;
+    }
+    this.server = new Horizon.Server(horizonUrl);
     this.reconnectConfig = {
       ...DEFAULT_RECONNECT,
       ...config.reconnect,
     };
+    this.log = config.logger ?? noop;
   }
 
-  subscribe(address: string): Watcher {
+  /**
+   * Subscribes to events for a given Stellar address.
+   * Returns an existing Watcher if one already exists for the address.
+   * @param address - The Stellar address to watch.
+   * @param options - Optional subscription options, including a filter predicate.
+   * @returns The Watcher instance for the address.
+   */
+  subscribe(address: string, options?: SubscribeOptions): Watcher {
     const existingWatcher = this.registry.get(address);
     if (existingWatcher) {
+      if (options?.filter) {
+        this.log.warn(
+          `[pulse-core] subscribe() called for address ${address} which already has an active watcher — filter option ignored.`
+        );
+      }
       return existingWatcher;
     }
 
     const watcher = new Watcher(address);
+    if (options?.filter) {
+      this.filters.set(address, options.filter);
+    }
     watcher.addStopHandler(() => {
       this.registry.delete(address);
+      this.filters.delete(address);
     });
     this.registry.set(address, watcher);
     return watcher;
   }
 
+  /**
+   * Unsubscribes from events for a given Stellar address and stops its watcher.
+   * @param address - The Stellar address to stop watching.
+   */
   unsubscribe(address: string): void {
     this.registry.get(address)?.stop();
   }
 
-  start(): void {
+  /**
+   * Stops all active watchers without closing the underlying SSE stream.
+   * Use this to drain subscriptions while keeping the stream open.
+   */
+  unsubscribeAll(): void {
+    for (const watcher of this.registry.values()) {
+      watcher.stop();
+    }
+  }
+
+  /**
+   * Subscribes to Soroban contract events matching the given filters.
+   * Returns a Watcher that emits "contract.invoked", "contract.emitted", and "*".
+   * Multiple calls with different filters create independent subscriptions.
+   * @param id - A caller-chosen identifier for this subscription (used to unsubscribe).
+   * @param options - Optional filters; omitting filters matches all contract events.
+   */
+  subscribeContract(id: string, options?: ContractSubscribeOptions): Watcher {
+    const existing = this.contractRegistry.get(id);
+    if (existing) {
+      return existing.watcher;
+    }
+
+    const watcher = new Watcher(id);
+    const filters = options?.filters ?? [];
+    watcher.addStopHandler(() => {
+      this.contractRegistry.delete(id);
+    });
+    this.contractRegistry.set(id, { watcher, filters });
+    return watcher;
+  }
+
+  /**
+   * Removes a contract subscription by its id.
+   */
+  unsubscribeContract(id: string): void {
+    this.contractRegistry.get(id)?.watcher.stop();
+  }
+
+  /**
+   * Stops all active contract watchers without halting the Soroban subscriber
+   * or the underlying Horizon SSE stream.
+   * Emits an `engine.stopped` notification to each contract watcher before
+   * tearing it down.
+   */
+  unsubscribeAllContracts(): void {
+    const notification = {
+      type: "engine.stopped" as const,
+      attempt: 0,
+      emittedAt: new Date().toISOString(),
+    };
+    for (const entry of this.contractRegistry.values()) {
+      entry.watcher.emit("engine.stopped", notification);
+      entry.watcher.stop();
+    }
+  }
+
+  /**
+   * Starts the SSE stream to listen for Stellar network events.
+   * Returns true if started, false if already running.
+   * Pass `{ strict: true }` to throw EngineAlreadyStartedError instead of returning false.
+   */
+  start(options?: { strict?: boolean }): boolean {
     if (this.isRunning || this.reconnectTimer) {
-      console.warn(
-        "[pulse-core] EventEngine.start() called while the SSE stream is already active."
-      );
-      return;
+      if (options?.strict) {
+        throw new EngineAlreadyStartedError();
+      }
+      this.log.warn("[pulse-core] EventEngine.start() called while the SSE stream is already active.", { isRunning: this.isRunning, reconnectTimerActive: this.reconnectTimer !== null });
+      return false;
     }
 
     this.openStream(false);
+    return true;
   }
 
+  status(): EngineStatus {
+    return {
+      running: this.isRunning,
+      watcherCount: this.registry.size,
+      lastEventAt: this.lastEventAt,
+      reconnectAttempt: this.reconnectAttempt,
+    };
+  }
+
+  healthCheck(thresholdMs = 5 * 60 * 1000): HealthCheckResult {
+    const reasons: string[] = [];
+    if (!this.isRunning) {
+      reasons.push("engine is not running");
+    }
+    if (this.lastEventAt === null) {
+      reasons.push("no events received yet");
+    } else {
+      const age = Date.now() - new Date(this.lastEventAt).getTime();
+      if (age > thresholdMs) {
+        reasons.push(`last event was ${Math.floor(age / 1000)}s ago (threshold ${Math.floor(thresholdMs / 1000)}s)`);
+      }
+    }
+    return { ok: reasons.length === 0, reasons };
+  }
+
+  /**
+   * Stops the SSE stream and all active watchers.
+   * Cleans up all resources and resets reconnection state.
+   */
   stop(): void {
     this.clearReconnectTimer();
     this.pendingReconnectSuccessAttempt = null;
     this.reconnectAttempt = 0;
+    this.lastEventAt = null;
     this.closeStream();
     this.isRunning = false;
     this.horizonCursor = undefined;
 
+    this.notifyWatchers("engine.stopped", {
+      type: "engine.stopped",
+      attempt: 0,
+      emittedAt: new Date().toISOString(),
+    });
+
     for (const watcher of this.registry.values()) {
       watcher.stop();
     }
-
-    this.registry.clear();
   }
 
   status(): EngineStatus {
@@ -138,17 +335,17 @@ export class EventEngine {
 
     const callbacks: StreamCallbacks = {
       onmessage: (record) => {
+        this.lastEventAt = new Date().toISOString();
         if (this.pendingReconnectSuccessAttempt !== null) {
+          // Report the same attempt number that was emitted in engine.reconnecting.
           const attempt = this.pendingReconnectSuccessAttempt;
           this.pendingReconnectSuccessAttempt = null;
           this.reconnectAttempt = 0;
-          console.info(
-            `[pulse-core] SSE reconnect succeeded on attempt ${attempt}.`
-          );
+          this.log.info("[pulse-core] SSE reconnect succeeded.", { attempt });
           this.notifyWatchers("engine.reconnected", {
             type: "engine.reconnected",
             attempt,
-            timestamp: new Date().toISOString(),
+            emittedAt: new Date().toISOString(),
           });
         }
 
@@ -161,18 +358,19 @@ export class EventEngine {
         this.route(event);
       },
       onerror: (error) => {
-        console.error("[pulse-core] SSE error:", error);
-        this.handleStreamError();
+        const wrappedError = error instanceof HorizonStreamError ? error : new HorizonStreamError(error);
+        this.log.error("[pulse-core] SSE error.", { error: wrappedError });
+        this.handleStreamError(wrappedError);
       },
     };
 
     this.stopStream = this.server
-      .payments()
+      .operations()
       .cursor("now")
-      .stream(callbacks) as StreamStopper;
+      .stream(callbacks);
   }
 
-  private handleStreamError(): void {
+  private handleStreamError(error?: unknown): void {
     if (this.reconnectTimer) {
       return;
     }
@@ -183,33 +381,149 @@ export class EventEngine {
 
     const nextAttempt = this.reconnectAttempt + 1;
     if (nextAttempt > this.reconnectConfig.maxRetries) {
-      console.error(
-        `[pulse-core] SSE reconnect stopped after ${this.reconnectAttempt} failed attempts.`
-      );
+      this.log.error("[pulse-core] SSE reconnect stopped.", { failedAttempts: this.reconnectAttempt });
       return;
     }
 
     this.reconnectAttempt = nextAttempt;
 
-    const delayMs = Math.min(
-      this.reconnectConfig.initialDelayMs * 2 ** (nextAttempt - 1),
-      this.reconnectConfig.maxDelayMs
-    );
+    const isRateLimited = this.isRateLimitError(error);
 
-    console.warn(
-      `[pulse-core] SSE reconnect attempt ${nextAttempt} scheduled in ${delayMs}ms.`
-    );
-    this.notifyWatchers("engine.reconnecting", {
-      type: "engine.reconnecting",
-      attempt: nextAttempt,
-      delayMs,
-      timestamp: new Date().toISOString(),
-    });
+    let delayMs: number;
+    if (isRateLimited) {
+      const retryAfterMs = this.parseRetryAfterMs(error);
+      delayMs = retryAfterMs ?? 60000;
+
+      this.log.warn("[pulse-core] SSE rate limited by Horizon, reconnect scheduled.", { attempt: nextAttempt, delayMs });
+      this.notifyWatchers("engine.rate_limited", {
+        type: "engine.rate_limited",
+        attempt: nextAttempt,
+        delayMs,
+        emittedAt: new Date().toISOString(),
+      });
+    } else {
+      const exponentialDelay = Math.min(
+        this.reconnectConfig.initialDelayMs * 2 ** (nextAttempt - 1),
+        this.reconnectConfig.maxDelayMs
+      );
+      delayMs = Math.floor(Math.random() * exponentialDelay);
+
+      this.log.warn("[pulse-core] SSE reconnect attempt scheduled.", { attempt: nextAttempt, delayMs });
+      this.notifyWatchers("engine.reconnecting", {
+        type: "engine.reconnecting",
+        attempt: nextAttempt,
+        delayMs,
+        emittedAt: new Date().toISOString(),
+      });
+    }
 
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
       this.openStream(true);
     }, delayMs);
+  }
+
+  private isRateLimitError(error: unknown): boolean {
+    const status = this.extractStatus(error);
+    return status === 429;
+  }
+
+  private isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === "object" && value !== null;
+  }
+
+  private getNumericField(record: Record<string, unknown>, field: string): number | undefined {
+    const value = record[field];
+    return typeof value === "number" ? value : undefined;
+  }
+
+  private getStringField(record: Record<string, unknown>, field: string): string | null {
+    const value = record[field];
+    return typeof value === "string" ? value : null;
+  }
+
+  private isHeaderMap(value: unknown): value is { get(name: string): string | null } {
+    return (
+      typeof value === "object" &&
+      value !== null &&
+      typeof (value as { get?: unknown }).get === "function"
+    );
+  }
+
+  private extractStatus(error: unknown): number | undefined {
+    if (!this.isRecord(error)) {
+      return undefined;
+    }
+
+    return (
+      this.getNumericField(error, "status") ??
+      this.getNumericField(error, "statusCode") ??
+      (this.isRecord(error.response)
+        ? this.getNumericField(error.response, "status") ??
+          this.getNumericField(error.response, "statusCode")
+        : undefined)
+    );
+  }
+
+  private getHeaderValue(error: unknown, headerName: string): string | null {
+    if (!this.isRecord(error)) {
+      return null;
+    }
+
+    const lowerName = headerName.toLowerCase();
+    const directHeader =
+      this.getStringField(error, headerName) ??
+      this.getStringField(error, lowerName);
+    if (directHeader) {
+      return directHeader;
+    }
+
+    const responseHeaders =
+      this.isRecord(error.response) && this.isRecord(error.response.headers)
+        ? error.response.headers
+        : undefined;
+
+    for (const headers of [error.headers, responseHeaders]) {
+      const value = this.getHeaderValueFromHeaders(headers, headerName);
+      if (value) {
+        return value;
+      }
+    }
+
+    return null;
+  }
+
+  private getHeaderValueFromHeaders(headers: unknown, headerName: string): string | null {
+    const lowerName = headerName.toLowerCase();
+
+    if (this.isHeaderMap(headers)) {
+      const value = headers.get(headerName) ?? headers.get(lowerName);
+      return typeof value === "string" ? value : null;
+    }
+
+    if (!this.isRecord(headers)) {
+      return null;
+    }
+
+    return (
+      this.getStringField(headers, headerName) ??
+      this.getStringField(headers, lowerName)
+    );
+  }
+
+  private parseRetryAfterMs(error: unknown): number | null {
+    const header = this.getHeaderValue(error, "Retry-After");
+    if (!header) {
+      return null;
+    }
+
+    const seconds = Number.parseInt(header, 10);
+    if (!Number.isNaN(seconds)) {
+      return seconds * 1000;
+    }
+
+    const date = new Date(header).getTime();
+    return Number.isNaN(date) ? null : Math.max(date - Date.now(), 0);
   }
 
   private closeStream(): void {
@@ -240,9 +554,339 @@ export class EventEngine {
     }
   }
 
-  private normalize(record: unknown): PendingNormalizedEvent | null {
+  private normalize(record: unknown): NormalizedEventOrPending | null {
     const r = record as Record<string, unknown>;
-    if (r.type !== "payment") {
+
+    if (r.type === "payment") {
+      const requiredFields = ["to", "from", "amount", "created_at"] as const;
+      for (const field of requiredFields) {
+        if (typeof r[field] !== "string" || r[field] === "") {
+          this.log.warn("[pulse-core] normalize() dropping payment record.", { field, record: raw });
+          return null;
+        }
+      }
+
+      const asset =
+        r.asset_type === "native"
+          ? "XLM"
+          : `${r.asset_code}:${r.asset_issuer}`;
+
+      return {
+        // Route resolution assigns the payment direction after normalization.
+        type: "unknown",
+        to: r.to as string,
+        from: r.from as string,
+        amount: r.amount as string,
+        asset,
+        timestamp: r.created_at as string,
+        raw: record,
+      };
+    }
+
+    if (r.type === "set_options") {
+      return this.normalizeSetOptions(r, record);
+    }
+
+    if (r.type === "create_account") {
+      return this.normalizeCreateAccount(r, record);
+    }
+
+    if (r.type === "manage_sell_offer" || r.type === "manage_buy_offer") {
+      return this.normalizeOffer(r, record);
+    }
+
+    if (r.type === "bump_sequence") {
+      return this.normalizeBumpSequence(r, record);
+    }
+
+    if (r.type === "manage_data") {
+      return this.normalizeManageData(r, record);
+    }
+
+    if (r.type === "change_trust") {
+      return this.normalizeChangeTrust(r, record);
+    }
+
+    if (r.type === "account_merge") {
+      return {
+        type: "account.merged",
+        source: r.account as string,
+        destination: r.into as string,
+        timestamp: r.created_at as string,
+        raw: record,
+      };
+    }
+
+    if (r.type === "create_claimable_balance") {
+      return this.normalizeCreateClaimableBalance(r, record);
+    }
+
+    if (r.type === "claim_claimable_balance") {
+      return this.normalizeClaimClaimableBalance(r, record);
+    }
+
+    if (r.type === "liquidity_pool_deposit") {
+      return this.normalizeLiquidityPoolDeposit(r, record);
+    }
+
+    if (r.type === "liquidity_pool_withdraw") {
+      return this.normalizeLiquidityPoolWithdraw(r, record);
+    }
+
+    if (r.type === "allow_trust") {
+      return this.normalizeAllowTrust(r, record);
+    }
+
+    if (r.type === "set_trust_line_flags") {
+      return this.normalizeSetTrustLineFlags(r, record);
+    }
+
+    if (r.type === "contract_invocation") {
+      return this.normalizeContractInvoked(r, record);
+    }
+
+    if (r.type === "contract_event") {
+      return this.normalizeContractEmitted(r, record);
+    }
+
+    return null;
+  }
+
+  private normalizeOffer(
+    r: Record<string, unknown>,
+    raw: unknown
+  ): OfferEvent | null {
+    if (typeof r.source_account !== "string" || typeof r.created_at !== "string") {
+      return null;
+    }
+
+    const offer_id = String(r.offer_id ?? "0");
+    const amount = String(r.amount ?? "0");
+
+    let type: OfferEventType;
+    if (amount === "0" || amount === "0.0000000") {
+      type = "offer.deleted";
+    } else if (offer_id === "0") {
+      type = "offer.created";
+    } else {
+      type = "offer.updated";
+    }
+
+    const buying_asset =
+      r.buying_asset_type === "native"
+        ? "XLM"
+        : `${r.buying_asset_code as string}:${r.buying_asset_issuer as string}`;
+
+    const selling_asset =
+      r.selling_asset_type === "native"
+        ? "XLM"
+        : `${r.selling_asset_code as string}:${r.selling_asset_issuer as string}`;
+
+    return {
+      type,
+      offer_id,
+      source: r.source_account,
+      buying_asset,
+      selling_asset,
+      amount,
+      price: r.price as string,
+      timestamp: r.created_at,
+      raw,
+    };
+  }
+
+  private normalizeCreateAccount(
+    r: Record<string, unknown>,
+    raw: unknown
+  ): AccountCreatedEvent | null {
+    if (
+      typeof r.funder !== "string" ||
+      typeof r.account !== "string" ||
+      typeof r.starting_balance !== "string" ||
+      typeof r.created_at !== "string"
+    ) {
+      return null;
+    }
+    return {
+      type: "account.created",
+      funder: r.funder,
+      account: r.account,
+      starting_balance: r.starting_balance,
+      timestamp: r.created_at,
+      raw,
+    };
+  }
+
+  private normalizeBumpSequence(
+    r: Record<string, unknown>,
+    raw: unknown
+  ): BumpSequenceEvent | null {
+    if (typeof r.source_account !== "string" || typeof r.created_at !== "string") {
+      return null;
+    }
+    return {
+      type: "account.bump_sequence",
+      source: r.source_account,
+      bump_to: r.bump_to as string,
+      timestamp: r.created_at,
+      raw,
+    };
+  }
+
+  private normalizeManageData(
+    r: Record<string, unknown>,
+    raw: unknown
+  ): DataEvent | null {
+    if (typeof r.source_account !== "string" || r.source_account === "") {
+      this.log.warn("[pulse-core] normalize() dropping manage_data record.", { field: "source_account", record: raw });
+      return null;
+    }
+
+    if (typeof r.data_name !== "string" || r.data_name === "") {
+      this.log.warn("[pulse-core] normalize() dropping manage_data record.", { field: "data_name", record: raw });
+      return null;
+    }
+
+    const value = r.data_value == null ? null : String(r.data_value);
+    const type: DataEventType = value !== null ? "data.set" : "data.cleared";
+
+    return {
+      type,
+      source: r.source_account,
+      name: r.data_name,
+      value,
+      timestamp: typeof r.created_at === "string" ? r.created_at : "",
+      raw,
+    };
+  }
+
+  private normalizeChangeTrust(
+    r: Record<string, unknown>,
+    raw: unknown
+  ): TrustlineEvent | null {
+    if (typeof r.source_account !== "string") {
+      return null;
+    }
+
+    if (typeof r.created_at !== "string") {
+      return null;
+    }
+
+    if (typeof r.limit !== "string" && typeof r.limit !== "number") {
+      return null;
+    }
+
+    const asset =
+      r.asset_type === "native"
+        ? "XLM"
+        : `${r.asset_code as string}:${r.asset_issuer as string}`;
+    const limit = String(r.limit);
+
+    return {
+      type: this.resolveTrustlineEventType(limit),
+      account: r.source_account,
+      asset,
+      limit,
+      timestamp: r.created_at,
+      raw,
+    };
+  }
+
+  private resolveTrustlineEventType(limit: string): TrustlineEventType {
+    if (this.isZeroTrustlineLimit(limit)) {
+      return "trustline.removed";
+    }
+
+    if (limit === STELLAR_MAX_TRUSTLINE_LIMIT) {
+      return "trustline.added";
+    }
+
+    return "trustline.updated";
+  }
+
+  private isZeroTrustlineLimit(limit: string): boolean {
+    return /^0(?:\.0+)?$/.test(limit);
+  }
+
+  private normalizeSetOptions(
+    r: Record<string, unknown>,
+    raw: unknown
+  ): AccountOptionsEvent | null {
+    const changes: AccountOptionsChanges = {};
+
+    if (typeof r.signer_key === "string") {
+      const weight = typeof r.signer_weight === "number" ? r.signer_weight : 0;
+      if (weight === 0) {
+        changes.signer_removed = { key: r.signer_key, weight: 0 };
+      } else {
+        changes.signer_added = { key: r.signer_key, weight };
+      }
+    }
+
+    const thresholds: NonNullable<AccountOptionsChanges["thresholds"]> = {};
+    if (typeof r.low_threshold === "number")
+      thresholds.low_threshold = r.low_threshold;
+    if (typeof r.med_threshold === "number")
+      thresholds.med_threshold = r.med_threshold;
+    if (typeof r.high_threshold === "number")
+      thresholds.high_threshold = r.high_threshold;
+    if (typeof r.master_key_weight === "number")
+      thresholds.master_key_weight = r.master_key_weight;
+    if (Object.keys(thresholds).length > 0) changes.thresholds = thresholds;
+
+    if (typeof r.home_domain === "string") {
+      changes.home_domain = r.home_domain;
+    }
+
+    // set_flags, clear_flags, and inflation_dest are intentionally not tracked — operations
+    // that only modify those fields are dropped as no-ops.
+    if (Object.keys(changes).length === 0) return null;
+
+    return {
+      type: "account.options_changed",
+      source: r.source_account as string,
+      changes,
+      timestamp: r.created_at as string,
+      raw,
+    };
+  }
+
+  private normalizeCreateClaimableBalance(
+    r: Record<string, unknown>,
+    raw: unknown
+  ): ClaimableCreatedEvent | null {
+    const requiredStringFields = [
+      "source_account",
+      "created_at",
+      "amount",
+      "balance_id",
+    ] as const;
+
+    for (const field of requiredStringFields) {
+      if (typeof r[field] !== "string" || r[field] === "") {
+        this.log.warn(
+          `[pulse-core] normalize() dropping create_claimable_balance record: field "${field}" is missing or not a non-empty string.`,
+          { record: raw }
+        );
+        return null;
+      }
+    }
+
+    if (
+      !Array.isArray(r.claimants) ||
+      r.claimants.length === 0 ||
+      !r.claimants.every(
+        (c: unknown) =>
+          typeof c === "object" &&
+          c !== null &&
+          typeof (c as Record<string, unknown>).destination === "string" &&
+          (c as Record<string, unknown>).destination !== ""
+      )
+    ) {
+      this.log.warn(
+        '[pulse-core] normalize() dropping create_claimable_balance record: field "claimants" is missing or invalid.',
+        { record: raw }
+      );
       return null;
     }
 
@@ -252,44 +896,553 @@ export class EventEngine {
         : `${r.asset_code}:${r.asset_issuer}`;
 
     return {
-      // Route resolution assigns the payment direction after normalization.
-      type: "unknown",
-      to: r.to as string,
-      from: r.from as string,
-      amount: r.amount as string,
+      type: "claimable.created",
+      sponsor: r.source_account as string,
+      balanceId: r.balance_id as string,
+      claimants: (r.claimants as Array<Record<string, unknown>>).map((c) => ({
+        destination: c.destination as string,
+        predicate: c.predicate,
+      })),
       asset,
+      amount: r.amount as string,
       timestamp: r.created_at as string,
-      raw: record,
+      raw,
     };
   }
 
-  private route(event: PendingNormalizedEvent): void {
+  private normalizeClaimClaimableBalance(
+    r: Record<string, unknown>,
+    raw: unknown
+  ): ClaimableClaimedEvent | null {
+    const requiredStringFields = [
+      "source_account",
+      "created_at",
+      "balance_id",
+    ] as const;
+
+    for (const field of requiredStringFields) {
+      if (typeof r[field] !== "string" || r[field] === "") {
+        this.log.warn(
+          `[pulse-core] normalize() dropping claim_claimable_balance record: field "${field}" is missing or not a non-empty string.`,
+          { record: raw }
+        );
+        return null;
+      }
+    }
+
+    return {
+      type: "claimable.claimed",
+      claimant: r.source_account as string,
+      balanceId: r.balance_id as string,
+      timestamp: r.created_at as string,
+      raw,
+    };
+  }
+
+  private normalizeLiquidityPoolDeposit(
+    r: Record<string, unknown>,
+    raw: unknown
+  ): LiquidityPoolDepositEvent | null {
+    const requiredFields = [
+      "source_account",
+      "created_at",
+      "liquidity_pool_id",
+      "shares_received",
+    ] as const;
+
+    for (const field of requiredFields) {
+      if (typeof r[field] !== "string" || r[field] === "") {
+        this.log.warn(
+          `[pulse-core] normalize() dropping liquidity_pool_deposit record: field "${field}" is missing.`,
+          { record: raw }
+        );
+        return null;
+      }
+    }
+
+    if (!Array.isArray(r.reserves_deposited)) {
+      this.log.warn(
+        "[pulse-core] normalize() dropping liquidity_pool_deposit record: reserves_deposited is not an array.",
+        { record: raw }
+      );
+      return null;
+    }
+
+    return {
+      type: "lp.deposited",
+      source: r.source_account as string,
+      pool_id: r.liquidity_pool_id as string,
+      reserves_deposited: r.reserves_deposited as LiquidityPoolReserve[],
+      shares_received: r.shares_received as string,
+      timestamp: r.created_at as string,
+      raw,
+    };
+  }
+
+  private normalizeLiquidityPoolWithdraw(
+    r: Record<string, unknown>,
+    raw: unknown
+  ): LiquidityPoolWithdrawEvent | null {
+    const requiredFields = [
+      "source_account",
+      "created_at",
+      "liquidity_pool_id",
+      "shares",
+    ] as const;
+
+    for (const field of requiredFields) {
+      if (typeof r[field] !== "string" || r[field] === "") {
+        this.log.warn(
+          `[pulse-core] normalize() dropping liquidity_pool_withdraw record: field "${field}" is missing.`,
+          { record: raw }
+        );
+        return null;
+      }
+    }
+
+    if (!Array.isArray(r.reserves_received)) {
+      this.log.warn(
+        "[pulse-core] normalize() dropping liquidity_pool_withdraw record: reserves_received is not an array.",
+        { record: raw }
+      );
+      return null;
+    }
+
+    return {
+      type: "lp.withdrawn",
+      source: r.source_account as string,
+      pool_id: r.liquidity_pool_id as string,
+      reserves_received: r.reserves_received as LiquidityPoolReserve[],
+      shares_redeemed: r.shares as string,
+      timestamp: r.created_at as string,
+      raw,
+    };
+  }
+
+  private normalizeAllowTrust(
+    r: Record<string, unknown>,
+    raw: unknown
+  ): TrustAuthEvent | null {
+    const trustor = r.trustor;
+    const issuer = r.trustee ?? r.source_account;
+    const authorize = r.authorize;
+
+    if (typeof trustor !== "string" || trustor === "") return null;
+    if (typeof issuer !== "string" || issuer === "") return null;
+    if (typeof authorize !== "boolean") return null;
+    if (typeof r.created_at !== "string") return null;
+
+    const asset =
+      r.asset_type === "native"
+        ? "XLM"
+        : `${r.asset_code}:${r.asset_issuer}`;
+
+    const type: TrustAuthEventType = authorize ? "trustline.authorized" : "trustline.deauthorized";
+
+    return {
+      type,
+      trustor,
+      issuer,
+      asset,
+      timestamp: r.created_at,
+      operation: "allow_trust",
+      raw,
+    };
+  }
+
+  private normalizeSetTrustLineFlags(
+    r: Record<string, unknown>,
+    raw: unknown
+  ): TrustAuthEvent | null {
+    const trustor = r.trustor;
+    const issuer = r.source_account;
+
+    if (typeof trustor !== "string" || trustor === "") return null;
+    if (typeof issuer !== "string" || issuer === "") return null;
+    if (typeof r.created_at !== "string") return null;
+
+    const setFlagsS = r.set_flags_s as string[] | undefined;
+    const clearFlagsS = r.clear_flags_s as string[] | undefined;
+
+    const isSettingAuth = setFlagsS?.includes("authorized") ?? false;
+    const isClearingAuth = clearFlagsS?.includes("authorized") ?? false;
+
+    if (isSettingAuth === isClearingAuth) return null;
+
+    const type: TrustAuthEventType = isSettingAuth ? "trustline.authorized" : "trustline.deauthorized";
+
+    const asset =
+      r.asset_type === "native"
+        ? "XLM"
+        : `${r.asset_code}:${r.asset_issuer}`;
+
+    return {
+      type,
+      trustor,
+      issuer,
+      asset,
+      timestamp: r.created_at,
+      operation: "set_trust_line_flags",
+      raw,
+    };
+  }
+
+  private normalizeContractInvoked(
+    r: Record<string, unknown>,
+    raw: unknown
+  ): ContractInvokedEvent | null {
+    if (typeof r.contract_id !== "string" || r.contract_id === "") return null;
+    if (typeof r.function !== "string") return null;
+    return {
+      type: "contract.invoked",
+      contractId: r.contract_id,
+      function: r.function,
+      topics: Array.isArray(r.topics) ? (r.topics as string[]) : [],
+      data: r.data ?? null,
+      timestamp: typeof r.created_at === "string" ? r.created_at : "",
+      raw,
+    };
+  }
+
+  private normalizeContractEmitted(
+    r: Record<string, unknown>,
+    raw: unknown
+  ): ContractEmittedEvent | null {
+    if (typeof r.contract_id !== "string" || r.contract_id === "") return null;
+    return {
+      type: "contract.emitted",
+      contractId: r.contract_id,
+      topics: Array.isArray(r.topics) ? (r.topics as string[]) : [],
+      data: r.data ?? null,
+      timestamp: typeof r.created_at === "string" ? r.created_at : "",
+      raw,
+    };
+  }
+
+  private passesFilter(address: string, event: NormalizedEvent): boolean {
+    const filter = this.filters.get(address);
+    if (!filter) return true;
+
+    try {
+      return filter(event);
+    } catch (err) {
+      this.log.warn(
+        `[pulse-core] subscribe() filter threw for address ${address} — treating as reject.`,
+        err
+      );
+      return false;
+    }
+  }
+
+  private matchesContractFilters(
+    event: { type: string; contractId: string; topics: string[] },
+    filters: ContractSubscriptionFilter[]
+  ): boolean {
+    // No filters = match everything
+    if (filters.length === 0) return true;
+
+    // At least one filter must match (OR across filters)
+    return filters.some((f) => {
+      if (f.type !== undefined && f.type !== event.type) return false;
+      if (f.contractIds !== undefined && !f.contractIds.includes(event.contractId)) return false;
+      if (f.topicFilters !== undefined) {
+        for (let i = 0; i < f.topicFilters.length; i++) {
+          const pattern = f.topicFilters[i];
+          if (pattern !== null && pattern !== event.topics[i]) return false;
+        }
+      }
+      return true;
+    });
+  }
+
+  private route(event: NormalizedEventOrPending): void {
+    if (event.type === "account.created") {
+      const funderWatcher = this.registry.get(event.funder);
+      if (funderWatcher && this.passesFilter(event.funder, event)) {
+        funderWatcher.emit("account.created", event);
+        funderWatcher.emit("*", event);
+      }
+
+      const accountWatcher = this.registry.get(event.account);
+      if (accountWatcher && event.account !== event.funder && this.passesFilter(event.account, event)) {
+        accountWatcher.emit("account.created", event);
+        accountWatcher.emit("*", event);
+      }
+      return;
+    }
+
+    if (event.type === "account.options_changed") {
+      const watcher = this.registry.get(event.source);
+      if (watcher && this.passesFilter(event.source, event)) {
+        watcher.emit("account.options_changed", event);
+        watcher.emit("*", event);
+      }
+      return;
+    }
+
+    if (
+      event.type === "offer.created" ||
+      event.type === "offer.updated" ||
+      event.type === "offer.deleted"
+    ) {
+      const watcher = this.registry.get(event.source);
+      if (watcher && this.passesFilter(event.source, event)) {
+        watcher.emit(event.type, event);
+        watcher.emit("*", event);
+      }
+      return;
+    }
+
+    if (
+      event.type === "trustline.added" ||
+      event.type === "trustline.removed" ||
+      event.type === "trustline.updated"
+    ) {
+      const watcher = this.registry.get(event.account);
+      if (watcher && this.passesFilter(event.account, event)) {
+        watcher.emit(event.type, event);
+        watcher.emit("*", event);
+      }
+      return;
+    }
+
+    if (event.type === "account.merged") {
+      const sourceWatcher = this.registry.get(event.source);
+      if (sourceWatcher && this.passesFilter(event.source, event)) {
+        sourceWatcher.emit("account.merged", event);
+        sourceWatcher.emit("*", event);
+      }
+
+      const destinationWatcher = this.registry.get(event.destination);
+      if (destinationWatcher && this.passesFilter(event.destination, event)) {
+        destinationWatcher.emit("account.merged", event);
+        destinationWatcher.emit("*", event);
+      }
+      return;
+    }
+
+    if (event.type === "account.bump_sequence") {
+      const watcher = this.registry.get(event.source);
+      if (watcher && this.passesFilter(event.source, event)) {
+        watcher.emit("account.bump_sequence", event);
+        watcher.emit("*", event);
+      }
+      return;
+    }
+
+    if (event.type === "data.set" || event.type === "data.cleared") {
+      const watcher = this.registry.get(event.source);
+      if (watcher && this.passesFilter(event.source, event)) {
+        watcher.emit(event.type, event);
+        watcher.emit("*", event);
+      }
+      return;
+    }
+
+    if (event.type === "claimable.created") {
+      const notified = new Set<string>();
+
+      for (const claimant of event.claimants) {
+        const watcher = this.registry.get(claimant.destination);
+        if (watcher && !notified.has(claimant.destination) && this.passesFilter(claimant.destination, event)) {
+          notified.add(claimant.destination);
+          watcher.emit("claimable.created", event);
+          watcher.emit("*", event);
+        }
+      }
+
+      if (!notified.has(event.sponsor)) {
+        const sponsorWatcher = this.registry.get(event.sponsor);
+        if (sponsorWatcher && this.passesFilter(event.sponsor, event)) {
+          sponsorWatcher.emit("claimable.created", event);
+          sponsorWatcher.emit("*", event);
+        }
+      }
+      return;
+    }
+
+    if (event.type === "claimable.claimed") {
+      const watcher = this.registry.get(event.claimant);
+      if (watcher && this.passesFilter(event.claimant, event)) {
+        watcher.emit("claimable.claimed", event);
+        watcher.emit("*", event);
+      }
+      return;
+    }
+
+    if (event.type === "lp.deposited" || event.type === "lp.withdrawn") {
+      const watcher = this.registry.get(event.source);
+      if (watcher && this.passesFilter(event.source, event)) {
+        watcher.emit(event.type, event);
+        watcher.emit("*", event);
+      }
+      return;
+    }
+
+    if (event.type === "trustline.authorized" || event.type === "trustline.deauthorized") {
+      const issuerWatcher = this.registry.get(event.issuer);
+      if (issuerWatcher && this.passesFilter(event.issuer, event)) {
+        issuerWatcher.emit(event.type, event);
+        issuerWatcher.emit("*", event);
+      }
+
+      const trustorWatcher = this.registry.get(event.trustor);
+      if (trustorWatcher && event.trustor !== event.issuer && this.passesFilter(event.trustor, event)) {
+        trustorWatcher.emit(event.type, event);
+        trustorWatcher.emit("*", event);
+      }
+      return;
+    }
+
+    if (event.type === "contract.invoked" || event.type === "contract.emitted") {
+      for (const { watcher, filters } of this.contractRegistry.values()) {
+        if (this.matchesContractFilters(event, filters)) {
+          watcher.emit(event.type, event);
+          watcher.emit("*", event);
+        }
+      }
+      return;
+    }
+
+    if (event.type !== "unknown") {
+      return;
+    }
+
+    if (event.from === event.to) {
+      const watcher = this.registry.get(event.to);
+      if (watcher) {
+        const selfPayment = this.withResolvedType(event, "payment.self");
+        if (this.passesFilter(event.to, selfPayment)) {
+          watcher.emit("payment.self", selfPayment);
+          watcher.emit("*", selfPayment);
+        }
+      }
+      return;
+    }
+
     const toWatcher = this.registry.get(event.to);
     if (toWatcher) {
-      toWatcher.emit(
-        "payment.received",
-        this.withResolvedType(event, "payment.received")
-      );
-      toWatcher.emit("*", this.withResolvedType(event, "payment.received"));
+      const receivedEvent = this.withResolvedType(event, "payment.received");
+      if (this.passesFilter(event.to, receivedEvent)) {
+        toWatcher.emit("payment.received", receivedEvent);
+        toWatcher.emit("*", receivedEvent);
+      }
     }
 
     const fromWatcher = this.registry.get(event.from);
     if (fromWatcher) {
-      fromWatcher.emit(
-        "payment.sent",
-        this.withResolvedType(event, "payment.sent")
-      );
-      fromWatcher.emit("*", this.withResolvedType(event, "payment.sent"));
+      const sentEvent = this.withResolvedType(event, "payment.sent");
+      if (this.passesFilter(event.from, sentEvent)) {
+        fromWatcher.emit("payment.sent", sentEvent);
+        fromWatcher.emit("*", sentEvent);
+      }
     }
   }
 
   private withResolvedType(
-    event: PendingNormalizedEvent,
+    event: PendingPaymentEvent,
     type: PaymentEventType
-  ): NormalizedEvent {
+  ): PaymentEvent {
     return {
       ...event,
       type,
     };
   }
+}
+
+export interface ContractInvokedEvent {
+  type: "contract_invoked";
+  id: string;
+  pagingToken: string;
+  contractId: string;
+  txHash: string;
+  ledger: number;
+  ledgerClosedAt: string;
+  inSuccessfulContractCall: boolean;
+  raw: any;
+}
+
+export interface ContractEmittedEvent {
+  type: "contract_emitted";
+  id: string;
+  pagingToken: string;
+  contractId: string;
+  txHash: string;
+  ledger: number;
+  ledgerClosedAt: string;
+  topics: string[];
+  value: string;
+  inSuccessfulContractCall: boolean;
+  raw: any;
+}
+
+/**
+ * Normalizes a raw Soroban RPC event into a typed domain event structure.
+ * Handles malformed fields safely by writing warnings and returning null.
+ */
+export function normalizeContractEvent(rawRpcEvent: any): ContractInvokedEvent | ContractEmittedEvent | null {
+  // 1. Structural check patterns
+  if (!rawRpcEvent || typeof rawRpcEvent !== "object") {
+    console.warn("[pulse-core] Dropping malformed Soroban event: payload is not a valid object.", rawRpcEvent);
+    return null;
+  }
+
+  // 2. Validate mandatory base identification parameters
+  const requiredFields = ["id", "pagingToken", "contractId", "txHash", "ledger", "ledgerClosedAt", "type"];
+  for (const field of requiredFields) {
+    if (rawRpcEvent[field] === undefined || rawRpcEvent[field] === null) {
+      console.warn(`[pulse-core] Dropping malformed Soroban event: missing required field "${field}".`, rawRpcEvent);
+      return null;
+    }
+  }
+
+  const {
+    id,
+    pagingToken,
+    contractId,
+    txHash,
+    ledger,
+    ledgerClosedAt,
+    type,
+    inSuccessfulContractCall,
+    topic,
+    value
+  } = rawRpcEvent;
+
+  // 3. Conditional evaluation mappings based on the event subtype
+  if (type === "system" || type === "diagnostic") {
+    return {
+      type: "contract_invoked",
+      id: String(id),
+      pagingToken: String(pagingToken),
+      contractId: String(contractId),
+      txHash: String(txHash),
+      ledger: Number(ledger),
+      ledgerClosedAt: String(ledgerClosedAt),
+      inSuccessfulContractCall: Boolean(inSuccessfulContractCall),
+      raw: rawRpcEvent,
+    };
+  } else if (type === "contract") {
+    if (!Array.isArray(topic) || value === undefined || value === null) {
+      console.warn("[pulse-core] Dropping malformed contract emitted event: missing topics array or data payload.", rawRpcEvent);
+      return null;
+    }
+
+    return {
+      type: "contract_emitted",
+      id: String(id),
+      pagingToken: String(pagingToken),
+      contractId: String(contractId),
+      txHash: String(txHash),
+      ledger: Number(ledger),
+      ledgerClosedAt: String(ledgerClosedAt),
+      topics: topic.map((t: any) => String(t)),
+      value: String(value),
+      inSuccessfulContractCall: Boolean(inSuccessfulContractCall),
+      raw: rawRpcEvent,
+    };
+  }
+
+  console.warn(`[pulse-core] Dropping malformed Soroban event: unknown event type category "${type}".`, rawRpcEvent);
+  return null;
 }
