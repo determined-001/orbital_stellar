@@ -21,7 +21,8 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "test": "vitest run"
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
     "@orbital-stellar/pulse-core": "workspace:*"
