@@ -11,6 +11,8 @@ export type WebhookConfig = {
   urlValidator?: (url: string) => Promise<string | null>;
   /** Pluggable retry queue for durable webhooks replay. */
   retryQueue?: RetryQueue;
+  /** Pluggable dead letter store for failed/dropped webhooks. */
+  deadLetterStore?: DeadLetterStore;
 };
 
 export const DEFAULT_MAX_AGE_MS = 300_000;
@@ -38,4 +40,25 @@ export interface RetryQueue {
   dequeue(): Promise<RetryRecord | null>;
   evictNewest(): Promise<RetryRecord | null>;
   size(): Promise<number>;
+}
+
+export interface DeadLetterRecord {
+  id: string;
+  url: string;
+  event: any;
+  error?: string;
+  reason?: string;
+  attempts: number;
+  timestamp: number;
+}
+
+export interface DeadLetterFilter {
+  url?: string;
+  type?: string;
+  reason?: string;
+}
+
+export interface DeadLetterStore {
+  record(failure: Omit<DeadLetterRecord, "id" | "timestamp">): Promise<void>;
+  list(filter?: DeadLetterFilter): Promise<DeadLetterRecord[]>;
 }
