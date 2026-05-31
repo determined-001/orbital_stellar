@@ -303,6 +303,18 @@ export type ReconnectConfig = {
 };
 
 /**
+ * Structured logger interface accepted by EventEngine.
+ *
+ * The second argument carries metadata that downstream loggers can serialize as JSON
+ * or map into their own structured logging format.
+ */
+export interface Logger {
+  info(message: string, meta?: Record<string, unknown>): void;
+  warn(message: string, meta?: Record<string, unknown>): void;
+  error(message: string, meta?: Record<string, unknown>): void;
+}
+
+/**
  * Core configuration for initializing the EventEngine.
  *
  * @example
@@ -318,11 +330,7 @@ export type CoreConfig = {
   horizonUrl?: string;
   /** Optional reconnection configuration. */
   reconnect?: ReconnectConfig;
-  logger?: {
-    info(msg: string, ...args: unknown[]): void;
-    warn(msg: string, ...args: unknown[]): void;
-    error(msg: string, ...args: unknown[]): void;
-  };
+  logger?: Logger;
 };
 
 // Error class for invalid network validation
