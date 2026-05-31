@@ -20,7 +20,9 @@ export type PaymentEventType =
 /** Event type for account options changes. */
 export type AccountOptionsEventType = "account.options_changed";
 export type LiquidityPoolEventType = "lp.deposited" | "lp.withdrawn";
-export type TrustAuthEventType = "trustline.authorized" | "trustline.deauthorized";
+export type TrustAuthEventType =
+  | "trustline.authorized"
+  | "trustline.deauthorized";
 /** Event type for account creation. */
 export type AccountEventType = "account.created";
 export type ClaimableCreatedEventType = "claimable.created";
@@ -39,7 +41,10 @@ export type WatcherNotificationType =
   | "engine.rate_limited"
   | "engine.stopped";
 
-export type OfferEventType = "offer.created" | "offer.updated" | "offer.deleted";
+export type OfferEventType =
+  | "offer.created"
+  | "offer.updated"
+  | "offer.deleted";
 export type BumpSequenceEventType = "account.bump_sequence";
 export type DataEventType = "data.set" | "data.cleared";
 
@@ -160,7 +165,10 @@ export type DataEvent = {
   type: DataEventType;
   source: string;
   name: string;
+  /** The raw base64-encoded value returned by Horizon, or null when cleared. */
   value: string | null;
+  /** The decoded bytes of `value` as a Uint8Array, or null when `value` is null or invalid base64. */
+  decoded: Uint8Array | null;
   timestamp: string;
   raw: unknown;
 };

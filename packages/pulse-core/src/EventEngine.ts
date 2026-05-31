@@ -613,11 +613,21 @@ export class EventEngine {
     const value = r.data_value == null ? null : String(r.data_value);
     const type: DataEventType = value !== null ? "data.set" : "data.cleared";
 
+    let decoded: Uint8Array | null = null;
+    if (value !== null) {
+      try {
+        decoded = Buffer.from(value, "base64");
+      } catch (err) {
+        decoded = null;
+      }
+    }
+
     return {
       type,
       source: r.source_account,
       name: r.data_name,
       value,
+      decoded,
       timestamp: typeof r.created_at === "string" ? r.created_at : "",
       raw,
     };
