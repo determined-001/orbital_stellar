@@ -345,8 +345,10 @@ export class UnknownNetworkError extends Error {
 export type EngineStatus = {
   running: boolean;
   watcherCount: number;
+  contractWatcherCount?: number;
   lastEventAt: string | null;
   reconnectAttempt: number;
+  pausedSources?: ("horizon" | "soroban")[];
 };
 
 export type HealthCheckResult = {

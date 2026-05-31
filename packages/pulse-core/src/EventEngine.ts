@@ -97,6 +97,7 @@ export class EventEngine {
   private filters: Map<string, (event: NormalizedEvent) => boolean> = new Map();
   private log: Logger;
   private lastEventAt: string | null = null;
+  private pausedSources: Set<"horizon" | "soroban"> = new Set();
 
   /**
    * Creates a new EventEngine instance.
@@ -246,8 +247,10 @@ export class EventEngine {
     return {
       running: this.isRunning,
       watcherCount: this.registry.size,
+      contractWatcherCount: this.contractRegistry.size,
       lastEventAt: this.lastEventAt,
       reconnectAttempt: this.reconnectAttempt,
+      pausedSources: this.pausedSources.size > 0 ? Array.from(this.pausedSources) : undefined,
     };
   }
 
@@ -268,6 +271,35 @@ export class EventEngine {
   }
 
   /**
+   * Pauses event emission from a specific source (Horizon or Soroban).
+   * Paused sources stop emitting events but the stream remains open.
+   * Cursors persist via CursorStore so resume continues from the last point.
+   * @param source - The source to pause: "horizon" or "soroban"
+   */
+  pauseSource(source: "horizon" | "soroban"): void {
+    if (this.pausedSources.has(source)) {
+      this.log.warn(`[pulse-core] pauseSource("${source}") called but source is already paused.`);
+      return;
+    }
+    this.pausedSources.add(source);
+    this.log.info(`[pulse-core] Source "${source}" paused.`);
+  }
+
+  /**
+   * Resumes event emission from a specific paused source.
+   * Continues from the last delivered cursor position.
+   * @param source - The source to resume: "horizon" or "soroban"
+   */
+  resumeSource(source: "horizon" | "soroban"): void {
+    if (!this.pausedSources.has(source)) {
+      this.log.warn(`[pulse-core] resumeSource("${source}") called but source is not paused.`);
+      return;
+    }
+    this.pausedSources.delete(source);
+    this.log.info(`[pulse-core] Source "${source}" resumed.`);
+  }
+
+  /**
    * Stops the SSE stream and all active watchers.
    * Cleans up all resources and resets reconnection state.
    */
@@ -278,6 +310,7 @@ export class EventEngine {
     this.lastEventAt = null;
     this.closeStream();
     this.isRunning = false;
+    this.pausedSources.clear();
 
     this.notifyWatchers("engine.stopped", {
       type: "engine.stopped",
@@ -525,7 +558,7 @@ export class EventEngine {
       const requiredFields = ["to", "from", "amount", "created_at"] as const;
       for (const field of requiredFields) {
         if (typeof r[field] !== "string" || r[field] === "") {
-          this.log.warn("[pulse-core] normalize() dropping payment record.", { field, record: raw });
+          this.log.warn("[pulse-core] normalize() dropping payment record.", { field, record });
           return null;
         }
       }
@@ -1120,6 +1153,16 @@ export class EventEngine {
   }
 
   private route(event: NormalizedEventOrPending): void {
+    // Check if Soroban source is paused for contract events
+    if ((event.type === "contract.invoked" || event.type === "contract.emitted") && this.pausedSources.has("soroban")) {
+      return;
+    }
+
+    // Check if Horizon source is paused for all other events
+    if (event.type !== "contract.invoked" && event.type !== "contract.emitted" && this.pausedSources.has("horizon")) {
+      return;
+    }
+
     if (event.type === "account.created") {
       const funderWatcher = this.registry.get(event.funder);
       if (funderWatcher && this.passesFilter(event.funder, event)) {
