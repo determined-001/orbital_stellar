@@ -402,7 +402,7 @@ Decoding to typed `decodedData` requires the ABI Registry client (also Phase 1).
 
 ## Related documents
 
-- [`apps/web/content/guides/`](../apps/web/content/guides/) — narrative walkthroughs (real-time events, webhooks)
+- [`apps/web/content/guides/`](../apps/web/content/guides/) — narrative walkthroughs (real-time events, webhooks, migrate from EventSource)
 - [`docs/ARCHITECTURE.md`](./ARCHITECTURE.md) — system diagrams, lifecycle, trust boundaries
 - [`packages/pulse-core/README.md`](../packages/pulse-core/README.md) — full API reference
 - [`packages/pulse-webhooks/README.md`](../packages/pulse-webhooks/README.md) — delivery contract, security

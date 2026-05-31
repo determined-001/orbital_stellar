@@ -187,3 +187,5 @@ useStellarEvent(serverUrl, address, {
 - Hook instances with the same `serverUrl`, `address`, and `token` share one browser connection while keeping their own event filters
 - Clean shutdown: when your backend exits, send a custom `shutdown` event so clients can distinguish planned restarts from network failures
 - Heartbeats every ~30 seconds keep the connection alive through proxies and load balancers
+
+Already using raw `EventSource` against an Orbital SSE endpoint? See the [migrate from EventSource guide](./migrate-from-eventsource) for before/after snippets for the three most common browser patterns.

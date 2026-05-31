@@ -264,6 +264,7 @@ The hooks are client-only — they rely on `EventSource`, which does not exist i
 
 ## Related documents
 
+- [Migrate from raw EventSource](../../apps/web/content/guides/migrate-from-eventsource.md) — before/after for manual `useEffect` subscriptions, client-side type filtering, and duplicate connections per address
 - [`docs/ARCHITECTURE.md` § 7 React hook internals](../../docs/ARCHITECTURE.md#7-react-hook-internals) — design choices (stable dep-array, dual call signature, generic narrowing)
 - [`docs/COOKBOOK.md` § 10 Render live payments in React with type narrowing](../../docs/COOKBOOK.md#10-render-live-payments-in-react-with-type-narrowing)
 - [`docs/COOKBOOK.md` § 11 Stand up an SSE endpoint in Next.js](../../docs/COOKBOOK.md#11-stand-up-an-sse-endpoint-in-nextjs) — the backend the hooks expect

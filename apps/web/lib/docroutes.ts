@@ -22,6 +22,10 @@ export const docSections: DocSection[] = [
     items: [
       { title: 'Webhooks', href: '/docs/guides/webhooks' },
       { title: 'Real-time Events', href: '/docs/guides/real-time-events' },
+      {
+        title: 'Migrate from EventSource',
+        href: '/docs/guides/migrate-from-eventsource',
+      },
     ],
   },
   {
