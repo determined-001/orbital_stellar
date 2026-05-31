@@ -873,9 +873,89 @@ describe("pulse-webhooks deliveryHealth", () => {
     // We can't easily test the global state, so we verify the function signature works
     const health = deliveryHealth("https://example.com/hook");
 
-    expect(health).toHaveProperty("healthy");
-    expect(health).toHaveProperty("failureRate");
-    expect(typeof health.healthy).toBe("boolean");
-    expect(typeof health.failureRate).toBe("number");
+  it("returns entries sorted by timestamp (oldest first)", () => {
+    vi.useFakeTimers();
+    const dlq = new DeadLetterStore();
+
+    vi.setSystemTime(new Date("2026-04-26T12:00:00Z"));
+    const id3 = dlq.add(
+      "https://example.com/webhooks",
+      deliveryEvent,
+      "Error 3",
+      3,
+    );
+
+    vi.setSystemTime(new Date("2026-04-26T10:00:00Z"));
+    const id1 = dlq.add(
+      "https://example.com/webhooks",
+      deliveryEvent,
+      "Error 1",
+      1,
+    );
+
+    vi.setSystemTime(new Date("2026-04-26T11:00:00Z"));
+    const id2 = dlq.add(
+      "https://example.com/webhooks",
+      deliveryEvent,
+      "Error 2",
+      2,
+    );
+
+    const entries = dlq.list();
+    expect(entries.map((e) => e.id)).toEqual([id1, id2, id3]);
+
+    vi.useRealTimers();
+  });
+
+  it("returns healthy when recent success and no failures", () => {
+    vi.setSystemTime(new Date("2026-05-30T12:00:00Z"));
+
+    const dlqInstance = new DeadLetterStore();
+    dlqInstance.recordSuccess("https://example.com/hook");
+
+    const health = dlqInstance.getHealth("https://example.com/hook");
+
+    expect(health.healthy).toBe(true);
+    expect(health.failureRate).toBe(0);
+    expect(health.lastSuccess).toBeDefined();
+  });
+
+  it("tracks failed deliveries in the store automatically", async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi.fn().mockRejectedValue(new Error("network error"));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const dlq = new DeadLetterStore();
+    const watcher = new Watcher("GABC");
+    const failedHandler = vi.fn();
+    watcher.on("webhook.failed", failedHandler);
+
+    const delivery = new WebhookDelivery(
+      watcher,
+      {
+        url: "https://example.com/webhooks",
+        secret: "top-secret",
+        retries: 1,
+      },
+      dlq,
+    );
+
+    expect(delivery.getDeadLetterStore()).toBe(dlq);
+
+    watcher.emit("*", deliveryEvent);
+    await vi.runAllTimersAsync();
+
+    expect(dlq.size()).toBeGreaterThan(0);
+    const entries = dlq.list();
+    expect(entries[0]?.url).toBe("https://example.com/webhooks");
+    expect(entries[0]?.error).toMatch(/network error|timed out/);
+    expect(entries[0]?.event).toEqual(deliveryEvent);
+
+    expect(failedHandler).toHaveBeenCalled();
+    const failedCall = failedHandler.mock.calls[0][0];
+    expect(failedCall.raw?.dlqId).toBeDefined();
+    expect(failedCall.raw?.dlqId).toBe(entries[0]?.id);
+
+    vi.useRealTimers();
   });
 });
