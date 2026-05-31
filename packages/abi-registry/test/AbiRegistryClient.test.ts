@@ -170,6 +170,69 @@ describe("AbiRegistryClient", () => {
     });
   });
 
+  describe("getSpecAt", () => {
+    it("fetches a versioned spec via GET /specs/:contractId?ledger=:ledger", async () => {
+      const spec = makeSpec("CONTRACT_Z");
+      mockFetch((url) => {
+        expect(url).toBe("https://abi.example.com/specs/CONTRACT_Z?ledger=123");
+        return new Response(JSON.stringify(spec), { status: 200 });
+      });
+
+      const client = new AbiRegistryClient({ baseUrl: "https://abi.example.com" });
+      const result = await client.getSpecAt("CONTRACT_Z", 123);
+
+      expect(result).toEqual(spec);
+      expect(fetch).toHaveBeenCalledTimes(1);
+    });
+
+    it("serves cached versioned spec on subsequent lookups without network calls", async () => {
+      const spec = makeSpec("CONTRACT_Z");
+      const fetchMock = vi.fn().mockResolvedValue(
+        new Response(JSON.stringify(spec), { status: 200 })
+      );
+      vi.stubGlobal("fetch", fetchMock);
+
+      const client = new AbiRegistryClient({ baseUrl: "https://abi.example.com" });
+      await client.getSpecAt("CONTRACT_Z", 123);
+      const result = await client.getSpecAt("CONTRACT_Z", 123);
+
+      expect(result).toEqual(spec);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+
+    it("returns null when the registry returns 404", async () => {
+      mockFetch(() => new Response("Not Found", { status: 404 }));
+
+      const client = new AbiRegistryClient({ baseUrl: "https://abi.example.com" });
+      const result = await client.getSpecAt("CONTRACT_Z", 999);
+
+      expect(result).toBeNull();
+      expect(fetch).toHaveBeenCalledTimes(1);
+    });
+
+    it("caches null results so missing versioned specs are not re-fetched", async () => {
+      const fetchMock = vi.fn().mockResolvedValue(
+        new Response("Not Found", { status: 404 })
+      );
+      vi.stubGlobal("fetch", fetchMock);
+
+      const client = new AbiRegistryClient({ baseUrl: "https://abi.example.com" });
+      await client.getSpecAt("CONTRACT_Z", 999);
+      await client.getSpecAt("CONTRACT_Z", 999);
+
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+
+    it("throws when the registry returns a 500 error", async () => {
+      mockFetch(() => new Response("Server Error", { status: 500 }));
+
+      const client = new AbiRegistryClient({ baseUrl: "https://abi.example.com" });
+      await expect(client.getSpecAt("CONTRACT_Z", 123)).rejects.toThrow(
+        "ABI registry responded with 500 for versioned spec fetch"
+      );
+    });
+  });
+
   describe("LRU eviction", () => {
     it("evicts the least-recently-used entry when maxCacheSize is exceeded", async () => {
       // Cache size of 2: fill with A and B, then access A, then add C.

@@ -18,6 +18,40 @@ export class AbiRegistryClient {
     return results[contractId] ?? null;
   }
 
+  /** Fetch a contract spec at a specific ledger (cached). */
+  async getSpecAt(
+    contractId: string,
+    ledger: number
+  ): Promise<ContractSpec | null> {
+    const cacheKey = `${contractId}@${ledger}`;
+    if (this.cache.has(cacheKey)) {
+      return this.cache.get(cacheKey) ?? null;
+    }
+
+    const response = await fetch(
+      `${this.baseUrl}/specs/${contractId}?ledger=${ledger}`,
+      {
+        method: "GET",
+        headers: { "Accept": "application/json" },
+      }
+    );
+
+    if (response.status === 404) {
+      this.cache.set(cacheKey, null);
+      return null;
+    }
+
+    if (!response.ok) {
+      throw new Error(
+        `ABI registry responded with ${response.status} for versioned spec fetch`
+      );
+    }
+
+    const spec = await (response.json() as Promise<ContractSpec | null>);
+    this.cache.set(cacheKey, spec);
+    return spec;
+  }
+
   /**
    * Fetch specs for multiple contract IDs in a single round-trip.
    * Results are cached; only uncached IDs are fetched from the registry.
