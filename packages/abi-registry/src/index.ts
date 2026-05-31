@@ -1,4 +1,6 @@
 export { AbiRegistryClient } from "./AbiRegistryClient.js";
+export { scvalToJs, jsToScval } from "./scval.js";
+export { RegistryPublisher } from "./RegistryPublisher.js";
 
 export type {
   AbiRegistryClientConfig,
