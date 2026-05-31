@@ -123,15 +123,25 @@ Attaches a delivery driver to a `Watcher`. Every event the watcher emits is deli
 | `config.deliveryTimeoutMs`    | `number`             | `10_000` | Abort threshold for each HTTP attempt                                                 |
 | `config.allowPrivateNetworks` | `boolean`            | `false`  | If true, bypass SSRF checks for local/private IP ranges                               |
 
-### `verifyWebhook(payload, signature, secret, timestamp)` → `NormalizedEvent | null`
+### `new RedisRetryQueue(client, options?)`
+
+Provides a Redis-backed `RetryQueue` adapter without bundling a Redis client. Pass any client that implements the small `RedisLike` sorted-set surface: `zadd`, `zrangebyscore`, `zrevrange`, `zrem`, and `zcard`.
+
+Records are stored in a sorted set keyed by `nextRetryAt`. The key convention is `<keyPrefix>:retry-queue:<queueName>` — defaults to `orbital:pulse-webhooks:retry-queue:default`.
+
+### `verifyWebhook(payload, signature, secret, timestamp, options?)` → `NormalizedEvent | null`
 
 Verifies that `payload` was signed with `secret` using `timestamp + "." + payload`. Returns the parsed event on success, `null` on any failure (bad signature, malformed JSON, invalid timestamp, length mismatch).
 
+The optional `options.version` field is a negotiation hook for future signature header formats. `"v1"` (default) preserves current `x-orbital-signature` behavior; `"v2"` is a reserved placeholder for a future `x-orbital-signature-v2` implementation.
+
 Uses `crypto.timingSafeEqual` under the hood — do not roll your own comparison.
 
-### `verifyWebhookEdge(payload, signature, secret, timestamp)` → `Promise<NormalizedEvent | null>`
+### `verifyWebhookEdge(payload, signature, secret, timestamp, options?)` → `Promise<NormalizedEvent | null>`
 
 Edge-compatible version of `verifyWebhook` using Web Crypto API. Works in Cloudflare Workers, Deno, and browsers. Returns a Promise that resolves to the parsed event on success, `null` on any failure.
+
+The optional `options.version` field mirrors `verifyWebhook` — `"v1"` (default) is current behavior; `"v2"` is reserved.
 
 Uses constant-time comparison and Web Crypto for HMAC-SHA256 verification.
 
@@ -165,8 +175,17 @@ Uses constant-time comparison and Web Crypto for HMAC-SHA256 verification.
 
 ## Current limitations
 
-- Retries live in-process. Restarting the process loses pending retries. Persistent retry queues are tracked in [`webhooks`](https://github.com/orbital/orbital/labels/webhooks).
-- Exponential backoff is hard-coded. Configurable strategies (linear, jittered, capped-at-N-hours) are open issues.
+- **Retries live in-process.** Restarting the process loses pending retries. Persistent retry queues with pluggable adapters (Redis, Postgres, S3) ship in Phase 1 — see [`ROADMAP.md`](../../ROADMAP.md#wave-13--cursor-persistence-and-replay-primitives).
+- **Exponential backoff is hard-coded.** Configurable strategies (linear, jittered, capped-at-N-hours) are tracked under [`webhooks`](https://github.com/determined-001/orbital_stellar/labels/webhooks).
+- **No signature versioning.** The header format is fixed at `x-orbital-signature` (HMAC-SHA256 hex) — there is no `v1=…` prefix. If the algorithm needs to change, a future `x-orbital-signature-v2` header will be introduced alongside `v1` for a deprecation window.
+
+## Related documents
+
+- [`docs/ARCHITECTURE.md` § 6 Webhook delivery internals](../../docs/ARCHITECTURE.md#6-webhook-delivery-internals) — full delivery and verification design
+- [`docs/COOKBOOK.md`](../../docs/COOKBOOK.md) — recipes 6–9 cover delivery, verification, fan-out, and dead-letter routing
+- [`docs/open-source-policy.md`](../../docs/open-source-policy.md) — interface vs adapter boundary
+- [`SECURITY.md`](../../SECURITY.md) — threat model, secret rotation runbook, best practices for consumers
+- [`CHANGELOG.md`](../../CHANGELOG.md) — release notes
 
 ## License
 

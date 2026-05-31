@@ -104,6 +104,27 @@ import { useStellarActivity } from "@orbital/pulse-notify";
 const { event, connected } = useStellarActivity(serverUrl, address);
 ```
 
+## StellarConnectionStatus
+
+Small status indicator that opens its own `EventSource` and renders connection health without requiring consumers to wire `connected` and `error` state.
+
+```tsx
+"use client";
+import { StellarConnectionStatus } from "@orbital/pulse-notify";
+
+<StellarConnectionStatus serverUrl={serverUrl} address={address} />;
+```
+
+The component sets `data-status` to `connecting`, `connected`, or `error`, and applies classes such as `stellar-connection-status--connected`. Built-in inline styles read CSS custom properties, so apps can theme it without importing a CSS file:
+
+```css
+.stellar-connection-status {
+  --stellar-connection-status-connected-color: #16a34a;
+  --stellar-connection-status-error-color: #dc2626;
+  --stellar-connection-status-padding: 0.35rem 0.65rem;
+}
+```
+
 ## Type narrowing
 
 Pass a narrower union as `T` to get full IDE support and avoid manual casts:
@@ -147,7 +168,7 @@ The hooks are client-only — they rely on `EventSource`, which doesn't exist in
 
 ## Connection behavior
 
-- One `EventSource` connection per hook instance
+- Hook instances with the same `serverUrl`, `address`, and `token` share one `EventSource`
 - Browser handles reconnection automatically on transient network errors
 - Connections are cleaned up on unmount or when `address` / `serverUrl` change
 - Each render returns the *most recent* event — accumulate history yourself in component state if needed

@@ -10,7 +10,7 @@ Requires React 18 or 19. Designed for Next.js App Router, Vite, Remix, and plain
 
 ## What it does
 
-`pulse-notify` opens a browser-native `EventSource` connection to your Orbital server, subscribes to an address, and re-renders your component whenever a new event arrives. It is intentionally thin — no global store, no custom cache, no peer-dependency on a state manager.
+`pulse-notify` opens a browser-native `EventSource` connection to your Orbital server, subscribes to an address, and re-renders your component whenever a new event arrives. Hook instances watching the same `serverUrl`, `address`, and `token` share one connection internally while keeping their own event filters. It is intentionally thin — no global store, no custom cache, no peer-dependency on a state manager.
 
 You point the hook at your own Orbital server (self-hosted or managed) and pass the address you want to watch.
 
@@ -76,6 +76,38 @@ Shorthand for payments received. Equivalent to `useStellarEvent(serverUrl, addre
 ### `useStellarActivity(serverUrl, address)`
 
 Shorthand for all events on an address. Equivalent to `useStellarEvent(serverUrl, address, { event: "*" })`.
+
+### `<StellarConnectionStatus serverUrl address />`
+
+Small client-side status indicator for places that need connection health but do not need to wire `connected` and `error` state by hand.
+
+```tsx
+"use client";
+import { StellarConnectionStatus } from "@orbital/pulse-notify";
+
+export function HeaderConnection({ address }: { address: string }) {
+  return (
+    <StellarConnectionStatus
+      serverUrl={process.env.NEXT_PUBLIC_ORBITAL_URL!}
+      address={address}
+    />
+  );
+}
+```
+
+The indicator owns its `EventSource` lifecycle and sets `data-status` to `connecting`, `connected`, or `error`. It also adds state classes such as `stellar-connection-status--connected`.
+
+Customize the built-in styles with CSS custom properties:
+
+```css
+.stellar-connection-status {
+  --stellar-connection-status-background: color-mix(in srgb, currentColor 10%, transparent);
+  --stellar-connection-status-padding: 0.35rem 0.65rem;
+  --stellar-connection-status-connected-color: #16a34a;
+  --stellar-connection-status-error-color: #dc2626;
+  --stellar-connection-status-dot-size: 0.55rem;
+}
+```
 
 ## Return shape
 
@@ -210,19 +242,15 @@ useStellarEvent(
 
 **Server-only tokens** (secrets) must never ship to the browser. Use a per-user short-lived token issued by your backend.
 
-### Cookie-based auth (withCredentials)
+### Cookie-based auth (`withCredentials`)
 
 Same-origin `httpOnly` cookies travel automatically with SSE when `withCredentials: true` is set.
 
 ```tsx
-useStellarEvent(
-  serverUrl,
-  address,
-  { withCredentials: true }
-);
+useStellarEvent(serverUrl, address, { withCredentials: true });
 ```
 
-If the server is cross-origin, it must respond with `Access-Control-Allow-Credentials: true` and an explicit `Access-Control-Allow-Origin` value. Do not use `*` for the origin when credentials are involved.
+If the server is cross-origin, it must respond with `Access-Control-Allow-Credentials: true` and an explicit `Access-Control-Allow-Origin` value — not `*`.
 
 ## Server-side rendering
 
@@ -230,9 +258,17 @@ The hooks are client-only — they rely on `EventSource`, which does not exist i
 
 ## Current limitations
 
-- One connection per hook instance. Deduplication across components watching the same address is a planned enhancement.
-- No offline queue. Events that arrive while the tab is backgrounded and the connection is closed are not replayed on reconnect.
-- `EventSource` reconnect is browser-controlled. Fine-grained retry policy belongs in a future WebSocket-based transport.
+- Hook instances with the same `serverUrl`, `address`, and `token` share one browser `EventSource`; different keys open separate connections.
+- **No offline queue.** Events that arrive while the tab is backgrounded and the connection is closed are not replayed on reconnect.
+- **`EventSource` reconnect is browser-controlled.** Fine-grained retry policy belongs in a future WebSocket-based transport.
+
+## Related documents
+
+- [`docs/ARCHITECTURE.md` § 7 React hook internals](../../docs/ARCHITECTURE.md#7-react-hook-internals) — design choices (stable dep-array, dual call signature, generic narrowing)
+- [`docs/COOKBOOK.md` § 10 Render live payments in React with type narrowing](../../docs/COOKBOOK.md#10-render-live-payments-in-react-with-type-narrowing)
+- [`docs/COOKBOOK.md` § 11 Stand up an SSE endpoint in Next.js](../../docs/COOKBOOK.md#11-stand-up-an-sse-endpoint-in-nextjs) — the backend the hooks expect
+- [`SECURITY.md` § Best practices for consumers § pulse-notify](../../SECURITY.md#pulse-notify) — token handling, SSR boundary
+- [`CHANGELOG.md`](../../CHANGELOG.md) — release notes
 
 ## License
 

@@ -1,0 +1,96 @@
+{
+  "title": "OrbitalABISpec",
+  "description": "Schema for a single Orbital ABI Registry contract spec.",
+  "type": "object",
+  "required": ["version", "name", "description", "contract_id", "network", "source", "functions"],
+  "additionalProperties": false,
+  "properties": {
+    "version": {
+      "type": "string",
+      "description": "Spec revision in MAJOR.MINOR.PATCH semver format.",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$"
+    },
+    "name": {
+      "type": "string",
+      "description": "Human-readable contract name.",
+      "minLength": 1,
+      "maxLength": 100
+    },
+    "description": {
+      "type": "string",
+      "description": "Short description of the contract's purpose.",
+      "minLength": 1,
+      "maxLength": 500
+    },
+    "contract_id": {
+      "type": "string",
+      "description": "Canonical mainnet Soroban contract address (C-prefixed strkey, 56 characters).",
+      "pattern": "^C[A-Z2-7]{55}$"
+    },
+    "network": {
+      "type": "string",
+      "description": "Stellar network this spec targets.",
+      "enum": ["mainnet", "testnet", "futurenet"]
+    },
+    "source": {
+      "type": "string",
+      "description": "URL or reference identifying where the interface definition was obtained.",
+      "minLength": 1,
+      "maxLength": 2048
+    },
+    "tags": {
+      "type": "array",
+      "description": "Optional classification tags (e.g. 'sep41', 'sac', 'stablecoin').",
+      "items": { "type": "string" },
+      "uniqueItems": true
+    },
+    "functions": {
+      "type": "array",
+      "description": "List of callable contract functions.",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["name", "params", "outputs"],
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Function name as it appears in the contract ABI.",
+            "minLength": 1
+          },
+          "doc": {
+            "type": "string",
+            "description": "Optional human-readable description of what the function does."
+          },
+          "params": {
+            "type": "array",
+            "description": "Ordered list of input parameters.",
+            "items": {
+              "type": "object",
+              "required": ["name", "type"],
+              "additionalProperties": false,
+              "properties": {
+                "name": { "type": "string", "minLength": 1 },
+                "type": { "type": "string", "minLength": 1 },
+                "doc": { "type": "string" }
+              }
+            }
+          },
+          "outputs": {
+            "type": "array",
+            "description": "Ordered list of return values (empty array for void functions).",
+            "items": {
+              "type": "object",
+              "required": ["type"],
+              "additionalProperties": false,
+              "properties": {
+                "type": { "type": "string", "minLength": 1 },
+                "doc": { "type": "string" }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,12 +1,20 @@
 import type { NormalizedEvent, Watcher, WatcherNotification } from "@orbital/pulse-core";
 import { createHmac, timingSafeEqual } from "crypto";
 
-import type { WebhookConfig } from "./types.js";
+import type { Tracer, VerifyWebhookOptions, WebhookConfig } from "./types.js";
+import { DEFAULT_MAX_AGE_MS, DEFAULT_CLOCK_SKEW_MS } from "./types.js";
+export { PostgresDeadLetterStore } from "./PostgresDeadLetterStore.js";
+export { RedisRetryQueue } from "./RedisRetryQueue.js";
 export { verifyWebhookEdge } from "./edge.js";
-export type { WebhookConfig } from "./types.js";
+export type { DeadLetterFilter, DeadLetterInput, DeadLetterRecord, DeadLetterStore, PgLike } from "./PostgresDeadLetterStore.js";
+export type { RedisLike, RedisRetryQueueOptions } from "./RedisRetryQueue.js";
+export type { RetryQueue, RetryRecord } from "./RetryQueue.js";
+export type { Span, Tracer, VerifierSignatureVersion, VerifyWebhookOptions, WebhookConfig } from "./types.js";
 
-type ResolvedWebhookConfig = Omit<Required<WebhookConfig>, "url"> & {
+type ResolvedWebhookConfig = Omit<Required<WebhookConfig>, "url" | "tracer" | "urlValidator"> & {
   urls: string[];
+  tracer?: Tracer;
+  urlValidator?: WebhookConfig["urlValidator"];
 };
 
 export class WebhookDelivery {
@@ -23,6 +31,7 @@ export class WebhookDelivery {
       maxConcurrentRetries: 100,
       random: Math.random,
       ...config,
+      tracer: config.tracer,
       urls: Array.isArray(config.url) ? [...config.url] : [config.url],
     };
     this.config.maxConcurrentRetries = Math.max(1, this.config.maxConcurrentRetries);
@@ -47,12 +56,42 @@ export class WebhookDelivery {
   ): Promise<void> {
     if (this.watcher.stopped) return;
 
+    let customValidationError: string | null = null;
+    try {
+      customValidationError = this.config.urlValidator
+        ? await this.config.urlValidator(url)
+        : null;
+    } catch (err) {
+      if (this.watcher.stopped) return;
+
+      this.emitFailure(event, url, this.getErrorMessage(err), attempt);
+      return;
+    }
+
+    if (this.watcher.stopped) return;
+
+    if (customValidationError) {
+      this.emitFailure(event, url, customValidationError, attempt);
+      return;
+    }
+
     const payload = JSON.stringify(event);
     const timestamp = Date.now().toString();
     const signature = this.sign(payload, timestamp);
     const controller = new AbortController();
     const timeoutMs = this.config.deliveryTimeoutMs;
     const abortTimer = setTimeout(() => controller.abort(), timeoutMs);
+
+    const parentTraceId = this.extractTraceId(event);
+    const spanAttrs: Record<string, string | number | boolean> = {
+      "webhook.url": url,
+      "webhook.attempt": attempt,
+    };
+    if (parentTraceId !== undefined) {
+      spanAttrs["webhook.parent_trace_id"] = parentTraceId;
+    }
+    const span = this.config.tracer?.startSpan("webhook.delivery", spanAttrs);
+    const startMs = Date.now();
 
     try {
       const res = await fetch(url, {
@@ -68,7 +107,13 @@ export class WebhookDelivery {
       });
 
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+      span?.setAttribute("webhook.status", res.status);
+      span?.setAttribute("webhook.latency_ms", Date.now() - startMs);
     } catch (err) {
+      span?.setAttribute("webhook.latency_ms", Date.now() - startMs);
+      span?.setAttribute("webhook.error", this.getErrorMessage(err));
+
       if (this.watcher.stopped) return;
 
       const errorMessage = this.getErrorMessage(err);
@@ -100,19 +145,37 @@ export class WebhookDelivery {
         }, delay);
         this.retryTimers.set(retryTimer, { event, url });
       } else {
-        this.watcher.emit("webhook.failed", {
-          ...event,
-          raw: {
-            error: errorMessage,
-            url,
-            attempts: attempt,
-            originalEvent: event,
-          },
-        } as unknown as NormalizedEvent);
+        this.emitFailure(event, url, errorMessage, attempt);
       }
     } finally {
       clearTimeout(abortTimer);
+      span?.end();
     }
+  }
+
+  private extractTraceId(event: NormalizedEvent): string | undefined {
+    const raw = event.raw;
+    if (raw !== null && typeof raw === "object" && "traceId" in raw && typeof (raw as Record<string, unknown>).traceId === "string") {
+      return (raw as Record<string, string>).traceId;
+    }
+    return undefined;
+  }
+
+  private emitFailure(
+    event: NormalizedEvent,
+    url: string,
+    errorMessage: string,
+    attempt: number,
+  ): void {
+    this.watcher.emit("webhook.failed", {
+      ...event,
+      raw: {
+        error: errorMessage,
+        url,
+        attempts: attempt,
+        originalEvent: event,
+      },
+    } as unknown as NormalizedEvent);
   }
 
   private clearRetryTimers(): void {
@@ -144,8 +207,19 @@ export function verifyWebhook(
   signature: string,
   secret: string,
   timestamp: string,
+  options: VerifyWebhookOptions = {},
 ): NormalizedEvent | null {
   if (!/^\d+$/.test(timestamp)) return null;
+
+  const timestampMs = Number(timestamp);
+  if (!Number.isFinite(timestampMs)) return null;
+
+  const maxAgeMs = options.maxAgeMs ?? DEFAULT_MAX_AGE_MS;
+  const clockSkewMs = options.clockSkewMs ?? DEFAULT_CLOCK_SKEW_MS;
+  const nowMs = options.nowMs ?? Date.now();
+
+  if (timestampMs > nowMs + clockSkewMs) return null;
+  if (timestampMs < nowMs - maxAgeMs - clockSkewMs) return null;
 
   const expected = createHmac("sha256", secret)
     .update(`${timestamp}.${payload}`)

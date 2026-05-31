@@ -62,6 +62,24 @@ Once a watcher has been stopped, it will not accept new listeners. Calling `watc
 
 Stops and removes the watcher for the given address.
 
+### Network passphrases and asset format
+
+`pulse-core` exports `NETWORK_PASSPHRASES` as the source of truth for the supported Stellar network passphrases:
+
+```ts
+import { NETWORK_PASSPHRASES } from "@orbital/pulse-core";
+
+NETWORK_PASSPHRASES.mainnet; // "Public Global Stellar Network ; September 2015"
+NETWORK_PASSPHRASES.testnet; // "Test SDF Network ; September 2015"
+```
+
+Use these constants in tests, signing helpers, or Stellar RPC calls that need the exact network passphrase for the same `network` value passed to `EventEngine`.
+
+Normalized asset strings follow one rule across every event payload:
+
+- Native XLM is emitted as `XLM`.
+- Issued assets are emitted as `CODE:ISSUER`, for example `USDC:G...`.
+
 ### `Watcher` events
 
 | Event | Payload | Fired when |
@@ -77,17 +95,26 @@ Stops and removes the watcher for the given address.
 
 ### `NormalizedEvent` shape
 
+`NormalizedEvent` is a discriminated union covering 21 event types across the full classic operation taxonomy (payments, accounts, trustlines, offers, claimables, liquidity pools, data entries, trust auth). Switch on `event.type` for full TypeScript narrowing per branch.
+
 ```ts
-type NormalizedEvent = {
-  type: "payment.received" | "payment.sent" | "payment.self";
-  to: string;       // Stellar public key
-  from: string;     // Stellar public key
-  amount: string;   // Decimal string (never a JS number)
-  asset: string;    // "XLM" or "CODE:ISSUER"
-  timestamp: string; // ISO 8601
-  raw: unknown;     // Original Horizon record, for escape-hatch inspection
-};
+type NormalizedEvent =
+  | PaymentEvent             // payment.received | payment.sent | payment.self
+  | AccountCreatedEvent      // account.created
+  | AccountMergeEvent        // account.merged
+  | AccountOptionsEvent      // account.options_changed
+  | BumpSequenceEvent        // account.bump_sequence
+  | TrustlineEvent           // trustline.added | .updated | .removed
+  | TrustAuthEvent           // trustline.authorized | .deauthorized
+  | OfferEvent               // offer.created | .updated | .deleted
+  | ClaimableCreatedEvent    // claimable.created
+  | ClaimableClaimedEvent    // claimable.claimed
+  | LiquidityPoolDepositEvent  // lp.deposited
+  | LiquidityPoolWithdrawEvent // lp.withdrawn
+  | DataEvent;               // data.set | data.cleared
 ```
+
+Every event includes a `timestamp` (ISO 8601) and a `raw` field with the original Horizon record. See [`docs/ARCHITECTURE.md` § 4 The normalization layer](../../docs/ARCHITECTURE.md#4-the-normalization-layer) for the full per-event shape table and the routing rules that decide which watcher receives which event.
 
 ## Design principles
 
@@ -120,9 +147,17 @@ Results vary by CPU, Node version, and runtime load; rerun locally to compare ch
 
 ## Current limitations
 
-- Classic payment operations only. Other operation types (path payments, offers, trustlines, account management, Soroban invocations) are in-progress — see open issues tagged [`core-engine`](https://github.com/orbital/orbital/labels/core-engine).
-- In-process only. Horizontal scale and multi-region coordination belong in the deployment layer, not in core.
-- Cursor starts at `now` on every run. Resume-from-cursor is tracked in [#OSS-CORE-017](#).
+- **Soroban contract events are not yet covered.** The full classic operation taxonomy is shipped in `v0.1.0`; Soroban event subscription via Stellar RPC lands in Phase 1 (`v1.0`, Q2–Q3 2026). Open issues tracked under [`core-engine`](https://github.com/determined-001/orbital_stellar/labels/core-engine).
+- **In-process only.** Horizontal scale and multi-region coordination belong in the deployment layer, not in the SDK. See [`docs/open-source-policy.md`](../../docs/open-source-policy.md) for the public/private boundary.
+- **Cursor starts at `now` on every run.** Resume-from-cursor with pluggable adapters ships in Phase 1 — see [`ROADMAP.md`](../../ROADMAP.md#wave-13--cursor-persistence-and-replay-primitives).
+
+## Related documents
+
+- [`docs/ARCHITECTURE.md`](../../docs/ARCHITECTURE.md) — system diagrams, lifecycle sequence, reconnection state machine, trust boundaries
+- [`docs/COOKBOOK.md`](../../docs/COOKBOOK.md) — copy-paste recipes for the most common patterns
+- [`docs/open-source-policy.md`](../../docs/open-source-policy.md) — what stays MIT, what becomes Cloud
+- [`CHANGELOG.md`](../../CHANGELOG.md) — release notes
+- [`SECURITY.md`](../../SECURITY.md) — threat model and vulnerability reporting
 
 ## License
 
