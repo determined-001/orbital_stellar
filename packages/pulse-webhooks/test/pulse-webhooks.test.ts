@@ -99,6 +99,44 @@ describe("pulse-webhooks WebhookDelivery", () => {
     );
   });
 
+  it("rejects URL when custom urlValidator blocks an otherwise allowed URL without retrying", async () => {
+    const allowedUrl = "https://prod.example.com/webhooks/stellar";
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200 });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const watcher = new Watcher("GABC");
+    const failedHandler = vi.fn();
+    watcher.on("webhook.failed", failedHandler);
+
+    new WebhookDelivery(watcher, {
+      url: allowedUrl,
+      secret: "top-secret",
+      urlValidator: async (url) =>
+        url === allowedUrl ? "blocked by custom validator" : null,
+    });
+
+    watcher.emit("*", deliveryEvent);
+    await flushAsyncWork();
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(failedHandler).toHaveBeenCalledTimes(1);
+    expect(failedHandler).toHaveBeenCalledWith(
+      expect.objectContaining({
+        raw: expect.objectContaining({
+          url: allowedUrl,
+          error: "blocked by custom validator",
+          attempts: 1,
+        }),
+      }),
+    );
+
+    vi.advanceTimersByTime(10_000);
+    await flushAsyncWork();
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(failedHandler).toHaveBeenCalledTimes(1);
+  });
+
   it("keeps delivering to other URLs when one URL fails", async () => {
     const failedUrl = "https://prod.example.com/webhooks/stellar";
     const successfulUrl = "https://audit.example.com/webhooks/stellar";
@@ -275,6 +313,146 @@ describe("pulse-webhooks WebhookDelivery", () => {
   });
 });
 
+describe("pulse-webhooks WebhookDelivery tracer", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  it("emits one span per successful delivery attempt with url, attempt, status, and latency", async () => {
+    vi.setSystemTime(new Date("2026-04-27T00:00:00.000Z"));
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200 });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const span = { setAttribute: vi.fn(), end: vi.fn() };
+    const tracer = { startSpan: vi.fn().mockReturnValue(span) };
+
+    const watcher = new Watcher("GABC");
+    new WebhookDelivery(watcher, {
+      url: "https://example.com/hook",
+      secret: "top-secret",
+      tracer,
+    });
+
+    watcher.emit("*", deliveryEvent);
+    await flushAsyncWork();
+
+    expect(tracer.startSpan).toHaveBeenCalledTimes(1);
+    expect(tracer.startSpan).toHaveBeenCalledWith("webhook.delivery", expect.objectContaining({
+      "webhook.url": "https://example.com/hook",
+      "webhook.attempt": 1,
+    }));
+    expect(span.setAttribute).toHaveBeenCalledWith("webhook.status", 200);
+    expect(span.setAttribute).toHaveBeenCalledWith("webhook.latency_ms", expect.any(Number));
+    expect(span.end).toHaveBeenCalledTimes(1);
+  });
+
+  it("emits a span per attempt on retry, recording error on failure", async () => {
+    const fetchMock = vi.fn().mockRejectedValue(new Error("network down"));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const span = { setAttribute: vi.fn(), end: vi.fn() };
+    const tracer = { startSpan: vi.fn().mockReturnValue(span) };
+
+    const watcher = new Watcher("GABC");
+    new WebhookDelivery(watcher, {
+      url: "https://example.com/hook",
+      secret: "top-secret",
+      retries: 2,
+      tracer,
+    });
+
+    watcher.emit("*", deliveryEvent);
+    await flushAsyncWork();
+
+    // attempt 1 span is started and ended
+    expect(tracer.startSpan).toHaveBeenCalledTimes(1);
+    expect(span.setAttribute).toHaveBeenCalledWith("webhook.error", "network down");
+    expect(span.setAttribute).toHaveBeenCalledWith("webhook.latency_ms", expect.any(Number));
+    expect(span.end).toHaveBeenCalledTimes(1);
+
+    // advance to trigger retry (attempt 2)
+    vi.advanceTimersByTime(2000);
+    await flushAsyncWork();
+
+    expect(tracer.startSpan).toHaveBeenCalledTimes(2);
+    expect(tracer.startSpan).toHaveBeenNthCalledWith(2, "webhook.delivery", expect.objectContaining({
+      "webhook.url": "https://example.com/hook",
+      "webhook.attempt": 2,
+    }));
+    expect(span.end).toHaveBeenCalledTimes(2);
+  });
+
+  it("propagates parent trace id from event.raw when present", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200 });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const span = { setAttribute: vi.fn(), end: vi.fn() };
+    const tracer = { startSpan: vi.fn().mockReturnValue(span) };
+
+    const eventWithTrace = {
+      ...deliveryEvent,
+      raw: { id: "evt_1", traceId: "abc123" },
+    };
+
+    const watcher = new Watcher("GABC");
+    new WebhookDelivery(watcher, {
+      url: "https://example.com/hook",
+      secret: "top-secret",
+      tracer,
+    });
+
+    watcher.emit("*", eventWithTrace);
+    await flushAsyncWork();
+
+    expect(tracer.startSpan).toHaveBeenCalledWith("webhook.delivery", expect.objectContaining({
+      "webhook.parent_trace_id": "abc123",
+    }));
+  });
+
+  it("does not include parent_trace_id when event.raw has no traceId", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200 });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const span = { setAttribute: vi.fn(), end: vi.fn() };
+    const tracer = { startSpan: vi.fn().mockReturnValue(span) };
+
+    const watcher = new Watcher("GABC");
+    new WebhookDelivery(watcher, {
+      url: "https://example.com/hook",
+      secret: "top-secret",
+      tracer,
+    });
+
+    watcher.emit("*", deliveryEvent);
+    await flushAsyncWork();
+
+    const startSpanAttrs = tracer.startSpan.mock.calls[0][1] as Record<string, unknown>;
+    expect(startSpanAttrs).not.toHaveProperty("webhook.parent_trace_id");
+  });
+
+  it("does not throw when no tracer is configured", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200 });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const watcher = new Watcher("GABC");
+    new WebhookDelivery(watcher, {
+      url: "https://example.com/hook",
+      secret: "top-secret",
+    });
+
+    watcher.emit("*", deliveryEvent);
+    await flushAsyncWork();
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe("pulse-webhooks verifyWebhook", () => {
   it("returns parsed event when signature matches timestamped payload", () => {
     const payload = JSON.stringify(deliveryEvent);
@@ -283,6 +461,32 @@ describe("pulse-webhooks verifyWebhook", () => {
 
     const event = verifyWebhook(payload, signature, "top-secret", timestamp, {
       nowMs: Number(timestamp),
+    });
+
+    expect(event).toEqual(deliveryEvent);
+  });
+
+  it("accepts explicit v1 version option", () => {
+    const payload = JSON.stringify(deliveryEvent);
+    const timestamp = "1714176000000";
+    const signature = signWebhookPayload("top-secret", payload, timestamp);
+
+    const event = verifyWebhook(payload, signature, "top-secret", timestamp, {
+      nowMs: Number(timestamp),
+      version: "v1",
+    });
+
+    expect(event).toEqual(deliveryEvent);
+  });
+
+  it("accepts v2 placeholder without changing v1 verification behavior", () => {
+    const payload = JSON.stringify(deliveryEvent);
+    const timestamp = "1714176000000";
+    const signature = signWebhookPayload("top-secret", payload, timestamp);
+
+    const event = verifyWebhook(payload, signature, "top-secret", timestamp, {
+      nowMs: Number(timestamp),
+      version: "v2",
     });
 
     expect(event).toEqual(deliveryEvent);
@@ -372,6 +576,32 @@ describe("pulse-webhooks verifyWebhookEdge", () => {
       timestamp,
       { nowMs: Number(timestamp) },
     );
+
+    expect(event).toEqual(deliveryEvent);
+  });
+
+  it("accepts explicit v1 version option", async () => {
+    const payload = JSON.stringify(deliveryEvent);
+    const timestamp = "1714176000000";
+    const signature = signWebhookPayload("top-secret", payload, timestamp);
+
+    const event = await verifyWebhookEdge(payload, signature, "top-secret", timestamp, {
+      nowMs: Number(timestamp),
+      version: "v1",
+    });
+
+    expect(event).toEqual(deliveryEvent);
+  });
+
+  it("accepts v2 placeholder without changing v1 verification behavior", async () => {
+    const payload = JSON.stringify(deliveryEvent);
+    const timestamp = "1714176000000";
+    const signature = signWebhookPayload("top-secret", payload, timestamp);
+
+    const event = await verifyWebhookEdge(payload, signature, "top-secret", timestamp, {
+      nowMs: Number(timestamp),
+      version: "v2",
+    });
 
     expect(event).toEqual(deliveryEvent);
   });
