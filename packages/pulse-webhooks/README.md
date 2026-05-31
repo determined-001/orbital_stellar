@@ -122,6 +122,7 @@ Attaches a delivery driver to a `Watcher`. Every event the watcher emits is deli
 | `config.retries`              | `number`             | `3`      | Number of retry attempts before emitting `webhook.failed`                             |
 | `config.deliveryTimeoutMs`    | `number`             | `10_000` | Abort threshold for each HTTP attempt                                                 |
 | `config.allowPrivateNetworks` | `boolean`            | `false`  | If true, bypass SSRF checks for local/private IP ranges                               |
+| `config.metrics` | `object?` | — | Optional metrics adapter with `recordAttempt()` and `recordDuration()` methods. Pass an instance of `PrometheusWebhookMetrics` to emit Prometheus metrics.
 
 ### `new RedisRetryQueue(client, options?)`
 
@@ -190,3 +191,30 @@ Uses constant-time comparison and Web Crypto for HMAC-SHA256 verification.
 ## License
 
 MIT
+
+## Prometheus metrics
+
+`@orbital/pulse-webhooks` ships a small Prometheus adapter `PrometheusWebhookMetrics` that exposes a metrics `Registry` suitable for scraping.
+
+Documented metric names (defaults):
+
+- `orbital_webhook_attempts_total`: Counter. Labels: `url`, `outcome` (`success|failure|dropped|retry|unknown`), `status` (HTTP status or error token).
+- `orbital_webhook_duration_seconds`: Histogram. Labels: `url`, `status`. Buckets tuned for short HTTP latencies.
+
+Usage (example):
+
+```ts
+import { PrometheusWebhookMetrics } from "@orbital/pulse-webhooks";
+import express from "express";
+
+const metrics = new PrometheusWebhookMetrics();
+const registry = metrics.register();
+
+const app = express();
+app.get("/metrics", async (req, res) => {
+  res.setHeader("Content-Type", registry.contentType);
+  res.send(await registry.metrics());
+});
+```
+
+The adapter provides `recordAttempt(url, outcome, status)` and `recordDuration(seconds, url, status)` helpers for integrating with `WebhookDelivery` instrumentation.

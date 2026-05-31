@@ -6,6 +6,7 @@ import { DEFAULT_MAX_AGE_MS, DEFAULT_CLOCK_SKEW_MS } from "./types.js";
 export { PostgresDeadLetterStore } from "./PostgresDeadLetterStore.js";
 export { RedisRetryQueue } from "./RedisRetryQueue.js";
 export { verifyWebhookEdge } from "./edge.js";
+export { PrometheusWebhookMetrics } from "./PrometheusWebhookMetrics.js";
 export type { DeadLetterFilter, DeadLetterInput, DeadLetterRecord, DeadLetterStore, PgLike } from "./PostgresDeadLetterStore.js";
 export type { RedisLike, RedisRetryQueueOptions } from "./RedisRetryQueue.js";
 export type { RetryQueue, RetryRecord } from "./RetryQueue.js";
@@ -54,6 +55,7 @@ export class WebhookDelivery {
     url: string,
     attempt = 1,
   ): Promise<void> {
+    const metrics = (this.config as ResolvedWebhookConfig & { metrics?: WebhookConfig["metrics"] }).metrics;
     if (this.watcher.stopped) return;
 
     let customValidationError: string | null = null;
@@ -108,6 +110,9 @@ export class WebhookDelivery {
 
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
+      metrics?.recordAttempt(url, "success", String(res.status));
+      metrics?.recordDuration((Date.now() - startMs) / 1000, url, String(res.status));
+
       span?.setAttribute("webhook.status", res.status);
       span?.setAttribute("webhook.latency_ms", Date.now() - startMs);
     } catch (err) {
@@ -135,16 +140,25 @@ export class WebhookDelivery {
               originalEvent: newest.event,
             },
           } as unknown as NormalizedEvent);
+          // Record dropped metric if provided
+          metrics?.recordAttempt(newest.url, "dropped", "retry_cap_exceeded");
         }
 
         const exponentialDelay = Math.pow(2, attempt - 1) * 1000;
         const delay = Math.floor(this.config.random() * exponentialDelay);
+        // record retry metric
+        metrics?.recordAttempt(url, "retry", errorMessage);
+        metrics?.recordDuration((Date.now() - startMs) / 1000, url, String(errorMessage));
+
         const retryTimer = setTimeout(() => {
           this.retryTimers.delete(retryTimer);
           void this.deliverToUrl(event, url, attempt + 1);
         }, delay);
         this.retryTimers.set(retryTimer, { event, url });
       } else {
+        // final failure
+        metrics?.recordAttempt(url, "failure", errorMessage);
+        metrics?.recordDuration((Date.now() - startMs) / 1000, url, String(errorMessage));
         this.emitFailure(event, url, errorMessage, attempt);
       }
     } finally {

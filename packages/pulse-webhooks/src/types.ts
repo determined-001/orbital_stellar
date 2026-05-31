@@ -18,6 +18,11 @@ export type WebhookConfig = {
   random?: () => number;
   /** Optional OpenTelemetry-compatible tracer. When provided, one span is emitted per delivery attempt. */
   tracer?: Tracer;
+  /** Optional metrics adapter. Use `PrometheusWebhookMetrics` or any object with matching methods. */
+  metrics?: {
+    recordAttempt(url?: string, outcome?: string, status?: string): void;
+    recordDuration(seconds: number, url?: string, status?: string): void;
+  };
   /** Optional custom URL validator for additional block-lists. Return an error message to reject, or null to allow. */
   urlValidator?: (url: string) => Promise<string | null>;
 };

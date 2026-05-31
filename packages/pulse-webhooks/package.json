@@ -7,10 +7,12 @@
   "types": "./dist/index.d.ts",
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "test": "vitest run"
+    "test": "vitest run",
+    "example": "tsx ./examples/metrics-server.ts"
   },
   "dependencies": {
-    "@orbital/pulse-core": "workspace:*"
+    "@orbital/pulse-core": "workspace:*",
+    "prom-client": "^14.0.0"
   },
   "devDependencies": {
     "@types/node": "^25.6.0",
