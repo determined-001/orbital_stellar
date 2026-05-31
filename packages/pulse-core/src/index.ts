@@ -2,6 +2,8 @@ export { EventEngine } from "./EventEngine.js";
 export { Watcher } from "./Watcher.js";
 export { EngineAlreadyStartedError } from "./errors.js";
 export { StrKey } from "@stellar/stellar-sdk";
+export type { CursorStore } from "./CursorStore.js";
+export { MemoryCursorStore } from "./CursorStore.js";
 
 /** The Stellar network to connect to. */
 export type Network = "mainnet" | "testnet";
@@ -14,7 +16,9 @@ export type PaymentEventType =
 /** Event type for account options changes. */
 export type AccountOptionsEventType = "account.options_changed";
 export type LiquidityPoolEventType = "lp.deposited" | "lp.withdrawn";
-export type TrustAuthEventType = "trustline.authorized" | "trustline.deauthorized";
+export type TrustAuthEventType =
+  | "trustline.authorized"
+  | "trustline.deauthorized";
 /** Event type for account creation. */
 export type AccountEventType = "account.created";
 export type ClaimableCreatedEventType = "claimable.created";
@@ -33,7 +37,10 @@ export type WatcherNotificationType =
   | "engine.rate_limited"
   | "engine.stopped";
 
-export type OfferEventType = "offer.created" | "offer.updated" | "offer.deleted";
+export type OfferEventType =
+  | "offer.created"
+  | "offer.updated"
+  | "offer.deleted";
 export type BumpSequenceEventType = "account.bump_sequence";
 export type DataEventType = "data.set" | "data.cleared";
 
@@ -317,6 +324,8 @@ export type CoreConfig = {
     warn(msg: string, ...args: unknown[]): void;
     error(msg: string, ...args: unknown[]): void;
   };
+  /** Optional durable cursor store used to persist Horizon/Soroban cursors across restarts. */
+  cursorStore?: CursorStore;
 };
 
 // Error class for invalid network validation
