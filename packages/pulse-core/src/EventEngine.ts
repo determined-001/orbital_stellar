@@ -1,6 +1,8 @@
 import { Horizon } from "@stellar/stellar-sdk";
 import { Watcher } from "./Watcher.js";
 import { EngineAlreadyStartedError, HorizonStreamError } from "./errors.js";
+import { toAccountAddress, toContractAddress } from "./address.js";
+import type { ContractAddress } from "./address.js";
 import type {
   AccountCreatedEvent,
   AccountEventType,
@@ -525,7 +527,7 @@ export class EventEngine {
       const requiredFields = ["to", "from", "amount", "created_at"] as const;
       for (const field of requiredFields) {
         if (typeof r[field] !== "string" || r[field] === "") {
-          this.log.warn("[pulse-core] normalize() dropping payment record.", { field, record: raw });
+          this.log.warn("[pulse-core] normalize() dropping payment record.", { field, record: record });
           return null;
         }
       }
@@ -538,8 +540,8 @@ export class EventEngine {
       return {
         // Route resolution assigns the payment direction after normalization.
         type: "unknown",
-        to: r.to as string,
-        from: r.from as string,
+        to: toAccountAddress(r.to as string),
+        from: toAccountAddress(r.from as string),
         amount: r.amount as string,
         asset,
         timestamp: r.created_at as string,
@@ -574,8 +576,8 @@ export class EventEngine {
     if (r.type === "account_merge") {
       return {
         type: "account.merged",
-        source: r.account as string,
-        destination: r.into as string,
+        source: toAccountAddress(r.account as string),
+        destination: toAccountAddress(r.into as string),
         timestamp: r.created_at as string,
         raw: record,
       };
@@ -649,7 +651,7 @@ export class EventEngine {
     return {
       type,
       offer_id,
-      source: r.source_account,
+      source: toAccountAddress(r.source_account),
       buying_asset,
       selling_asset,
       amount,
@@ -673,8 +675,8 @@ export class EventEngine {
     }
     return {
       type: "account.created",
-      funder: r.funder,
-      account: r.account,
+      funder: toAccountAddress(r.funder),
+      account: toAccountAddress(r.account),
       starting_balance: r.starting_balance,
       timestamp: r.created_at,
       raw,
@@ -690,7 +692,7 @@ export class EventEngine {
     }
     return {
       type: "account.bump_sequence",
-      source: r.source_account,
+      source: toAccountAddress(r.source_account),
       bump_to: r.bump_to as string,
       timestamp: r.created_at,
       raw,
@@ -716,7 +718,7 @@ export class EventEngine {
 
     return {
       type,
-      source: r.source_account,
+      source: toAccountAddress(r.source_account),
       name: r.data_name,
       value,
       timestamp: typeof r.created_at === "string" ? r.created_at : "",
@@ -748,7 +750,7 @@ export class EventEngine {
 
     return {
       type: this.resolveTrustlineEventType(limit),
-      account: r.source_account,
+      account: toAccountAddress(r.source_account),
       asset,
       limit,
       timestamp: r.created_at,
@@ -781,9 +783,9 @@ export class EventEngine {
     if (typeof r.signer_key === "string") {
       const weight = typeof r.signer_weight === "number" ? r.signer_weight : 0;
       if (weight === 0) {
-        changes.signer_removed = { key: r.signer_key, weight: 0 };
+        changes.signer_removed = { key: toAccountAddress(r.signer_key), weight: 0 };
       } else {
-        changes.signer_added = { key: r.signer_key, weight };
+        changes.signer_added = { key: toAccountAddress(r.signer_key), weight };
       }
     }
 
@@ -808,7 +810,7 @@ export class EventEngine {
 
     return {
       type: "account.options_changed",
-      source: r.source_account as string,
+      source: toAccountAddress(r.source_account as string),
       changes,
       timestamp: r.created_at as string,
       raw,
@@ -861,10 +863,10 @@ export class EventEngine {
 
     return {
       type: "claimable.created",
-      sponsor: r.source_account as string,
+      sponsor: toAccountAddress(r.source_account as string),
       balanceId: r.balance_id as string,
       claimants: (r.claimants as Array<Record<string, unknown>>).map((c) => ({
-        destination: c.destination as string,
+        destination: toAccountAddress(c.destination as string),
         predicate: c.predicate,
       })),
       asset,
@@ -896,7 +898,7 @@ export class EventEngine {
 
     return {
       type: "claimable.claimed",
-      claimant: r.source_account as string,
+      claimant: toAccountAddress(r.source_account as string),
       balanceId: r.balance_id as string,
       timestamp: r.created_at as string,
       raw,
@@ -934,7 +936,7 @@ export class EventEngine {
 
     return {
       type: "lp.deposited",
-      source: r.source_account as string,
+      source: toAccountAddress(r.source_account as string),
       pool_id: r.liquidity_pool_id as string,
       reserves_deposited: r.reserves_deposited as LiquidityPoolReserve[],
       shares_received: r.shares_received as string,
@@ -974,7 +976,7 @@ export class EventEngine {
 
     return {
       type: "lp.withdrawn",
-      source: r.source_account as string,
+      source: toAccountAddress(r.source_account as string),
       pool_id: r.liquidity_pool_id as string,
       reserves_received: r.reserves_received as LiquidityPoolReserve[],
       shares_redeemed: r.shares as string,
@@ -1005,8 +1007,8 @@ export class EventEngine {
 
     return {
       type,
-      trustor,
-      issuer,
+      trustor: toAccountAddress(trustor),
+      issuer: toAccountAddress(issuer),
       asset,
       timestamp: r.created_at,
       operation: "allow_trust",
@@ -1042,8 +1044,8 @@ export class EventEngine {
 
     return {
       type,
-      trustor,
-      issuer,
+      trustor: toAccountAddress(trustor),
+      issuer: toAccountAddress(issuer),
       asset,
       timestamp: r.created_at,
       operation: "set_trust_line_flags",
@@ -1059,7 +1061,7 @@ export class EventEngine {
     if (typeof r.function !== "string") return null;
     return {
       type: "contract.invoked",
-      contractId: r.contract_id,
+      contractId: toContractAddress(r.contract_id),
       function: r.function,
       topics: Array.isArray(r.topics) ? (r.topics as string[]) : [],
       data: r.data ?? null,
@@ -1075,7 +1077,7 @@ export class EventEngine {
     if (typeof r.contract_id !== "string" || r.contract_id === "") return null;
     return {
       type: "contract.emitted",
-      contractId: r.contract_id,
+      contractId: toContractAddress(r.contract_id),
       topics: Array.isArray(r.topics) ? (r.topics as string[]) : [],
       data: r.data ?? null,
       timestamp: typeof r.created_at === "string" ? r.created_at : "",
@@ -1092,14 +1094,14 @@ export class EventEngine {
     } catch (err) {
       this.log.warn(
         `[pulse-core] subscribe() filter threw for address ${address} — treating as reject.`,
-        err
+        err as Record<string, unknown>
       );
       return false;
     }
   }
 
   private matchesContractFilters(
-    event: { type: string; contractId: string; topics: string[] },
+    event: { type: string; contractId: ContractAddress; topics: string[] },
     filters: ContractSubscriptionFilter[]
   ): boolean {
     // No filters = match everything
@@ -1314,7 +1316,17 @@ export class EventEngine {
   }
 }
 
-export interface ContractInvokedEvent {
+// ---------------------------------------------------------------------------
+// Legacy Soroban RPC normalizer
+//
+// Normalizes a raw Soroban RPC event object (as returned by the RPC
+// `getEvents` endpoint) into a typed result.  This is a lower-level utility
+// that operates on the raw RPC shape rather than the Horizon-derived
+// NormalizedEvent union used by EventEngine internally.
+// ---------------------------------------------------------------------------
+
+/** @internal */
+export interface RpcContractInvokedEvent {
   type: "contract_invoked";
   id: string;
   pagingToken: string;
@@ -1323,10 +1335,11 @@ export interface ContractInvokedEvent {
   ledger: number;
   ledgerClosedAt: string;
   inSuccessfulContractCall: boolean;
-  raw: any;
+  raw: unknown;
 }
 
-export interface ContractEmittedEvent {
+/** @internal */
+export interface RpcContractEmittedEvent {
   type: "contract_emitted";
   id: string;
   pagingToken: string;
@@ -1337,25 +1350,41 @@ export interface ContractEmittedEvent {
   topics: string[];
   value: string;
   inSuccessfulContractCall: boolean;
-  raw: any;
+  raw: unknown;
 }
 
 /**
  * Normalizes a raw Soroban RPC event into a typed domain event structure.
- * Handles malformed fields safely by writing warnings and returning null.
+ * Handles malformed fields safely by logging warnings and returning null.
  */
-export function normalizeContractEvent(rawRpcEvent: any): ContractInvokedEvent | ContractEmittedEvent | null {
-  // 1. Structural check patterns
+export function normalizeContractEvent(
+  rawRpcEvent: unknown
+): RpcContractInvokedEvent | RpcContractEmittedEvent | null {
   if (!rawRpcEvent || typeof rawRpcEvent !== "object") {
-    console.warn("[pulse-core] Dropping malformed Soroban event: payload is not a valid object.", rawRpcEvent);
+    console.warn(
+      "[pulse-core] Dropping malformed Soroban event: payload is not a valid object.",
+      rawRpcEvent
+    );
     return null;
   }
 
-  // 2. Validate mandatory base identification parameters
-  const requiredFields = ["id", "pagingToken", "contractId", "txHash", "ledger", "ledgerClosedAt", "type"];
+  const e = rawRpcEvent as Record<string, unknown>;
+
+  const requiredFields = [
+    "id",
+    "pagingToken",
+    "contractId",
+    "txHash",
+    "ledger",
+    "ledgerClosedAt",
+    "type",
+  ];
   for (const field of requiredFields) {
-    if (rawRpcEvent[field] === undefined || rawRpcEvent[field] === null) {
-      console.warn(`[pulse-core] Dropping malformed Soroban event: missing required field "${field}".`, rawRpcEvent);
+    if (e[field] === undefined || e[field] === null) {
+      console.warn(
+        `[pulse-core] Dropping malformed Soroban event: missing required field "${field}".`,
+        rawRpcEvent
+      );
       return null;
     }
   }
@@ -1370,10 +1399,9 @@ export function normalizeContractEvent(rawRpcEvent: any): ContractInvokedEvent |
     type,
     inSuccessfulContractCall,
     topic,
-    value
-  } = rawRpcEvent;
+    value,
+  } = e;
 
-  // 3. Conditional evaluation mappings based on the event subtype
   if (type === "system" || type === "diagnostic") {
     return {
       type: "contract_invoked",
@@ -1386,9 +1414,14 @@ export function normalizeContractEvent(rawRpcEvent: any): ContractInvokedEvent |
       inSuccessfulContractCall: Boolean(inSuccessfulContractCall),
       raw: rawRpcEvent,
     };
-  } else if (type === "contract") {
+  }
+
+  if (type === "contract") {
     if (!Array.isArray(topic) || value === undefined || value === null) {
-      console.warn("[pulse-core] Dropping malformed contract emitted event: missing topics array or data payload.", rawRpcEvent);
+      console.warn(
+        "[pulse-core] Dropping malformed contract emitted event: missing topics array or data payload.",
+        rawRpcEvent
+      );
       return null;
     }
 
@@ -1400,13 +1433,16 @@ export function normalizeContractEvent(rawRpcEvent: any): ContractInvokedEvent |
       txHash: String(txHash),
       ledger: Number(ledger),
       ledgerClosedAt: String(ledgerClosedAt),
-      topics: topic.map((t: any) => String(t)),
+      topics: (topic as unknown[]).map((t) => String(t)),
       value: String(value),
       inSuccessfulContractCall: Boolean(inSuccessfulContractCall),
       raw: rawRpcEvent,
     };
   }
 
-  console.warn(`[pulse-core] Dropping malformed Soroban event: unknown event type category "${type}".`, rawRpcEvent);
+  console.warn(
+    `[pulse-core] Dropping malformed Soroban event: unknown event type category "${type}".`,
+    rawRpcEvent
+  );
   return null;
 }
