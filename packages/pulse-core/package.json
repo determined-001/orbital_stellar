@@ -5,6 +5,9 @@
   "version": "0.0.0",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "bin": {
+    "orbital": "./bin/orbital"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "vitest run",
@@ -14,7 +17,8 @@
     "bench:throughput": "tsx bench/throughput.ts"
   },
   "dependencies": {
-    "@stellar/stellar-sdk": "^15.0.1"
+    "@stellar/stellar-sdk": "^15.0.1",
+    "yargs": "^17.7.2"
   },
   "devDependencies": {
     "@types/node": "^25.6.0",
