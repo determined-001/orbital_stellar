@@ -16,6 +16,7 @@ import type {
   DataEvent,
   DataEventType,
   EngineStatus,
+  HealthCheckResult,
   LiquidityPoolDepositEvent,
   LiquidityPoolWithdrawEvent,
   Network,
@@ -192,6 +193,22 @@ export class EventEngine {
       lastEventAt: this.lastEventAt,
       reconnectAttempt: this.reconnectAttempt,
     };
+  }
+
+  healthCheck(thresholdMs = 5 * 60 * 1000): HealthCheckResult {
+    const reasons: string[] = [];
+    if (!this.isRunning) {
+      reasons.push("engine is not running");
+    }
+    if (this.lastEventAt === null) {
+      reasons.push("no events received yet");
+    } else {
+      const age = Date.now() - new Date(this.lastEventAt).getTime();
+      if (age > thresholdMs) {
+        reasons.push(`last event was ${Math.floor(age / 1000)}s ago (threshold ${Math.floor(thresholdMs / 1000)}s)`);
+      }
+    }
+    return { ok: reasons.length === 0, reasons };
   }
 
   /**

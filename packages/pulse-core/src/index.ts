@@ -341,6 +341,11 @@ export type EngineStatus = {
   reconnectAttempt: number;
 };
 
+export type HealthCheckResult = {
+  ok: boolean;
+  reasons: string[];
+};
+
 export type SubscribeOptions = {
   /** Optional predicate applied before each event is emitted to this watcher.
    *  Return `false` to suppress delivery. If the predicate throws, the event
