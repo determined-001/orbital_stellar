@@ -43,22 +43,22 @@ afterEach(() => {
 });
 
 describe("engine.healthCheck()", () => {
-  it("returns ok=false with reason when engine is not running", () => {
+  it("returns ok=false with reason when engine is not running", async () => {
     const engine = new EventEngine({ network: "testnet" });
-    const result = engine.healthCheck();
+    const result = await engine.healthCheck();
     expect(result.ok).toBe(false);
     expect(result.reasons).toContain("engine is not running");
   });
 
-  it("returns ok=false with reason when running but no events received", () => {
+  it("returns ok=false with reason when running but no events received", async () => {
     const engine = new EventEngine({ network: "testnet" });
     engine.start();
-    const result = engine.healthCheck();
+    const result = await engine.healthCheck();
     expect(result.ok).toBe(false);
     expect(result.reasons).toContain("no events received yet");
   });
 
-  it("returns ok=true when running and last event is within threshold", () => {
+  it("returns ok=true when running and last event is within threshold", async () => {
     const engine = new EventEngine({ network: "testnet" });
     engine.start();
     engine.subscribe("GABC");
@@ -75,12 +75,12 @@ describe("engine.healthCheck()", () => {
       amount: "10.0000000",
       asset_type: "native",
     });
-    const result = engine.healthCheck();
+    const result = await engine.healthCheck();
     expect(result.ok).toBe(true);
     expect(result.reasons).toHaveLength(0);
   });
 
-  it("returns ok=false when last event exceeds default threshold (5 min)", () => {
+  it("returns ok=false when last event exceeds default threshold (5 min)", async () => {
     const engine = new EventEngine({ network: "testnet" });
     engine.start();
     engine.subscribe("GABC");
@@ -98,12 +98,12 @@ describe("engine.healthCheck()", () => {
     });
     // Advance time past the 5-minute default threshold
     vi.advanceTimersByTime(6 * 60 * 1000);
-    const result = engine.healthCheck();
+    const result = await engine.healthCheck();
     expect(result.ok).toBe(false);
     expect(result.reasons[0]).toMatch(/last event was \d+s ago/);
   });
 
-  it("respects a custom threshold", () => {
+  it("respects a custom threshold", async () => {
     const engine = new EventEngine({ network: "testnet" });
     engine.start();
     engine.subscribe("GABC");
@@ -121,8 +121,34 @@ describe("engine.healthCheck()", () => {
     });
     vi.advanceTimersByTime(45 * 1000);
     // 30s threshold — should fail
-    expect(engine.healthCheck(30_000).ok).toBe(false);
+    expect((await engine.healthCheck(30_000)).ok).toBe(false);
     // 60s threshold — should pass
-    expect(engine.healthCheck(60_000).ok).toBe(true);
+    expect((await engine.healthCheck(60_000)).ok).toBe(true);
+  });
+
+  it("returns ok=false when cursorStore.ping rejects", async () => {
+    const cursorStore = {
+      get: async () => null,
+      set: async () => {},
+      ping: async () => { throw new Error("db unreachable"); },
+    };
+    const engine = new EventEngine({ network: "testnet", cursorStore });
+    engine.start();
+    engine.subscribe("GABC");
+    streamInstances[0]!.handlers.onmessage({
+      type: "payment",
+      id: "1",
+      paging_token: "1",
+      created_at: new Date().toISOString(),
+      transaction_successful: true,
+      source_account: "GABC",
+      from: "GABC",
+      to: "GDEF",
+      amount: "10.0000000",
+      asset_type: "native",
+    });
+    const result = await engine.healthCheck();
+    expect(result.ok).toBe(false);
+    expect(result.reasons.some((r) => r.includes("cursorStore"))).toBe(true);
   });
 });
