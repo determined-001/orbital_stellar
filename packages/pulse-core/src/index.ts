@@ -347,6 +347,15 @@ export interface Logger {
   error(message: string, meta?: Record<string, unknown>): void;
 }
 
+/**
+ * Minimal interface for an ABI registry client.
+ * Satisfied by `AbiRegistryClient` from `@orbital/abi-registry`, or any
+ * object with a compatible `getSpec` method (useful for testing).
+ */
+export interface AbiRegistryClientLike {
+  getSpec(contractId: string): Promise<unknown>;
+}
+
 export type CoreConfig = {
   /** The Stellar network to connect to. */
   network: Network;
@@ -355,6 +364,13 @@ export type CoreConfig = {
   /** Optional reconnection configuration. */
   reconnect?: ReconnectConfig;
   logger?: Logger;
+  /**
+   * Optional ABI registry client. When provided, `contract.emitted` events
+   * will be enriched with `decodedData` populated from the registry spec.
+   * On a lookup miss or error, `decodedData` is left undefined and a warning
+   * is logged.
+   */
+  abiRegistry?: AbiRegistryClientLike;
 };
 
 // Error class for invalid network validation
@@ -422,6 +438,12 @@ export type ContractEmittedEvent = {
   topics: string[];
   /** Arbitrary event data payload. */
   data: unknown;
+  /**
+   * ABI-decoded event data, populated when an `abiRegistry` is configured
+   * and a spec is found for the contract. Undefined on a registry miss,
+   * decode error, or when no registry is configured.
+   */
+  decodedData?: unknown;
   timestamp: string;
   raw: unknown;
 };
