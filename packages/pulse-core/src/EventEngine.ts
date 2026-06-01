@@ -7,6 +7,7 @@ import type {
   AccountMergeEvent,
   AccountOptionsChanges,
   AccountOptionsEvent,
+  AbiRegistryClientLike,
   BumpSequenceEvent,
   BumpSequenceEventType,
   ClaimableBalanceClaimant,
@@ -99,6 +100,8 @@ export class EventEngine {
   private horizonCursor?: string;
   private filters: Map<string, (event: NormalizedEvent) => boolean> = new Map();
   private log: Logger;
+  private readonly abiRegistry?: AbiRegistryClientLike;
+  private readonly pausedSources: Set<"horizon" | "soroban"> = new Set();
 
   /**
    * Creates a new EventEngine instance.
@@ -129,6 +132,7 @@ export class EventEngine {
       ...config.reconnect,
     };
     this.log = config.logger ?? noop;
+    this.abiRegistry = config.abiRegistry;
   }
 
   /**
@@ -1212,6 +1216,16 @@ export class EventEngine {
     });
   }
 
+  /** Dispatch a contract event (invoked or emitted) to all matching contract watchers. */
+  private dispatchContractEvent(event: ContractInvokedEvent | ContractEmittedEvent): void {
+    for (const { watcher, filters } of this.contractRegistry.values()) {
+      if (this.matchesContractFilters(event, filters)) {
+        watcher.emit(event.type, event);
+        watcher.emit("*", event);
+      }
+    }
+  }
+
   private route(event: NormalizedEventOrPending): void {
     // Check if Soroban source is paused for contract events
     if ((event.type === "contract.invoked" || event.type === "contract.emitted") && this.pausedSources.has("soroban")) {
@@ -1362,12 +1376,31 @@ export class EventEngine {
     }
 
     if (event.type === "contract.invoked" || event.type === "contract.emitted") {
-      for (const { watcher, filters } of this.contractRegistry.values()) {
-        if (this.matchesContractFilters(event, filters)) {
-          watcher.emit(event.type, event);
-          watcher.emit("*", event);
-        }
+      if (event.type === "contract.emitted" && this.abiRegistry) {
+        // Async enrichment: look up the ABI spec and populate decodedData,
+        // then route. The event is held until the lookup settles so that
+        // subscribers always receive a fully-enriched (or gracefully degraded)
+        // event rather than a partially-populated one.
+        const contractId = event.contractId;
+        this.abiRegistry.getSpec(contractId).then(
+          (spec) => {
+            if (spec !== null && spec !== undefined) {
+              (event as ContractEmittedEvent).decodedData = (spec as { entries?: unknown }).entries ?? spec;
+            }
+            this.dispatchContractEvent(event);
+          },
+          (err: unknown) => {
+            this.log.warn("ABI registry lookup failed for contract.emitted event", {
+              contractId,
+              error: err instanceof Error ? err.message : String(err),
+            });
+            this.dispatchContractEvent(event);
+          }
+        );
+        return;
       }
+
+      this.dispatchContractEvent(event);
       return;
     }
 
