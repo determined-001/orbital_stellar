@@ -7,6 +7,11 @@ export type Tracer = {
   startSpan(name: string, attrs?: Record<string, string | number | boolean>): Span;
 };
 
+export type WebhookMetrics = {
+  recordAttempt(url: string, attempt: number, durationMs: number, status: number | "timeout" | "error"): void;
+  recordTerminal(url: string, outcome: "success" | "failed" | "dropped"): void;
+};
+
 export type WebhookConfig = {
   url: string | string[];
   secret: string;
@@ -20,7 +25,7 @@ export type WebhookConfig = {
   tracer?: Tracer;
   /** Optional custom URL validator for additional block-lists. Return an error message to reject, or null to allow. */
   urlValidator?: (url: string) => Promise<string | null>;
-  /** Optional metrics observer for webhook delivery attempts and terminal outcomes. */
+  /** Optional metrics recorder for per-URL delivery observability. */
   metrics?: WebhookMetrics;
 };
 
