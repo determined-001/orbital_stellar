@@ -1,6 +1,7 @@
 export { SorobanRpcClient } from "./SorobanRpcClient.js";
 export type { SorobanRpcClientOptions } from "./SorobanRpcClient.js";
 export { EventEngine } from "./EventEngine.js";
+export { SorobanSubscriber } from "./SorobanSubscriber.js";
 export { validateContractFilters } from "./contractFilters.js";
 export { Watcher } from "./Watcher.js";
 export { EngineAlreadyStartedError, HorizonStreamError } from "./errors.js";
@@ -63,7 +64,8 @@ export type WatcherNotificationType =
   | "engine.reconnecting"
   | "engine.reconnected"
   | "engine.rate_limited"
-  | "engine.stopped";
+  | "engine.stopped"
+  | "engine.cursor_store_unhealthy";
 
 export type OfferEventType = "offer.created" | "offer.updated" | "offer.deleted";
 export type BumpSequenceEventType = "account.bump_sequence";
@@ -364,13 +366,12 @@ export type CoreConfig = {
   /** Optional reconnection configuration. */
   reconnect?: ReconnectConfig;
   logger?: Logger;
-  /**
-   * Optional ABI registry client. When provided, `contract.emitted` events
-   * will be enriched with `decodedData` populated from the registry spec.
-   * On a lookup miss or error, `decodedData` is left undefined and a warning
-   * is logged.
-   */
-  abiRegistry?: AbiRegistryClientLike;
+  /** Optional cursor store for resumable streams. */
+  cursorStore?: CursorStore;
+  /** Key to use for cursor storage. Defaults to "pulse-core-cursor". */
+  streamKey?: string;
+  /** Number of consecutive cursor store failures before marking it unhealthy. Defaults to 5. */
+  cursorFailureThreshold?: number;
 };
 
 // Error class for invalid network validation

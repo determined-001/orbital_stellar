@@ -23,6 +23,7 @@ export type EventState<T extends NormalizedEvent = NormalizedEvent> = {
   event: T | null;
   connected: boolean;
   error: string | null;
+  lastEventAt: string | null;
 };
 
 export function useStellarEvent<T extends NormalizedEvent = NormalizedEvent>(
@@ -87,6 +88,7 @@ export function useStellarEvent<T extends NormalizedEvent = NormalizedEvent>(
     event: initialEvent,
     connected: false,
     error: null,
+    lastEventAt: null,
   });
 
   useEffect(() => {
@@ -108,7 +110,7 @@ export function useStellarEvent<T extends NormalizedEvent = NormalizedEvent>(
           if (!allowed) return;
           if (filterRef.current && !filterRef.current(incoming)) return;
 
-          setState((prev) => ({ ...prev, event: incoming as T }));
+          setState((prev) => ({ ...prev, event: incoming as T, lastEventAt: incoming.timestamp ?? null }));
         },
         onParseError: () => {
           setState((prev) => ({ ...prev, error: "Failed to parse event" }));
@@ -184,3 +186,34 @@ export {
   type StellarConnectionStatusProps,
   type StellarConnectionStatusState,
 } from "./StellarConnectionStatus.js";
+
+export type UseHistoryOptions = {
+  token?: string;
+  /** Maximum number of events to retain in FIFO order. Defaults to 100. */
+  capacity?: number;
+};
+
+export type HistoryState<T extends NormalizedEvent = NormalizedEvent> = EventState<T> & {
+  history: T[];
+};
+
+export function useStellarHistory<T extends NormalizedEvent = NormalizedEvent>(
+  serverUrl: string,
+  address: string,
+  options?: UseHistoryOptions
+): HistoryState<T> {
+  const [history, setHistory] = useState<T[]>([]);
+  const capacity = options?.capacity ?? 100;
+  const base = useStellarActivity<T>(serverUrl, address, { initialEvent: null });
+
+  useEffect(() => {
+    if (base.event) {
+      setHistory((prev) => {
+        const next = [...prev, base.event as T];
+        return next.length > capacity ? next.slice(next.length - capacity) : next;
+      });
+    }
+  }, [base.event, capacity]);
+
+  return { ...base, history };
+}
