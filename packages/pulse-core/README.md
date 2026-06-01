@@ -92,6 +92,12 @@ Normalized asset strings follow one rule across every event payload:
 | `engine.reconnected` | `WatcherNotification` | Reconnect succeeded |
 | `engine.rate_limited` | `WatcherNotification` | The engine was rate limited and will retry after the delay |
 | `engine.stopped` | `WatcherNotification` | `engine.stop()` was called; emitted before watchers are torn down |
+| `webhook.failed` | `NormalizedEvent` | All delivery attempts to a webhook URL have failed (emitted by `pulse-webhooks`) |
+| `webhook.dropped` | `NormalizedEvent` | A pending webhook retry is dropped because the concurrency cap is reached (emitted by `pulse-webhooks`) |
+
+> [!NOTE]
+> Webhook events (`webhook.failed` and `webhook.dropped`) are emitted on the `Watcher` by the [`@orbital/pulse-webhooks`](../pulse-webhooks/README.md) package when attached. For these events, the `NormalizedEvent`'s `raw` field is populated with specialized metadata objects (`WebhookFailureRaw` and `WebhookDroppedRaw`, respectively). See the [Failure events section of `@orbital/pulse-webhooks`](../pulse-webhooks/README.md#failure-events) for detailed documentation and payload schemas.
+
 
 ### `NormalizedEvent` shape
 
