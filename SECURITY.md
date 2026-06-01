@@ -172,6 +172,7 @@ A short checklist if you are building on top of Orbital.
 ### `pulse-notify`
 
 - **Never ship a server-only secret to the browser.** The `token` config field is forwarded as a query parameter — issue per-user short-lived tokens from your backend, never your master API key.
+- **Use `withCredentials: true` only with same-site `httpOnly` cookies** set by your backend — never store session tokens in `localStorage` for SSE auth.
 - **Gate hooks behind `"use client"`** in Next.js App Router. SSR is not supported (the hooks use `EventSource`, which is browser-only).
 
 ---
