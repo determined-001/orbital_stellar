@@ -9,9 +9,6 @@ export type UseEventConfig<T extends NormalizedEvent = NormalizedEvent> = {
   event?: string | string[];
   /** API key forwarded as ?token= query param — required when the server has authentication enabled */
   token?: string;
-<<<<<<< HEAD
-  filter?: (event: NormalizedEvent) => boolean;
-=======
   /** SSR initial state; replaced on first live event */
   initialEvent?: T | null;
   /** Client-side predicate; events that return false are suppressed before state update */
@@ -20,13 +17,13 @@ export type UseEventConfig<T extends NormalizedEvent = NormalizedEvent> = {
   withCredentials?: boolean;
   /** Side-effect callback fired for every incoming event, before filter is applied */
   onEvent?: (event: NormalizedEvent) => void;
->>>>>>> upstream/main
 };
 
 export type EventState<T extends NormalizedEvent = NormalizedEvent> = {
   event: T | null;
   connected: boolean;
   error: string | null;
+  lastEventAt: string | null;
 };
 
 export function useStellarEvent<T extends NormalizedEvent = NormalizedEvent>(
@@ -35,20 +32,18 @@ export function useStellarEvent<T extends NormalizedEvent = NormalizedEvent>(
 export function useStellarEvent<T extends NormalizedEvent = NormalizedEvent>(
   serverUrl: string,
   address: string,
-<<<<<<< HEAD
-  options?: Pick<UseEventConfig, "event" | "token" | "filter">
-=======
-  options?: Pick<UseEventConfig<T>, "event" | "token" | "initialEvent" | "filter" | "withCredentials" | "onEvent">
->>>>>>> upstream/main
+  options?: Pick<
+    UseEventConfig<T>,
+    "event" | "token" | "initialEvent" | "filter" | "withCredentials" | "onEvent"
+  >
 ): EventState<T>;
 export function useStellarEvent<T extends NormalizedEvent = NormalizedEvent>(
   configOrUrl: UseEventConfig<T> | string,
   address?: string,
-<<<<<<< HEAD
-  options?: Pick<UseEventConfig, "event" | "token" | "filter">
-=======
-  options?: Pick<UseEventConfig<T>, "event" | "token" | "initialEvent" | "filter" | "withCredentials" | "onEvent">
->>>>>>> upstream/main
+  options?: Pick<
+    UseEventConfig<T>,
+    "event" | "token" | "initialEvent" | "filter" | "withCredentials" | "onEvent"
+  >
 ): EventState<T> {
   const serverUrl =
     typeof configOrUrl === "string" ? configOrUrl : configOrUrl.serverUrl;
@@ -59,11 +54,6 @@ export function useStellarEvent<T extends NormalizedEvent = NormalizedEvent>(
       ? options?.event ?? "*"
       : configOrUrl.event ?? "*";
   const token =
-<<<<<<< HEAD
-    typeof configOrUrl === "string" ? options?.token : configOrUrl.token;
-  const filter =
-    typeof configOrUrl === "string" ? options?.filter : configOrUrl.filter;
-=======
     typeof configOrUrl === "string"
       ? options?.token
       : configOrUrl.token;
@@ -80,12 +70,6 @@ export function useStellarEvent<T extends NormalizedEvent = NormalizedEvent>(
   const onEvent =
     typeof configOrUrl === "string" ? options?.onEvent : configOrUrl.onEvent;
 
-  const filterRef = useRef(filter);
-  useEffect(() => { filterRef.current = filter; });
-  const onEventRef = useRef(onEvent);
-  useEffect(() => { onEventRef.current = onEvent; });
->>>>>>> upstream/main
-
   const eventKey = Array.isArray(eventType)
     ? [...eventType].sort().join(",")
     : eventType;
@@ -95,10 +79,16 @@ export function useStellarEvent<T extends NormalizedEvent = NormalizedEvent>(
     filterRef.current = filter;
   });
 
+  const onEventRef = useRef(onEvent);
+  useEffect(() => {
+    onEventRef.current = onEvent;
+  });
+
   const [state, setState] = useState<EventState<T>>({
     event: initialEvent,
     connected: false,
     error: null,
+    lastEventAt: null,
   });
 
   useEffect(() => {
@@ -109,13 +99,8 @@ export function useStellarEvent<T extends NormalizedEvent = NormalizedEvent>(
           setState((prev) => ({ ...prev, connected: true, error: null }));
         },
         onEvent: (incoming) => {
-<<<<<<< HEAD
-=======
           onEventRef.current?.(incoming);
 
-          // Filter by event type: pass if "*", if type matches the string,
-          // or if type is included in the allowlist array.
->>>>>>> upstream/main
           const allowed =
             eventType === "*" ||
             (Array.isArray(eventType)
@@ -125,7 +110,7 @@ export function useStellarEvent<T extends NormalizedEvent = NormalizedEvent>(
           if (!allowed) return;
           if (filterRef.current && !filterRef.current(incoming)) return;
 
-          setState((prev) => ({ ...prev, event: incoming as T }));
+          setState((prev) => ({ ...prev, event: incoming as T, lastEventAt: incoming.timestamp ?? null }));
         },
         onParseError: () => {
           setState((prev) => ({ ...prev, error: "Failed to parse event" }));
@@ -147,36 +132,23 @@ export function useStellarEvent<T extends NormalizedEvent = NormalizedEvent>(
     return () => {
       connection.unsubscribe();
     };
-<<<<<<< HEAD
-  }, [serverUrl, addr, eventKey, token]);
-=======
     // ✅ eventKey is a serialised string — stable even when the caller passes
     // an array literal, which would otherwise be a new reference every render.
   }, [serverUrl, addr, eventKey, token, withCredentials]);
 
->>>>>>> upstream/main
-
   return state;
 }
 
-<<<<<<< HEAD
-export function useStellarPayment(
-  serverUrl: string,
-  address: string,
-  options?: Pick<UseEventConfig, "filter">
-) {
-  return useStellarEvent<Extract<NormalizedEvent, { type: "payment.received" }>>(
-    serverUrl,
-    address,
-    { event: "payment.received", ...options }
-  );
-=======
-type PaymentEvent = Extract<NormalizedEvent, { type: "payment.received" }>;
+export type PaymentEvent = Extract<NormalizedEvent, { type: "payment.received" }>;
 
 export function useStellarPayment(
   serverUrl: string,
   address: string,
-  options?: { initialEvent?: PaymentEvent | null; filter?: (event: NormalizedEvent) => boolean; withCredentials?: boolean }
+  options?: {
+    initialEvent?: PaymentEvent | null;
+    filter?: (event: NormalizedEvent) => boolean;
+    withCredentials?: boolean;
+  }
 ) {
   const base = useStellarEvent<PaymentEvent>(serverUrl, address, {
     event: "payment.received",
@@ -189,18 +161,16 @@ export function useStellarPayment(
       ? BigInt(Math.round(parseFloat(base.event.amount) * 10_000_000))
       : null;
   return { ...base, amountStroop };
->>>>>>> upstream/main
 }
 
 export function useStellarActivity(
   serverUrl: string,
   address: string,
-<<<<<<< HEAD
-  options?: Pick<UseEventConfig, "filter">
-) {
-  return useStellarEvent(serverUrl, address, { event: "*", ...options });
-=======
-  options?: { initialEvent?: NormalizedEvent | null; filter?: (event: NormalizedEvent) => boolean; withCredentials?: boolean }
+  options?: {
+    initialEvent?: NormalizedEvent | null;
+    filter?: (event: NormalizedEvent) => boolean;
+    withCredentials?: boolean;
+  }
 ) {
   return useStellarEvent(serverUrl, address, {
     event: "*",
@@ -208,7 +178,6 @@ export function useStellarActivity(
     filter: options?.filter,
     withCredentials: options?.withCredentials,
   });
->>>>>>> upstream/main
 }
 
 export {
@@ -217,3 +186,34 @@ export {
   type StellarConnectionStatusProps,
   type StellarConnectionStatusState,
 } from "./StellarConnectionStatus.js";
+
+export type UseHistoryOptions = {
+  token?: string;
+  /** Maximum number of events to retain in FIFO order. Defaults to 100. */
+  capacity?: number;
+};
+
+export type HistoryState<T extends NormalizedEvent = NormalizedEvent> = EventState<T> & {
+  history: T[];
+};
+
+export function useStellarHistory<T extends NormalizedEvent = NormalizedEvent>(
+  serverUrl: string,
+  address: string,
+  options?: UseHistoryOptions
+): HistoryState<T> {
+  const [history, setHistory] = useState<T[]>([]);
+  const capacity = options?.capacity ?? 100;
+  const base = useStellarActivity<T>(serverUrl, address, { initialEvent: null });
+
+  useEffect(() => {
+    if (base.event) {
+      setHistory((prev) => {
+        const next = [...prev, base.event as T];
+        return next.length > capacity ? next.slice(next.length - capacity) : next;
+      });
+    }
+  }, [base.event, capacity]);
+
+  return { ...base, history };
+}

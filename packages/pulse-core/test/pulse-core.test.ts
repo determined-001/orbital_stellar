@@ -805,6 +805,34 @@ describe("pulse-core EventEngine", () => {
         "[pulse-core] subscribe() called for address GDEST which already has an active watcher — filter option ignored."
       );
     });
+
+    it("includes the subscription name in lifecycle notifications and duplicate-subscribe warnings", () => {
+      const engine = new EventEngine({ network: "testnet", logger: log });
+      const watcher = engine.subscribe("GDEST", { name: "treasury-feed" });
+      const reconnecting = vi.fn();
+      watcher.on("engine.reconnecting", reconnecting);
+
+      engine.start();
+      latestStream().handlers.onerror(new Error("stream dropped"));
+
+      expect(reconnecting).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: "engine.reconnecting",
+          name: "treasury-feed",
+          attempt: 1,
+        })
+      );
+
+      const duplicate = engine.subscribe("GDEST", {
+        name: "ignored",
+        filter: () => false,
+      });
+
+      expect(duplicate).toBe(watcher);
+      expect(log.warn).toHaveBeenCalledWith(
+        "[pulse-core] subscribe() called for treasury-feed (GDEST) which already has an active watcher — filter option ignored."
+      );
+    });
   });
 
   describe("create_account → account.created", () => {
@@ -1938,6 +1966,54 @@ describe("pulse-core EventEngine", () => {
       const result = normalize(makeSTLFRecord({ set_flags_s: ["authorized"], clear_flags_s: ["authorized"] }));
 
       expect(result).toBeNull();
+    });
+  });
+
+  it("reports per-source status and preserves flat fields for compatibility", () => {
+    const engine = new EventEngine({ network: "testnet" });
+
+    expect(engine.status()).toEqual({
+      running: false,
+      watcherCount: 0,
+      lastEventAt: null,
+      reconnectAttempt: 0,
+      sources: {
+        horizon: {
+          running: false,
+          lastEventAt: null,
+          reconnectAttempt: 0,
+          cursor: undefined,
+        },
+        soroban: {
+          running: false,
+          lastEventAt: null,
+          reconnectAttempt: 0,
+        },
+      },
+    });
+
+    engine.start();
+
+    expect(engine.status().running).toBe(true);
+    expect(engine.status().sources.horizon.running).toBe(true);
+    expect(engine.status().sources.soroban.running).toBe(false);
+
+    latestStream().handlers.onmessage({
+      type: "payment",
+      to: "GABC",
+      from: "GSRC",
+      amount: "10",
+      asset_type: "native",
+      created_at: "2026-03-26T20:00:00.000Z",
+    });
+
+    expect(engine.status()).toMatchObject({
+      lastEventAt: "2026-03-26T20:00:00.000Z",
+      sources: {
+        horizon: {
+          lastEventAt: "2026-03-26T20:00:00.000Z",
+        },
+      },
     });
   });
 });
