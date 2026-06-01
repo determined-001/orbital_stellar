@@ -39,6 +39,7 @@ import type {
   WatcherNotification,
   WatcherNotificationType,
   Logger,
+  CursorStore,
 } from "./index.js";
 import { UnknownNetworkError } from "./index.js";
 
@@ -110,6 +111,12 @@ export class EventEngine {
   > = new Map();
   private log: Required<NonNullable<CoreConfig["logger"]>>;
   private lastEventAt: string | null = null;
+  private log: Logger;
+  private cursorStore?: CursorStore;
+  private streamKey: string;
+  private cursorFailureThreshold: number;
+  private consecutiveCursorFailures = 0;
+  private isCursorStoreUnhealthy = false;
 
   /**
    * Creates a new EventEngine instance.
@@ -140,6 +147,9 @@ export class EventEngine {
       ...config.reconnect,
     };
     this.log = config.logger ?? noop;
+    this.cursorStore = config.cursorStore;
+    this.streamKey = config.streamKey ?? "pulse-core-cursor";
+    this.cursorFailureThreshold = config.cursorFailureThreshold ?? 5;
   }
 
   /**
@@ -756,6 +766,23 @@ export class EventEngine {
         eventType,
         name !== undefined ? { ...event, name } : event
       );
+    }
+  }
+
+  private handleCursorFailure(err: unknown): void {
+    this.consecutiveCursorFailures++;
+    this.log.warn("[pulse-core] cursorStore.set() failed.", {
+      key: this.streamKey,
+      consecutiveFailures: this.consecutiveCursorFailures,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    if (this.consecutiveCursorFailures >= this.cursorFailureThreshold) {
+      this.isCursorStoreUnhealthy = true;
+      this.notifyWatchers("engine.cursor_store_unhealthy", {
+        type: "engine.cursor_store_unhealthy",
+        attempt: 0,
+        emittedAt: new Date().toISOString(),
+      });
     }
   }
 

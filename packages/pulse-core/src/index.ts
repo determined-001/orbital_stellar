@@ -1,6 +1,7 @@
 export { SorobanRpcClient } from "./SorobanRpcClient.js";
 export type { SorobanRpcClientOptions } from "./SorobanRpcClient.js";
 export { EventEngine } from "./EventEngine.js";
+export { SorobanSubscriber } from "./SorobanSubscriber.js";
 export { validateContractFilters } from "./contractFilters.js";
 export { Watcher } from "./Watcher.js";
 export { EngineAlreadyStartedError, HorizonStreamError } from "./errors.js";
@@ -65,7 +66,8 @@ export type WatcherNotificationType =
   | "engine.reconnecting"
   | "engine.reconnected"
   | "engine.rate_limited"
-  | "engine.stopped";
+  | "engine.stopped"
+  | "engine.cursor_store_unhealthy";
 
 export type OfferEventType =
   | "offer.created"
@@ -363,6 +365,12 @@ export type CoreConfig = {
   /** Optional reconnection configuration. */
   reconnect?: ReconnectConfig;
   logger?: Logger;
+  /** Optional cursor store for resumable streams. */
+  cursorStore?: CursorStore;
+  /** Key to use for cursor storage. Defaults to "pulse-core-cursor". */
+  streamKey?: string;
+  /** Number of consecutive cursor store failures before marking it unhealthy. Defaults to 5. */
+  cursorFailureThreshold?: number;
 };
 
 // Error class for invalid network validation
