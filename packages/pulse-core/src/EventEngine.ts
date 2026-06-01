@@ -77,6 +77,8 @@ const noop = { info: () => {}, warn: () => {}, error: () => {} };
 
 export class EventEngine {
   private server: Horizon.Server;
+  private readonly network: Network;
+  private readonly cursorStore?: import("./index.js").CoreConfig["cursorStore"];
   private registry: Map<string, Watcher> = new Map();
   private stopStream: HorizonStreamStopper | null = null;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -117,6 +119,8 @@ export class EventEngine {
       ...config.reconnect,
     };
     this.log = config.logger ?? noop;
+    this.network = config.network;
+    this.cursorStore = config.cursorStore;
   }
 
   /**
@@ -217,7 +221,7 @@ export class EventEngine {
     }
   }
 
-  private openStream(isReconnect: boolean): void {
+  private async openStream(isReconnect: boolean): Promise<void> {
     this.closeStream();
     this.clearReconnectTimer();
     this.isRunning = true;
@@ -247,6 +251,25 @@ export class EventEngine {
         }
 
         this.route(event);
+        // Persist cursor after successful delivery. Non-blocking and tolerant of errors.
+        try {
+          const store = this.cursorStore;
+          if (store) {
+            const maybeCursor = (record as Record<string, unknown>)?.paging_token ??
+              (record as Record<string, unknown>)?.pagingToken ?? null;
+            if (maybeCursor != null && maybeCursor !== "") {
+              void (async () => {
+                try {
+                  await store.set(`horizon:${this.network}`, String(maybeCursor));
+                } catch (err) {
+                  this.log.warn(`[pulse-core] cursorStore.set failed for horizon:${this.network}`, err);
+                }
+              })();
+            }
+          }
+        } catch (err) {
+          this.log.warn(`[pulse-core] cursorStore.set failed for horizon:${this.network}`, err);
+        }
       },
       onerror: (error) => {
         this.log.error(`[pulse-core] SSE error: ${error}`);
@@ -254,9 +277,20 @@ export class EventEngine {
       },
     };
 
+    // Determine start cursor, prefer persisted value when available.
+    let startCursor = "now";
+    if (this.cursorStore) {
+      try {
+        const saved = await this.cursorStore.get(`horizon:${this.network}`);
+        if (saved) startCursor = saved;
+      } catch (err) {
+        this.log.warn(`[pulse-core] cursorStore.get failed for horizon:${this.network}`, err);
+      }
+    }
+
     this.stopStream = this.server
       .operations()
-      .cursor("now")
+      .cursor(startCursor)
       .stream(callbacks);
   }
 

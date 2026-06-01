@@ -317,6 +317,11 @@ export type CoreConfig = {
     warn(msg: string, ...args: unknown[]): void;
     error(msg: string, ...args: unknown[]): void;
   };
+  /** Optional pluggable cursor store for persisting stream cursors. */
+  cursorStore?: {
+    get(streamKey: string): Promise<string | null>;
+    set(streamKey: string, cursor: string): Promise<void>;
+  };
 };
 
 // Error class for invalid network validation
