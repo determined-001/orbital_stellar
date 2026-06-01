@@ -283,6 +283,18 @@ export type AccountMergeEvent = {
 
 /**
  * A union of all normalized events supported by pulse-core.
+ *
+ * This is the broad catch-all type. For precise type narrowing and better
+ * autocompletion, prefer the per-event types available under the `events`
+ * namespace export:
+ *
+ * ```ts
+ * import type { events } from "@orbital/pulse-core";
+ * type Payment = events.PaymentEvent;
+ * type AccountCreated = events.AccountCreatedEvent;
+ * ```
+ *
+ * @see {@link events} for the full list of narrower per-event types.
  */
 export type NormalizedEvent =
   | PaymentEvent
@@ -465,3 +477,13 @@ export type ContractSubscribeOptions = {
   /** Optional human-friendly label for observability — appears in log lines and lifecycle notifications. */
   name?: string;
 };
+
+/**
+ * Namespace grouping all per-event named types for precise type narrowing.
+ * @see {@link events} for the full list of narrower per-event types.
+ *
+ * @example
+ * import type { events } from "@orbital/pulse-core";
+ * function handlePayment(e: events.PaymentEvent) { ... }
+ */
+export * as events from "./events.js";
