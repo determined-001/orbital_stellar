@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AbiRegistryClient } from "../src/AbiRegistryClient.js";
-import type { ContractSpec } from "../src/types.js";
+import type { RawContractEntry } from "../src/types.js";
 
-function makeSpec(contractId: string): ContractSpec {
+function makeSpec(contractId: string): RawContractEntry {
   return { contractId, entries: ["base64entry=="] };
 }
 
@@ -27,7 +27,7 @@ describe("AbiRegistryClient", () => {
   describe("getSpecs", () => {
     it("issues a single POST /specs for 100 unique contract IDs", async () => {
       const ids = Array.from({ length: 100 }, (_, i) => `CONTRACT_${i}`);
-      const responseBody: Record<string, ContractSpec> = Object.fromEntries(
+      const responseBody: Record<string, RawContractEntry> = Object.fromEntries(
         ids.map((id) => [id, makeSpec(id)])
       );
 

@@ -2,7 +2,7 @@ export { AbiRegistryClient } from "./AbiRegistryClient.js";
 
 export type {
   AbiRegistryClientConfig,
-  ContractSpec,
+  RawContractEntry,
 } from "./types.js";
 
 export type {
@@ -11,3 +11,15 @@ export type {
 } from "./RegistryPublisher.js";
 
 export { LocalFilePublisher } from "./RegistryPublisher.js";
+
+export type {
+  PrimitiveSorobanType,
+  TypeSpec,
+  StructField,
+  EnumVariant,
+  ParameterSpec,
+  FunctionSpec,
+  TopicSpec,
+  EventSpec,
+  ContractSpec,
+} from "./spec.js";

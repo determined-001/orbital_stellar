@@ -1,0 +1,245 @@
+{
+  "title": "OrbitalContractSpec",
+  "description": "JSON Schema for a complete Orbital ABI Registry contract spec (packages/abi-registry/src/spec.ts).",
+  "type": "object",
+  "required": ["version", "contractId", "name", "functions", "events"],
+  "additionalProperties": false,
+  "properties": {
+    "version": {
+      "type": "string",
+      "description": "Spec format version in MAJOR.MINOR.PATCH semver.",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$"
+    },
+    "contractId": {
+      "type": "string",
+      "description": "Canonical mainnet Soroban contract address (C-prefixed strkey, 56 characters).",
+      "pattern": "^C[A-Z2-7]{55}$"
+    },
+    "name": {
+      "type": "string",
+      "description": "Human-readable contract name.",
+      "minLength": 1,
+      "maxLength": 100
+    },
+    "description": {
+      "type": "string",
+      "description": "Short description of the contract's purpose.",
+      "maxLength": 500
+    },
+    "source": {
+      "type": "string",
+      "description": "URL or reference identifying where the interface definition was obtained.",
+      "minLength": 1,
+      "maxLength": 2048
+    },
+    "functions": {
+      "type": "array",
+      "description": "All callable functions exposed by the contract.",
+      "items": { "$ref": "#/$defs/FunctionSpec" }
+    },
+    "events": {
+      "type": "array",
+      "description": "All events the contract may emit.",
+      "items": { "$ref": "#/$defs/EventSpec" }
+    },
+    "types": {
+      "type": "array",
+      "description": "User-defined types (structs, enums) referenced by functions or events.",
+      "items": { "$ref": "#/$defs/TypeSpec" }
+    }
+  },
+  "$defs": {
+    "TypeSpec": {
+      "description": "A fully-resolved Soroban type — primitive, composite, or user-defined.",
+      "oneOf": [
+        {
+          "description": "Primitive type.",
+          "type": "object",
+          "required": ["type"],
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "type": "string",
+              "enum": [
+                "bool", "u32", "i32", "u64", "i64",
+                "u128", "i128", "u256", "i256",
+                "bytes", "bytes_n", "string", "symbol",
+                "address", "void"
+              ]
+            },
+            "len": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Fixed byte length — only valid when type is 'bytes_n'."
+            }
+          }
+        },
+        {
+          "description": "Option<T> — nullable wrapper.",
+          "type": "object",
+          "required": ["type", "inner"],
+          "additionalProperties": false,
+          "properties": {
+            "type": { "type": "string", "const": "option" },
+            "inner": { "$ref": "#/$defs/TypeSpec" }
+          }
+        },
+        {
+          "description": "Vec<T> — homogeneous list.",
+          "type": "object",
+          "required": ["type", "item"],
+          "additionalProperties": false,
+          "properties": {
+            "type": { "type": "string", "const": "vec" },
+            "item": { "$ref": "#/$defs/TypeSpec" }
+          }
+        },
+        {
+          "description": "Map<K, V> — key-value collection.",
+          "type": "object",
+          "required": ["type", "key", "value"],
+          "additionalProperties": false,
+          "properties": {
+            "type":  { "type": "string", "const": "map" },
+            "key":   { "$ref": "#/$defs/TypeSpec" },
+            "value": { "$ref": "#/$defs/TypeSpec" }
+          }
+        },
+        {
+          "description": "Tuple — fixed-length heterogeneous list.",
+          "type": "object",
+          "required": ["type", "fields"],
+          "additionalProperties": false,
+          "properties": {
+            "type":   { "type": "string", "const": "tuple" },
+            "fields": {
+              "type": "array",
+              "items": { "$ref": "#/$defs/TypeSpec" },
+              "minItems": 1
+            }
+          }
+        },
+        {
+          "description": "Named struct with typed fields.",
+          "type": "object",
+          "required": ["type", "name", "fields"],
+          "additionalProperties": false,
+          "properties": {
+            "type":   { "type": "string", "const": "struct" },
+            "name":   { "type": "string", "minLength": 1 },
+            "fields": {
+              "type": "array",
+              "items": { "$ref": "#/$defs/StructField" },
+              "minItems": 1
+            }
+          }
+        },
+        {
+          "description": "Named enum with integer-discriminated variants.",
+          "type": "object",
+          "required": ["type", "name", "variants"],
+          "additionalProperties": false,
+          "properties": {
+            "type":     { "type": "string", "const": "enum" },
+            "name":     { "type": "string", "minLength": 1 },
+            "variants": {
+              "type": "array",
+              "items": { "$ref": "#/$defs/EnumVariant" },
+              "minItems": 1
+            }
+          }
+        },
+        {
+          "description": "Result<Ok, Err> — success/failure wrapper.",
+          "type": "object",
+          "required": ["type", "ok", "err"],
+          "additionalProperties": false,
+          "properties": {
+            "type": { "type": "string", "const": "result" },
+            "ok":   { "$ref": "#/$defs/TypeSpec" },
+            "err":  { "$ref": "#/$defs/TypeSpec" }
+          }
+        },
+        {
+          "description": "Reference to a user-defined type by name.",
+          "type": "object",
+          "required": ["type", "name"],
+          "additionalProperties": false,
+          "properties": {
+            "type": { "type": "string", "const": "custom" },
+            "name": { "type": "string", "minLength": 1 }
+          }
+        }
+      ]
+    },
+    "StructField": {
+      "type": "object",
+      "required": ["name", "type"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "type": { "$ref": "#/$defs/TypeSpec" },
+        "doc":  { "type": "string" }
+      }
+    },
+    "EnumVariant": {
+      "type": "object",
+      "required": ["name", "discriminant"],
+      "additionalProperties": false,
+      "properties": {
+        "name":          { "type": "string", "minLength": 1 },
+        "discriminant":  { "type": "integer", "minimum": 0 },
+        "value":         { "$ref": "#/$defs/TypeSpec" },
+        "doc":           { "type": "string" }
+      }
+    },
+    "ParameterSpec": {
+      "type": "object",
+      "required": ["name", "type"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "type": { "$ref": "#/$defs/TypeSpec" },
+        "doc":  { "type": "string" }
+      }
+    },
+    "FunctionSpec": {
+      "type": "object",
+      "required": ["name", "params", "returns"],
+      "additionalProperties": false,
+      "properties": {
+        "name":    { "type": "string", "minLength": 1 },
+        "params":  {
+          "type": "array",
+          "items": { "$ref": "#/$defs/ParameterSpec" }
+        },
+        "returns": { "$ref": "#/$defs/TypeSpec" },
+        "doc":     { "type": "string" }
+      }
+    },
+    "TopicSpec": {
+      "type": "object",
+      "required": ["index", "type"],
+      "additionalProperties": false,
+      "properties": {
+        "index": { "type": "integer", "minimum": 0 },
+        "type":  { "$ref": "#/$defs/TypeSpec" },
+        "doc":   { "type": "string" }
+      }
+    },
+    "EventSpec": {
+      "type": "object",
+      "required": ["name", "topics", "data"],
+      "additionalProperties": false,
+      "properties": {
+        "name":   { "type": "string", "minLength": 1 },
+        "topics": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/TopicSpec" }
+        },
+        "data":   { "$ref": "#/$defs/TypeSpec" },
+        "doc":    { "type": "string" }
+      }
+    }
+  }
+}

@@ -1,11 +1,11 @@
 import { LruCache } from "./LruCache.js";
-import type { AbiRegistryClientConfig, ContractSpec } from "./types.js";
+import type { AbiRegistryClientConfig, RawContractEntry } from "./types.js";
 
 const DEFAULT_MAX_CACHE_SIZE = 512;
 
 export class AbiRegistryClient {
   private readonly baseUrl: string;
-  private readonly cache: LruCache<string, ContractSpec | null>;
+  private readonly cache: LruCache<string, RawContractEntry | null>;
 
   constructor(config: AbiRegistryClientConfig) {
     this.baseUrl = config.baseUrl.replace(/\/$/, "");
@@ -13,7 +13,7 @@ export class AbiRegistryClient {
   }
 
   /** Fetch a single contract spec (cached). */
-  async getSpec(contractId: string): Promise<ContractSpec | null> {
+  async getSpec(contractId: string): Promise<RawContractEntry | null> {
     const results = await this.getSpecs([contractId]);
     return results[contractId] ?? null;
   }
@@ -26,8 +26,8 @@ export class AbiRegistryClient {
    */
   async getSpecs(
     contractIds: string[]
-  ): Promise<Record<string, ContractSpec | null>> {
-    const result: Record<string, ContractSpec | null> = {};
+  ): Promise<Record<string, RawContractEntry | null>> {
+    const result: Record<string, RawContractEntry | null> = {};
     const uncached: string[] = [];
 
     for (const id of contractIds) {
@@ -56,7 +56,7 @@ export class AbiRegistryClient {
    */
   private async fetchBatch(
     contractIds: string[]
-  ): Promise<Record<string, ContractSpec | null>> {
+  ): Promise<Record<string, RawContractEntry | null>> {
     const response = await fetch(`${this.baseUrl}/specs`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -69,6 +69,6 @@ export class AbiRegistryClient {
       );
     }
 
-    return response.json() as Promise<Record<string, ContractSpec | null>>;
+    return response.json() as Promise<Record<string, RawContractEntry | null>>;
   }
 }
