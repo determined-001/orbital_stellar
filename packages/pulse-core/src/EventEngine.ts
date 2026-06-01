@@ -105,6 +105,7 @@ export class EventEngine {
   private cursorFailureThreshold: number;
   private consecutiveCursorFailures = 0;
   private isCursorStoreUnhealthy = false;
+  private pausedSources = new Set<"horizon" | "soroban">();
 
   /**
    * Creates a new EventEngine instance.
@@ -222,7 +223,12 @@ export class EventEngine {
    * Removes a contract subscription by its id.
    */
   unsubscribeContract(id: string): void {
-    this.contractRegistry.get(id)?.watcher.stop();
+    const entry = this.contractRegistry.get(id);
+    if (entry) {
+      entry.watcher.stop();
+      this.contractRegistry.delete(id);
+      this.subscriptionNames.delete(id);
+    }
   }
 
   /**
@@ -263,16 +269,6 @@ export class EventEngine {
     return true;
   }
 
-  status(): EngineStatus {
-    return {
-      running: this.isRunning,
-      watcherCount: this.registry.size,
-      contractWatcherCount: this.contractRegistry.size,
-      lastEventAt: this.lastEventAt,
-      reconnectAttempt: this.reconnectAttempt,
-      pausedSources: this.pausedSources.size > 0 ? Array.from(this.pausedSources) : undefined,
-    };
-  }
 
   healthCheck(thresholdMs = 5 * 60 * 1000): HealthCheckResult {
     const reasons: string[] = [];
@@ -331,6 +327,7 @@ export class EventEngine {
     this.closeStream();
     this.isRunning = false;
     this.horizonCursor = undefined;
+    this.pausedSources.clear();
 
     this.notifyWatchers("engine.stopped", {
       type: "engine.stopped",
@@ -365,10 +362,12 @@ export class EventEngine {
     return {
       running: horizon.running || soroban.running,
       watcherCount: this.registry.size,
+      contractWatcherCount: this.contractRegistry.size,
       lastEventAt: lastEventAt.length
-        ? lastEventAt.sort()[lastEventAt.length - 1]
+        ? (lastEventAt.sort()[lastEventAt.length - 1] as string)
         : null,
       reconnectAttempt: Math.max(horizon.reconnectAttempt, soroban.reconnectAttempt),
+      pausedSources: this.pausedSources.size > 0 ? Array.from(this.pausedSources) : undefined,
       sources,
     };
   }
@@ -1211,7 +1210,7 @@ export class EventEngine {
     } catch (err) {
       this.log.warn(
         `[pulse-core] subscribe() filter threw for ${this.describeSubscription(address)} — treating as reject.`,
-        err
+        err instanceof Error ? { error: err.message } : { error: String(err) }
       );
       return false;
     }
@@ -1443,7 +1442,7 @@ export class EventEngine {
   }
 }
 
-export interface ContractInvokedEvent {
+export interface SorobanRpcInvokedEvent {
   type: "contract_invoked";
   id: string;
   pagingToken: string;
@@ -1455,7 +1454,7 @@ export interface ContractInvokedEvent {
   raw: any;
 }
 
-export interface ContractEmittedEvent {
+export interface SorobanRpcEmittedEvent {
   type: "contract_emitted";
   id: string;
   pagingToken: string;
@@ -1473,7 +1472,7 @@ export interface ContractEmittedEvent {
  * Normalizes a raw Soroban RPC event into a typed domain event structure.
  * Handles malformed fields safely by writing warnings and returning null.
  */
-export function normalizeContractEvent(rawRpcEvent: any): ContractInvokedEvent | ContractEmittedEvent | null {
+export function normalizeContractEvent(rawRpcEvent: any): SorobanRpcInvokedEvent | SorobanRpcEmittedEvent | null {
   // 1. Structural check patterns
   if (!rawRpcEvent || typeof rawRpcEvent !== "object") {
     console.warn("[pulse-core] Dropping malformed Soroban event: payload is not a valid object.", rawRpcEvent);

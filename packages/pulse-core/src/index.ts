@@ -11,7 +11,7 @@ export { PostgresCursorStore, PgLike } from "./PostgresCursorStore.js";
 export { evaluatePredicate, normalizeClaimPredicate, isClaimPredicateType } from "./claimPredicate.js";
 export type { ClaimPredicate } from "./claimPredicate.js";
 export { isEventType } from "./eventTypeGuard.js";
-
+import type { CursorStore } from "./CursorStore.js";
 /** The Stellar network to connect to. */
 export type Network = "mainnet" | "testnet";
 
@@ -25,8 +25,10 @@ export type SourceStatus = {
 export type EngineStatus = {
   running: boolean;
   watcherCount: number;
+  contractWatcherCount?: number;
   lastEventAt: string | null;
   reconnectAttempt: number;
+  pausedSources?: ("horizon" | "soroban")[];
   sources: {
     horizon: SourceStatus;
     soroban: SourceStatus;
@@ -374,14 +376,6 @@ export class UnknownNetworkError extends Error {
   }
 }
 
-export type EngineStatus = {
-  running: boolean;
-  watcherCount: number;
-  contractWatcherCount?: number;
-  lastEventAt: string | null;
-  reconnectAttempt: number;
-  pausedSources?: ("horizon" | "soroban")[];
-};
 
 export type HealthCheckResult = {
   ok: boolean;
