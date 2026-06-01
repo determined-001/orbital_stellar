@@ -1,7 +1,8 @@
 import type { HealthStatus, NormalizedEvent, Watcher, WatcherNotification } from "@orbital/pulse-core";
 import { createHmac, timingSafeEqual } from "crypto";
 
-import type { VerifyWebhookOptions, WebhookConfig } from "./types.js";
+import { DeadLetterStore } from "./MemoryDeadLetterStore.js";
+import type { Tracer, VerifyWebhookOptions, WebhookConfig } from "./types.js";
 import { DEFAULT_MAX_AGE_MS, DEFAULT_CLOCK_SKEW_MS } from "./types.js";
 import type { RetryQueue } from "./RetryQueue.js";
 export { verifyWebhookEdge } from "./edge.js";
@@ -31,17 +32,20 @@ type ResolvedWebhookConfig = Omit<Required<WebhookConfig>, "url" | "retryQueue" 
 export class WebhookDelivery {
   private config: ResolvedWebhookConfig;
   private watcher: Watcher;
+  private dlq: DeadLetterStore;
   // Map of timer -> event so we can evict the newest entry when the cap is hit.
   private retryTimers: Map<ReturnType<typeof setTimeout>, { event: NormalizedEvent; url: string }> = new Map();
 
-  constructor(watcher: Watcher, config: WebhookConfig) {
+  constructor(watcher: Watcher, config: WebhookConfig, dlq?: DeadLetterStore) {
     this.watcher = watcher;
+    this.dlq = dlq ?? new DeadLetterStore();
     this.config = {
       retries: 3,
       deliveryTimeoutMs: 10000,
       maxConcurrentRetries: 100,
       random: Math.random,
       ...config,
+      tracer: config.tracer,
       urls: Array.isArray(config.url) ? [...config.url] : [config.url],
     };
     this.config.maxConcurrentRetries = Math.max(1, this.config.maxConcurrentRetries);
@@ -132,6 +136,17 @@ export class WebhookDelivery {
     const timeoutMs = this.config.deliveryTimeoutMs;
     const abortTimer = setTimeout(() => controller.abort(), timeoutMs);
 
+    const parentTraceId = this.extractTraceId(event);
+    const spanAttrs: Record<string, string | number | boolean> = {
+      "webhook.url": url,
+      "webhook.attempt": attempt,
+    };
+    if (parentTraceId !== undefined) {
+      spanAttrs["webhook.parent_trace_id"] = parentTraceId;
+    }
+    const span = this.config.tracer?.startSpan("webhook.delivery", spanAttrs);
+    const startMs = Date.now();
+
     try {
       const res = await fetch(url, {
         method: "POST",
@@ -146,7 +161,13 @@ export class WebhookDelivery {
       });
 
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+      span?.setAttribute("webhook.status", res.status);
+      span?.setAttribute("webhook.latency_ms", Date.now() - startMs);
     } catch (err) {
+      span?.setAttribute("webhook.latency_ms", Date.now() - startMs);
+      span?.setAttribute("webhook.error", this.getErrorMessage(err));
+
       if (this.watcher.stopped) return;
 
       const errorMessage = this.getErrorMessage(err);
@@ -166,7 +187,7 @@ export class WebhookDelivery {
               url: newest.url,
               maxConcurrentRetries: this.config.maxConcurrentRetries,
               originalEvent: newest.event,
-            },
+            } satisfies WebhookDroppedRaw,
           } as unknown as NormalizedEvent);
         }
 
@@ -182,7 +203,16 @@ export class WebhookDelivery {
       }
     } finally {
       clearTimeout(abortTimer);
+      span?.end();
     }
+  }
+
+  private extractTraceId(event: NormalizedEvent): string | undefined {
+    const raw = event.raw;
+    if (raw !== null && typeof raw === "object" && "traceId" in raw && typeof (raw as Record<string, unknown>).traceId === "string") {
+      return (raw as Record<string, string>).traceId;
+    }
+    return undefined;
   }
 
   private emitFailure(
@@ -198,7 +228,7 @@ export class WebhookDelivery {
         url,
         attempts: attempt,
         originalEvent: event,
-      },
+      } satisfies WebhookFailureRaw,
     } as unknown as NormalizedEvent);
   }
 
@@ -233,17 +263,36 @@ export function verifyWebhook(
   timestamp: string,
   options: VerifyWebhookOptions = {},
 ): NormalizedEvent | null {
-  if (!/^\d+$/.test(timestamp)) return null;
+  if (!verifyWebhookRaw(payload, signature, secret, timestamp, options)) return null;
+  try {
+    return JSON.parse(payload) as NormalizedEvent;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Verifies webhook signature without parsing JSON.
+ * Use when routing the raw body to another consumer (e.g., a queue) to avoid the parse overhead.
+ */
+export function verifyWebhookRaw(
+  payload: string,
+  signature: string,
+  secret: string,
+  timestamp: string,
+  options: VerifyWebhookOptions = {},
+): boolean {
+  if (!/^\d+$/.test(timestamp)) return false;
 
   const timestampMs = Number(timestamp);
-  if (!Number.isFinite(timestampMs)) return null;
+  if (!Number.isFinite(timestampMs)) return false;
 
   const maxAgeMs = options.maxAgeMs ?? DEFAULT_MAX_AGE_MS;
   const clockSkewMs = options.clockSkewMs ?? DEFAULT_CLOCK_SKEW_MS;
   const nowMs = options.nowMs ?? Date.now();
 
-  if (timestampMs > nowMs + clockSkewMs) return null;
-  if (timestampMs < nowMs - maxAgeMs - clockSkewMs) return null;
+  if (timestampMs > nowMs + clockSkewMs) return false;
+  if (timestampMs < nowMs - maxAgeMs - clockSkewMs) return false;
 
   const expected = createHmac("sha256", secret)
     .update(`${timestamp}.${payload}`)
@@ -252,12 +301,6 @@ export function verifyWebhook(
   const expectedBuffer = Buffer.from(expected, "hex");
   const signatureBuffer = Buffer.from(signature, "hex");
 
-  if (expectedBuffer.length !== signatureBuffer.length) return null;
-  if (!timingSafeEqual(expectedBuffer, signatureBuffer)) return null;
-
-  try {
-    return JSON.parse(payload) as NormalizedEvent;
-  } catch {
-    return null;
-  }
+  if (expectedBuffer.length !== signatureBuffer.length) return false;
+  return timingSafeEqual(expectedBuffer, signatureBuffer);
 }
