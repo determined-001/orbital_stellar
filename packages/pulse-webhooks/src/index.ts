@@ -227,7 +227,6 @@ export function deliveryHealth(url: string): DeadLetterHealth {
 
 type ResolvedWebhookConfig = Omit<Required<WebhookConfig>, "url"> & {
   urls: string[];
-  urlValidator?: WebhookConfig["urlValidator"];
 };
 
 export class WebhookDelivery {
@@ -282,25 +281,6 @@ export class WebhookDelivery {
     attempt = 1,
   ): Promise<void> {
     if (this.watcher.stopped) return;
-
-    let customValidationError: string | null = null;
-    try {
-      customValidationError = this.config.urlValidator
-        ? await this.config.urlValidator(url)
-        : null;
-    } catch (err) {
-      if (this.watcher.stopped) return;
-
-      this.emitFailure(event, url, this.getErrorMessage(err), attempt);
-      return;
-    }
-
-    if (this.watcher.stopped) return;
-
-    if (customValidationError) {
-      this.emitFailure(event, url, customValidationError, attempt);
-      return;
-    }
 
     const payload = JSON.stringify(event);
     const timestamp = Date.now().toString();
@@ -368,28 +348,23 @@ export class WebhookDelivery {
         }, delay);
         this.retryTimers.set(retryTimer, { event, url });
       } else {
-        this.emitFailure(event, url, errorMessage, attempt);
+        // Add to dead letter store
+        const dlqId = this.dlq.add(url, event, errorMessage, attempt);
+
+        this.watcher.emit("webhook.failed", {
+          ...event,
+          raw: {
+            dlqId,
+            error: errorMessage,
+            url,
+            attempts: attempt,
+            originalEvent: event,
+          },
+        } as unknown as NormalizedEvent);
       }
     } finally {
       clearTimeout(abortTimer);
     }
-  }
-
-  private emitFailure(
-    event: NormalizedEvent,
-    url: string,
-    errorMessage: string,
-    attempt: number,
-  ): void {
-    this.watcher.emit("webhook.failed", {
-      ...event,
-      raw: {
-        error: errorMessage,
-        url,
-        attempts: attempt,
-        originalEvent: event,
-      },
-    } as unknown as NormalizedEvent);
   }
 
   private clearRetryTimers(): void {
@@ -416,24 +391,50 @@ export class WebhookDelivery {
   }
 }
 
+/**
+ * Verifies webhook signature and returns parsed event.
+ * Use when you need to access the event payload immediately.
+ *
+ * @param payload - The raw request body
+ * @param signature - The x-orbital-signature header value
+ * @param secret - Your webhook secret
+ * @param timestamp - The x-orbital-timestamp header value
+ * @returns Parsed NormalizedEvent if verification succeeds, null otherwise
+ */
 export function verifyWebhook(
   payload: string,
   signature: string,
   secret: string,
   timestamp: string,
-  options: VerifyWebhookOptions = {},
 ): NormalizedEvent | null {
-  if (!/^\d+$/.test(timestamp)) return null;
+  if (!verifyWebhookRaw(payload, signature, secret, timestamp)) {
+    return null;
+  }
 
-  const timestampMs = Number(timestamp);
-  if (!Number.isFinite(timestampMs)) return null;
+  try {
+    return JSON.parse(payload) as NormalizedEvent;
+  } catch {
+    return null;
+  }
+}
 
-  const maxAgeMs = options.maxAgeMs ?? DEFAULT_MAX_AGE_MS;
-  const clockSkewMs = options.clockSkewMs ?? DEFAULT_CLOCK_SKEW_MS;
-  const nowMs = options.nowMs ?? Date.now();
-
-  if (timestampMs > nowMs + clockSkewMs) return null;
-  if (timestampMs < nowMs - maxAgeMs - clockSkewMs) return null;
+/**
+ * Verifies webhook signature without parsing JSON.
+ * Use when routing raw body to another consumer (e.g., queue) to avoid parse overhead.
+ *
+ * @param payload - The raw request body
+ * @param signature - The x-orbital-signature header value
+ * @param secret - Your webhook secret
+ * @param timestamp - The x-orbital-timestamp header value
+ * @returns true if signature is valid, false otherwise
+ */
+export function verifyWebhookRaw(
+  payload: string,
+  signature: string,
+  secret: string,
+  timestamp: string,
+): boolean {
+  if (!/^\d+$/.test(timestamp)) return false;
 
   const expected = createHmac("sha256", secret)
     .update(`${timestamp}.${payload}`)
@@ -442,12 +443,7 @@ export function verifyWebhook(
   const expectedBuffer = Buffer.from(expected, "hex");
   const signatureBuffer = Buffer.from(signature, "hex");
 
-  if (expectedBuffer.length !== signatureBuffer.length) return null;
-  if (!timingSafeEqual(expectedBuffer, signatureBuffer)) return null;
+  if (expectedBuffer.length !== signatureBuffer.length) return false;
 
-  try {
-    return JSON.parse(payload) as NormalizedEvent;
-  } catch {
-    return null;
-  }
+  return timingSafeEqual(expectedBuffer, signatureBuffer);
 }

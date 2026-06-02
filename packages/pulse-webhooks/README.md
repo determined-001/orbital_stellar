@@ -167,6 +167,29 @@ The optional `options.version` field mirrors `verifyWebhook` — `"v1"` (default
 
 Uses constant-time comparison and Web Crypto for HMAC-SHA256 verification.
 
+### `verifyWebhookEdgeRaw(payload, signature, secret, timestamp)` → `Promise<boolean>`
+
+Edge-compatible version of `verifyWebhookRaw` using Web Crypto API. Verifies the signature without parsing JSON. Returns `true` if the signature is valid, `false` otherwise.
+
+Use this in edge runtimes when routing raw payloads to avoid JSON parse overhead.
+
+```js
+const isValid = await verifyWebhookEdgeRaw(
+  rawPayload,
+  signature,
+  secret,
+  timestamp,
+);
+if (isValid) {
+  // Send raw payload to R2, KV, or other Cloudflare service
+  await env.BUCKET.put(key, rawPayload);
+} else {
+  return new Response("Invalid signature", { status: 401 });
+}
+```
+
+**When to use:** Edge runtime webhook verification with no immediate need for parsed event data.
+
 ## Delivery contract
 
 - **Request method:** `POST`

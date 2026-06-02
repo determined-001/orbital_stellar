@@ -1,10 +1,43 @@
+export { SorobanRpcClient } from "./SorobanRpcClient.js";
+export type { SorobanRpcClientOptions } from "./SorobanRpcClient.js";
 export { EventEngine } from "./EventEngine.js";
+export { SorobanSubscriber } from "./SorobanSubscriber.js";
+export { validateContractFilters } from "./contractFilters.js";
 export { Watcher } from "./Watcher.js";
-export { EngineAlreadyStartedError } from "./errors.js";
+export { EngineAlreadyStartedError, HorizonStreamError } from "./errors.js";
 export { StrKey } from "@stellar/stellar-sdk";
+export { CursorStore } from "./CursorStore.js";
+export { PostgresCursorStore, PgLike } from "./PostgresCursorStore.js";
+export { evaluatePredicate, normalizeClaimPredicate, isClaimPredicateType } from "./claimPredicate.js";
+export type { ClaimPredicate } from "./claimPredicate.js";
+export { isEventType } from "./eventTypeGuard.js";
 
 /** The Stellar network to connect to. */
 export type Network = "mainnet" | "testnet";
+
+export type SourceStatus = {
+  running: boolean;
+  lastEventAt: string | null;
+  reconnectAttempt: number;
+  cursor?: string;
+};
+
+export type EngineStatus = {
+  running: boolean;
+  watcherCount: number;
+  lastEventAt: string | null;
+  reconnectAttempt: number;
+  sources: {
+    horizon: SourceStatus;
+    soroban: SourceStatus;
+  };
+};
+
+/** Passphrase strings for each supported Stellar network. */
+export const NETWORK_PASSPHRASES = {
+  mainnet: "Public Global Stellar Network ; September 2015",
+  testnet: "Test SDF Network ; September 2015",
+} as const satisfies Record<Network, string>;
 
 /** Event types for payment-related events (received, sent, or self-payment). */
 export type PaymentEventType =
@@ -31,7 +64,8 @@ export type WatcherNotificationType =
   | "engine.reconnecting"
   | "engine.reconnected"
   | "engine.rate_limited"
-  | "engine.stopped";
+  | "engine.stopped"
+  | "engine.cursor_store_unhealthy";
 
 export type OfferEventType = "offer.created" | "offer.updated" | "offer.deleted";
 export type BumpSequenceEventType = "account.bump_sequence";
@@ -263,7 +297,9 @@ export type NormalizedEvent =
   | ClaimableClaimedEvent
   | LiquidityPoolDepositEvent
   | LiquidityPoolWithdrawEvent
-  | TrustAuthEvent;
+  | TrustAuthEvent
+  | ContractInvokedEvent
+  | ContractEmittedEvent;
 
 /**
  * A notification emitted by the EventEngine during reconnection attempts.
@@ -276,6 +312,8 @@ export type NormalizedEvent =
 export type WatcherNotification = {
   /** The type of reconnection notification. */
   type: WatcherNotificationType;
+  /** Human-friendly label of the subscription that received this notification, if one was set. */
+  name?: string;
   /** The current reconnection attempt number. */
   attempt: number;
   /** The delay in milliseconds before the next reconnection attempt (for "engine.reconnecting" events). */
@@ -305,6 +343,12 @@ export type ReconnectConfig = {
  *   reconnect: { initialDelayMs: 2000, maxRetries: 5 }
  * };
  */
+export interface Logger {
+  info(message: string, meta?: Record<string, unknown>): void;
+  warn(message: string, meta?: Record<string, unknown>): void;
+  error(message: string, meta?: Record<string, unknown>): void;
+}
+
 export type CoreConfig = {
   /** The Stellar network to connect to. */
   network: Network;
@@ -312,11 +356,13 @@ export type CoreConfig = {
   horizonUrl?: string;
   /** Optional reconnection configuration. */
   reconnect?: ReconnectConfig;
-  logger?: {
-    info(msg: string, ...args: unknown[]): void;
-    warn(msg: string, ...args: unknown[]): void;
-    error(msg: string, ...args: unknown[]): void;
-  };
+  logger?: Logger;
+  /** Optional cursor store for resumable streams. */
+  cursorStore?: CursorStore;
+  /** Key to use for cursor storage. Defaults to "pulse-core-cursor". */
+  streamKey?: string;
+  /** Number of consecutive cursor store failures before marking it unhealthy. Defaults to 5. */
+  cursorFailureThreshold?: number;
 };
 
 // Error class for invalid network validation
@@ -331,8 +377,15 @@ export class UnknownNetworkError extends Error {
 export type EngineStatus = {
   running: boolean;
   watcherCount: number;
+  contractWatcherCount?: number;
   lastEventAt: string | null;
   reconnectAttempt: number;
+  pausedSources?: ("horizon" | "soroban")[];
+};
+
+export type HealthCheckResult = {
+  ok: boolean;
+  reasons: string[];
 };
 
 export type SubscribeOptions = {
@@ -340,4 +393,75 @@ export type SubscribeOptions = {
    *  Return `false` to suppress delivery. If the predicate throws, the event
    *  is suppressed and a warning is logged — the engine continues running. */
   filter?: (event: NormalizedEvent) => boolean;
+  /** Optional human-friendly label for observability — appears in log lines and lifecycle notifications. */
+  name?: string;
+};
+
+// ---------------------------------------------------------------------------
+// Contract events (Phase 1 — Soroban)
+// ---------------------------------------------------------------------------
+
+export type ContractEventType = "contract.invoked" | "contract.emitted";
+
+/**
+ * A normalized Soroban contract invocation event.
+ * Emitted when a contract function is called.
+ */
+export type ContractInvokedEvent = {
+  type: "contract.invoked";
+  contractId: string;
+  /** The function name that was invoked. */
+  function: string;
+  /** Ordered list of topic strings (XDR-encoded or decoded). */
+  topics: string[];
+  /** Arbitrary event data payload. */
+  data: unknown;
+  timestamp: string;
+  raw: unknown;
+};
+
+/**
+ * A normalized Soroban contract-emitted event (contract_events in the ledger).
+ */
+export type ContractEmittedEvent = {
+  type: "contract.emitted";
+  contractId: string;
+  /** Ordered list of topic strings (XDR-encoded or decoded). */
+  topics: string[];
+  /** Arbitrary event data payload. */
+  data: unknown;
+  timestamp: string;
+  raw: unknown;
+};
+
+export type ContractEvent = ContractInvokedEvent | ContractEmittedEvent;
+
+/**
+ * Filter criteria for a contract subscription.
+ * All specified fields must match (AND semantics).
+ * Omitting a field means "match any".
+ */
+export type ContractSubscriptionFilter = {
+  /** Match only events of this type. Omit to match both. */
+  type?: ContractEventType;
+  /**
+   * Match only events from one of these contract IDs.
+   * Omit to match any contract.
+   */
+  contractIds?: string[];
+  /**
+   * Topic-pattern match: each entry is matched positionally against the event's
+   * topics array. Use `null` as a wildcard for a position.
+   * Omit to match any topics.
+   *
+   * @example ["transfer", null] — matches events whose first topic is "transfer"
+   */
+  topicFilters?: (string | null)[];
+};
+
+/** Options for subscribeContract(). */
+export type ContractSubscribeOptions = {
+  filters?: ContractSubscriptionFilter[];
+  /** Optional human-friendly label for observability — appears in log lines and lifecycle notifications. */
+  name?: string;
 };

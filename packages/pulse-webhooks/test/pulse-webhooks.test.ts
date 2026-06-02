@@ -5,7 +5,9 @@ import { Watcher } from "@orbital/pulse-core";
 import {
   DeadLetterStore,
   verifyWebhook,
+  verifyWebhookRaw,
   verifyWebhookEdge,
+  verifyWebhookEdgeRaw,
   WebhookDelivery,
 } from "../src/index.js";
 
@@ -318,6 +320,146 @@ describe("pulse-webhooks WebhookDelivery", () => {
   });
 });
 
+describe("pulse-webhooks WebhookDelivery tracer", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  it("emits one span per successful delivery attempt with url, attempt, status, and latency", async () => {
+    vi.setSystemTime(new Date("2026-04-27T00:00:00.000Z"));
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200 });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const span = { setAttribute: vi.fn(), end: vi.fn() };
+    const tracer = { startSpan: vi.fn().mockReturnValue(span) };
+
+    const watcher = new Watcher("GABC");
+    new WebhookDelivery(watcher, {
+      url: "https://example.com/hook",
+      secret: "top-secret",
+      tracer,
+    });
+
+    watcher.emit("*", deliveryEvent);
+    await flushAsyncWork();
+
+    expect(tracer.startSpan).toHaveBeenCalledTimes(1);
+    expect(tracer.startSpan).toHaveBeenCalledWith("webhook.delivery", expect.objectContaining({
+      "webhook.url": "https://example.com/hook",
+      "webhook.attempt": 1,
+    }));
+    expect(span.setAttribute).toHaveBeenCalledWith("webhook.status", 200);
+    expect(span.setAttribute).toHaveBeenCalledWith("webhook.latency_ms", expect.any(Number));
+    expect(span.end).toHaveBeenCalledTimes(1);
+  });
+
+  it("emits a span per attempt on retry, recording error on failure", async () => {
+    const fetchMock = vi.fn().mockRejectedValue(new Error("network down"));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const span = { setAttribute: vi.fn(), end: vi.fn() };
+    const tracer = { startSpan: vi.fn().mockReturnValue(span) };
+
+    const watcher = new Watcher("GABC");
+    new WebhookDelivery(watcher, {
+      url: "https://example.com/hook",
+      secret: "top-secret",
+      retries: 2,
+      tracer,
+    });
+
+    watcher.emit("*", deliveryEvent);
+    await flushAsyncWork();
+
+    // attempt 1 span is started and ended
+    expect(tracer.startSpan).toHaveBeenCalledTimes(1);
+    expect(span.setAttribute).toHaveBeenCalledWith("webhook.error", "network down");
+    expect(span.setAttribute).toHaveBeenCalledWith("webhook.latency_ms", expect.any(Number));
+    expect(span.end).toHaveBeenCalledTimes(1);
+
+    // advance to trigger retry (attempt 2)
+    vi.advanceTimersByTime(2000);
+    await flushAsyncWork();
+
+    expect(tracer.startSpan).toHaveBeenCalledTimes(2);
+    expect(tracer.startSpan).toHaveBeenNthCalledWith(2, "webhook.delivery", expect.objectContaining({
+      "webhook.url": "https://example.com/hook",
+      "webhook.attempt": 2,
+    }));
+    expect(span.end).toHaveBeenCalledTimes(2);
+  });
+
+  it("propagates parent trace id from event.raw when present", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200 });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const span = { setAttribute: vi.fn(), end: vi.fn() };
+    const tracer = { startSpan: vi.fn().mockReturnValue(span) };
+
+    const eventWithTrace = {
+      ...deliveryEvent,
+      raw: { id: "evt_1", traceId: "abc123" },
+    };
+
+    const watcher = new Watcher("GABC");
+    new WebhookDelivery(watcher, {
+      url: "https://example.com/hook",
+      secret: "top-secret",
+      tracer,
+    });
+
+    watcher.emit("*", eventWithTrace);
+    await flushAsyncWork();
+
+    expect(tracer.startSpan).toHaveBeenCalledWith("webhook.delivery", expect.objectContaining({
+      "webhook.parent_trace_id": "abc123",
+    }));
+  });
+
+  it("does not include parent_trace_id when event.raw has no traceId", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200 });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const span = { setAttribute: vi.fn(), end: vi.fn() };
+    const tracer = { startSpan: vi.fn().mockReturnValue(span) };
+
+    const watcher = new Watcher("GABC");
+    new WebhookDelivery(watcher, {
+      url: "https://example.com/hook",
+      secret: "top-secret",
+      tracer,
+    });
+
+    watcher.emit("*", deliveryEvent);
+    await flushAsyncWork();
+
+    const startSpanAttrs = tracer.startSpan.mock.calls[0][1] as Record<string, unknown>;
+    expect(startSpanAttrs).not.toHaveProperty("webhook.parent_trace_id");
+  });
+
+  it("does not throw when no tracer is configured", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200 });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const watcher = new Watcher("GABC");
+    new WebhookDelivery(watcher, {
+      url: "https://example.com/hook",
+      secret: "top-secret",
+    });
+
+    watcher.emit("*", deliveryEvent);
+    await flushAsyncWork();
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe("pulse-webhooks verifyWebhook", () => {
   it("returns parsed event when signature matches timestamped payload", () => {
     const payload = JSON.stringify(deliveryEvent);
@@ -326,6 +468,32 @@ describe("pulse-webhooks verifyWebhook", () => {
 
     const event = verifyWebhook(payload, signature, "top-secret", timestamp, {
       nowMs: Number(timestamp),
+    });
+
+    expect(event).toEqual(deliveryEvent);
+  });
+
+  it("accepts explicit v1 version option", () => {
+    const payload = JSON.stringify(deliveryEvent);
+    const timestamp = "1714176000000";
+    const signature = signWebhookPayload("top-secret", payload, timestamp);
+
+    const event = verifyWebhook(payload, signature, "top-secret", timestamp, {
+      nowMs: Number(timestamp),
+      version: "v1",
+    });
+
+    expect(event).toEqual(deliveryEvent);
+  });
+
+  it("accepts v2 placeholder without changing v1 verification behavior", () => {
+    const payload = JSON.stringify(deliveryEvent);
+    const timestamp = "1714176000000";
+    const signature = signWebhookPayload("top-secret", payload, timestamp);
+
+    const event = verifyWebhook(payload, signature, "top-secret", timestamp, {
+      nowMs: Number(timestamp),
+      version: "v2",
     });
 
     expect(event).toEqual(deliveryEvent);
@@ -415,6 +583,32 @@ describe("pulse-webhooks verifyWebhookEdge", () => {
       timestamp,
       { nowMs: Number(timestamp) },
     );
+
+    expect(event).toEqual(deliveryEvent);
+  });
+
+  it("accepts explicit v1 version option", async () => {
+    const payload = JSON.stringify(deliveryEvent);
+    const timestamp = "1714176000000";
+    const signature = signWebhookPayload("top-secret", payload, timestamp);
+
+    const event = await verifyWebhookEdge(payload, signature, "top-secret", timestamp, {
+      nowMs: Number(timestamp),
+      version: "v1",
+    });
+
+    expect(event).toEqual(deliveryEvent);
+  });
+
+  it("accepts v2 placeholder without changing v1 verification behavior", async () => {
+    const payload = JSON.stringify(deliveryEvent);
+    const timestamp = "1714176000000";
+    const signature = signWebhookPayload("top-secret", payload, timestamp);
+
+    const event = await verifyWebhookEdge(payload, signature, "top-secret", timestamp, {
+      nowMs: Number(timestamp),
+      version: "v2",
+    });
 
     expect(event).toEqual(deliveryEvent);
   });
@@ -509,6 +703,149 @@ describe("pulse-webhooks verifyWebhookEdge", () => {
     expect(
       await verifyWebhookEdge(payload, signature, "top-secret", timestamp),
     ).toBeNull();
+  });
+});
+
+describe("pulse-webhooks verifyWebhookRaw", () => {
+  it("returns true when signature matches timestamped payload", () => {
+    const payload = JSON.stringify(deliveryEvent);
+    const timestamp = "1714176000000";
+    const signature = signWebhookPayload("top-secret", payload, timestamp);
+
+    const result = verifyWebhookRaw(
+      payload,
+      signature,
+      "top-secret",
+      timestamp,
+    );
+
+    expect(result).toBe(true);
+  });
+
+  it("returns false when timestamp is missing or invalid", () => {
+    const payload = JSON.stringify(deliveryEvent);
+    const signature = signWebhookPayload(
+      "top-secret",
+      payload,
+      "1714176000000",
+    );
+
+    expect(verifyWebhookRaw(payload, signature, "top-secret", "")).toBe(false);
+    expect(
+      verifyWebhookRaw(payload, signature, "top-secret", "not-a-number"),
+    ).toBe(false);
+  });
+
+  it("returns false when signature does not match timestamped payload", () => {
+    const payload = JSON.stringify(deliveryEvent);
+    const timestamp = "1714176000000";
+    const signature = signWebhookPayload("top-secret", payload, timestamp);
+
+    expect(
+      verifyWebhookRaw(payload, signature, "wrong-secret", timestamp),
+    ).toBe(false);
+    expect(
+      verifyWebhookRaw(`${payload}x`, signature, "top-secret", timestamp),
+    ).toBe(false);
+    expect(
+      verifyWebhookRaw(payload, signature, "top-secret", "1714176000001"),
+    ).toBe(false);
+  });
+
+  it("returns true for malformed JSON payload (raw variant skips JSON parse)", () => {
+    const payload = "{ invalid json }";
+    const timestamp = "1714176000000";
+    const signature = signWebhookPayload("top-secret", payload, timestamp);
+
+    // Raw variant should return true (signature is valid), ignoring JSON validity
+    const result = verifyWebhookRaw(
+      payload,
+      signature,
+      "top-secret",
+      timestamp,
+    );
+
+    expect(result).toBe(true);
+  });
+});
+
+describe("pulse-webhooks verifyWebhookEdgeRaw", () => {
+  it("returns true when signature matches timestamped payload", async () => {
+    const payload = JSON.stringify(deliveryEvent);
+    const timestamp = "1714176000000";
+    const signature = signWebhookPayload("top-secret", payload, timestamp);
+
+    const result = await verifyWebhookEdgeRaw(
+      payload,
+      signature,
+      "top-secret",
+      timestamp,
+    );
+
+    expect(result).toBe(true);
+  });
+
+  it("returns false when timestamp is missing or invalid", async () => {
+    const payload = JSON.stringify(deliveryEvent);
+    const signature = signWebhookPayload(
+      "top-secret",
+      payload,
+      "1714176000000",
+    );
+
+    expect(
+      await verifyWebhookEdgeRaw(payload, signature, "top-secret", ""),
+    ).toBe(false);
+    expect(
+      await verifyWebhookEdgeRaw(
+        payload,
+        signature,
+        "top-secret",
+        "not-a-number",
+      ),
+    ).toBe(false);
+  });
+
+  it("returns false when signature does not match timestamped payload", async () => {
+    const payload = JSON.stringify(deliveryEvent);
+    const timestamp = "1714176000000";
+    const signature = signWebhookPayload("top-secret", payload, timestamp);
+
+    expect(
+      await verifyWebhookEdgeRaw(payload, signature, "wrong-secret", timestamp),
+    ).toBe(false);
+    expect(
+      await verifyWebhookEdgeRaw(
+        `${payload}x`,
+        signature,
+        "top-secret",
+        timestamp,
+      ),
+    ).toBe(false);
+    expect(
+      await verifyWebhookEdgeRaw(
+        payload,
+        signature,
+        "top-secret",
+        "1714176000001",
+      ),
+    ).toBe(false);
+  });
+
+  it("returns true for malformed JSON payload (raw variant skips JSON parse)", async () => {
+    const payload = "{ invalid json }";
+    const timestamp = "1714176000000";
+    const signature = signWebhookPayload("top-secret", payload, timestamp);
+
+    // Raw variant should return true (signature is valid), ignoring JSON validity
+    const result = await verifyWebhookEdgeRaw(
+      payload,
+      signature,
+      "top-secret",
+      timestamp,
+    );
+
+    expect(result).toBe(true);
   });
 });
 
