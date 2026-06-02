@@ -1,4 +1,8 @@
+export { SorobanRpcClient } from "./SorobanRpcClient.js";
+export type { SorobanRpcClientOptions } from "./SorobanRpcClient.js";
 export { EventEngine } from "./EventEngine.js";
+export { SorobanSubscriber } from "./SorobanSubscriber.js";
+export { validateContractFilters } from "./contractFilters.js";
 export { Watcher } from "./Watcher.js";
 export { EngineAlreadyStartedError, HorizonStreamError } from "./errors.js";
 export { StrKey } from "@stellar/stellar-sdk";
@@ -6,9 +10,28 @@ export { CursorStore } from "./CursorStore.js";
 export { PostgresCursorStore, PgLike } from "./PostgresCursorStore.js";
 export { evaluatePredicate, normalizeClaimPredicate, isClaimPredicateType } from "./claimPredicate.js";
 export type { ClaimPredicate } from "./claimPredicate.js";
+export { isEventType } from "./eventTypeGuard.js";
 
 /** The Stellar network to connect to. */
 export type Network = "mainnet" | "testnet";
+
+export type SourceStatus = {
+  running: boolean;
+  lastEventAt: string | null;
+  reconnectAttempt: number;
+  cursor?: string;
+};
+
+export type EngineStatus = {
+  running: boolean;
+  watcherCount: number;
+  lastEventAt: string | null;
+  reconnectAttempt: number;
+  sources: {
+    horizon: SourceStatus;
+    soroban: SourceStatus;
+  };
+};
 
 /** Passphrase strings for each supported Stellar network. */
 export const NETWORK_PASSPHRASES = {
@@ -41,7 +64,8 @@ export type WatcherNotificationType =
   | "engine.reconnecting"
   | "engine.reconnected"
   | "engine.rate_limited"
-  | "engine.stopped";
+  | "engine.stopped"
+  | "engine.cursor_store_unhealthy";
 
 export type OfferEventType = "offer.created" | "offer.updated" | "offer.deleted";
 export type BumpSequenceEventType = "account.bump_sequence";
@@ -288,6 +312,8 @@ export type NormalizedEvent =
 export type WatcherNotification = {
   /** The type of reconnection notification. */
   type: WatcherNotificationType;
+  /** Human-friendly label of the subscription that received this notification, if one was set. */
+  name?: string;
   /** The current reconnection attempt number. */
   attempt: number;
   /** The delay in milliseconds before the next reconnection attempt (for "engine.reconnecting" events). */
@@ -307,6 +333,18 @@ export type ReconnectConfig = {
   /** Maximum number of reconnection attempts. Defaults to Infinity. */
   maxRetries?: number;
 };
+
+/**
+ * Structured logger interface accepted by EventEngine.
+ *
+ * The second argument carries metadata that downstream loggers can serialize as JSON
+ * or map into their own structured logging format.
+ */
+export interface Logger {
+  info(message: string, meta?: Record<string, unknown>): void;
+  warn(message: string, meta?: Record<string, unknown>): void;
+  error(message: string, meta?: Record<string, unknown>): void;
+}
 
 /**
  * Core configuration for initializing the EventEngine.
@@ -345,8 +383,10 @@ export class UnknownNetworkError extends Error {
 export type EngineStatus = {
   running: boolean;
   watcherCount: number;
+  contractWatcherCount?: number;
   lastEventAt: string | null;
   reconnectAttempt: number;
+  pausedSources?: ("horizon" | "soroban")[];
 };
 
 export type HealthCheckResult = {
@@ -359,6 +399,8 @@ export type SubscribeOptions = {
    *  Return `false` to suppress delivery. If the predicate throws, the event
    *  is suppressed and a warning is logged — the engine continues running. */
   filter?: (event: NormalizedEvent) => boolean;
+  /** Optional human-friendly label for observability — appears in log lines and lifecycle notifications. */
+  name?: string;
 };
 
 // ---------------------------------------------------------------------------
@@ -426,4 +468,6 @@ export type ContractSubscriptionFilter = {
 /** Options for subscribeContract(). */
 export type ContractSubscribeOptions = {
   filters?: ContractSubscriptionFilter[];
+  /** Optional human-friendly label for observability — appears in log lines and lifecycle notifications. */
+  name?: string;
 };

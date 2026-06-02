@@ -59,6 +59,12 @@ const second = acquireEventConnection(
 assert.equal(MockEventSource.instances.length, 1);
 assert.equal(__getConnectionPoolSizeForTests(), 1);
 
+assert.equal(first.connected, false);
+assert.equal(second.connected, false);
+MockEventSource.instances[0]?.onopen?.();
+assert.equal(first.connected, true);
+assert.equal(second.connected, true);
+
 MockEventSource.instances[0]?.onmessage?.({
   data: JSON.stringify({ type: "payment.received" }),
 });
