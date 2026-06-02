@@ -126,6 +126,7 @@ Attaches a delivery driver to a `Watcher`. Every event the watcher emits is deli
 | `config.retries`              | `number`             | `3`      | Number of retry attempts before emitting `webhook.failed`                             |
 | `config.deliveryTimeoutMs`    | `number`             | `10_000` | Abort threshold for each HTTP attempt                                                 |
 | `config.allowPrivateNetworks` | `boolean`            | `false`  | If true, bypass SSRF checks for local/private IP ranges                               |
+| `config.random`               | `() => number`       | `random` | Optional RNG for testing jitter. Defaults to `Math.random`.                           |
 
 ### `verifyWebhook(payload, signature, secret, timestamp)` → `NormalizedEvent | null`
 
@@ -138,6 +139,37 @@ Uses `crypto.timingSafeEqual` under the hood — do not roll your own comparison
 Edge-compatible version of `verifyWebhook` using Web Crypto API. Works in Cloudflare Workers, Deno, and browsers. Returns a Promise that resolves to the parsed event on success, `null` on any failure.
 
 Uses constant-time comparison and Web Crypto for HMAC-SHA256 verification.
+
+### Failure events
+
+When a delivery cannot be completed, the `Watcher` emits special events for routing and debugging.
+
+#### `webhook.failed`
+
+Emitted after all retry attempts are exhausted for a given URL. The event payload is a `NormalizedEvent` where the `raw` field is a `WebhookFailureRaw` object:
+
+```ts
+import type { WebhookFailureRaw } from "@orbital/pulse-webhooks";
+
+watcher.on("webhook.failed", (event) => {
+  const meta = event.raw as WebhookFailureRaw;
+  console.error(`Delivery failed to ${meta.url}: ${meta.error}`);
+  console.log(`Original event: ${meta.originalEvent.type}`);
+});
+```
+
+#### `webhook.dropped`
+
+Emitted when a pending retry is dropped because the `maxConcurrentRetries` cap has been reached. This happens before the retry is even attempted. The `raw` field is a `WebhookDroppedRaw` object:
+
+```ts
+import type { WebhookDroppedRaw } from "@orbital/pulse-webhooks";
+
+watcher.on("webhook.dropped", (event) => {
+  const meta = event.raw as WebhookDroppedRaw;
+  console.warn(`Dropped event for ${meta.url} (retry cap of ${meta.maxConcurrentRetries} hit)`);
+});
+```
 
 ## Delivery contract
 
@@ -256,20 +288,32 @@ CREATE INDEX dlq_url_timestamp_idx ON dead_letter_store(url, timestamp);
 
 **Note:** `limit` does not require an index; it just truncates the result set after filtering.
 
-## Security
+## Security guarantees
 
-- **Verify every signature.** `verifyWebhook` uses constant-time comparison.
-- **Treat the secret like a password.** Store it in a secrets manager, not a config file.
-- **Enforce HTTPS.** `WebhookDelivery` rejects non-HTTPS URLs unless `allowPrivateNetworks` is set; enforce the same at any layer where users supply target URLs.
-- **Bound the payload.** On the receiver side, cap body size with `express.raw({ type: "application/json", limit: "100kb" })` or equivalent.
+Orbital provides a hardened delivery pipeline for high-stakes financial events. This package enforces several tiers of defense-in-depth:
 
-## Network safety
+| Guarantee | Mechanism | Threat Mitigated |
+| :--- | :--- | :--- |
+| **Authenticity** | HMAC-SHA256 signature (`x-orbital-signature`) | Payload tampering |
+| **Integrity** | `timestamp . payload` signing bubble | Replay attacks (when window-checked) |
+| **Side-channel defense** | `crypto.timingSafeEqual` comparison | Timing attacks on signatures |
+| **SSRF Protection** | RFC 1918 & loopback block-list | Internal network exfiltration |
+| **DNS Rebinding defense** | Pre-delivery IP validation | Validation-time vs Request-time IP swaps |
+| **Resource bounding** | `maxConcurrentRetries` + body-size caps | Memory exhaustion / DoS |
 
-`pulse-webhooks` protects against SSRF (Server-Side Request Forgery) by validating every delivery target.
+### Threat Model
 
-- **Rejected ranges:** By default, deliveries to loopback (`127.0.0.0/8`, `::1`), private (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`), and link-local (`169.254.0.0/16`) addresses are blocked.
-- **Rebinding defense:** DNS resolution is verified against the blocklist before delivery to prevent DNS rebinding attacks.
-- **Configuration:** To allow deliveries to private or local networks (e.g. for development), set `allowPrivateNetworks: true` in the `WebhookDelivery` config.
+For a full breakdown of adversaries, assets, and mitigations (including secret rotation runbooks and detection signals), see the [core repository SECURITY.md](../../SECURITY.md).
+
+#### Replay window
+While `pulse-webhooks` includes a timestamp in every signature, consumers **must** verify that the `x-orbital-timestamp` is within a reasonable window (e.g., 5 minutes) to prevent replay of old valid payloads.
+
+```ts
+if (Date.now() - Number(timestamp) > 5 * 60 * 1000) {
+  return res.sendStatus(401);
+}
+```
+
 
 ## Current limitations
 
