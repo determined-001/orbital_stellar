@@ -345,7 +345,6 @@ export class UnknownNetworkError extends Error {
 export type EngineStatus = {
   running: boolean;
   watcherCount: number;
-  contractWatcherCount: number;
   lastEventAt: string | null;
   reconnectAttempt: number;
 };
@@ -381,7 +380,6 @@ export type ContractInvokedEvent = {
   topics: string[];
   /** Arbitrary event data payload. */
   data: unknown;
-  ledger: number;
   timestamp: string;
   raw: unknown;
 };
@@ -396,7 +394,6 @@ export type ContractEmittedEvent = {
   topics: string[];
   /** Arbitrary event data payload. */
   data: unknown;
-  ledger: number;
   timestamp: string;
   raw: unknown;
 };

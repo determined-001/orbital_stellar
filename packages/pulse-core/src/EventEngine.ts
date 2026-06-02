@@ -246,7 +246,6 @@ export class EventEngine {
     return {
       running: this.isRunning,
       watcherCount: this.registry.size,
-      contractWatcherCount: this.contractRegistry.size,
       lastEventAt: this.lastEventAt,
       reconnectAttempt: this.reconnectAttempt,
     };
@@ -526,7 +525,7 @@ export class EventEngine {
       const requiredFields = ["to", "from", "amount", "created_at"] as const;
       for (const field of requiredFields) {
         if (typeof r[field] !== "string" || r[field] === "") {
-          this.log.warn("[pulse-core] normalize() dropping payment record.", { field, record });
+          this.log.warn("[pulse-core] normalize() dropping payment record.", { field, record: raw });
           return null;
         }
       }
@@ -1064,7 +1063,6 @@ export class EventEngine {
       function: r.function,
       topics: Array.isArray(r.topics) ? (r.topics as string[]) : [],
       data: r.data ?? null,
-      ledger: r.ledger !== undefined ? Number(r.ledger) : 0,
       timestamp: typeof r.created_at === "string" ? r.created_at : "",
       raw,
     };
@@ -1080,7 +1078,6 @@ export class EventEngine {
       contractId: r.contract_id,
       topics: Array.isArray(r.topics) ? (r.topics as string[]) : [],
       data: r.data ?? null,
-      ledger: r.ledger !== undefined ? Number(r.ledger) : 0,
       timestamp: typeof r.created_at === "string" ? r.created_at : "",
       raw,
     };
