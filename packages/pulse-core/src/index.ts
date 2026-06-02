@@ -358,6 +358,18 @@ export type ReconnectConfig = {
 };
 
 /**
+ * Structured logger interface accepted by EventEngine.
+ *
+ * The second argument carries metadata that downstream loggers can serialize as JSON
+ * or map into their own structured logging format.
+ */
+export interface Logger {
+  info(message: string, meta?: Record<string, unknown>): void;
+  warn(message: string, meta?: Record<string, unknown>): void;
+  error(message: string, meta?: Record<string, unknown>): void;
+}
+
+/**
  * Core configuration for initializing the EventEngine.
  *
  * @example
@@ -380,12 +392,6 @@ export type CoreConfig = {
   /** Optional reconnection configuration. */
   reconnect?: ReconnectConfig;
   logger?: Logger;
-  /** Optional cursor store for resumable streams. */
-  cursorStore?: CursorStore;
-  /** Key to use for cursor storage. Defaults to "pulse-core-cursor". */
-  streamKey?: string;
-  /** Number of consecutive cursor store failures before marking it unhealthy. Defaults to 5. */
-  cursorFailureThreshold?: number;
 };
 
 // Error class for invalid network validation
