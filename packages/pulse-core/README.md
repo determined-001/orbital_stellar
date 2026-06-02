@@ -116,6 +116,46 @@ type NormalizedEvent =
 
 Every event includes a `timestamp` (ISO 8601) and a `raw` field with the original Horizon record. See [`docs/ARCHITECTURE.md` § 4 The normalization layer](../../docs/ARCHITECTURE.md#4-the-normalization-layer) for the full per-event shape table and the routing rules that decide which watcher receives which event.
 
+### Type narrowing with `isEventType`
+
+Use the `isEventType` helper to narrow events to specific types in a type-safe way:
+
+```ts
+import { EventEngine, isEventType } from "@orbital/pulse-core";
+
+const engine = new EventEngine({ network: "testnet" });
+engine.start();
+
+const watcher = engine.subscribe("GABC...");
+
+// Narrow to a single type
+watcher.on("*", (event) => {
+  if (isEventType(event, "payment.received")) {
+    console.log(`Received ${event.amount} ${event.asset} from ${event.from}`);
+  }
+});
+
+// Narrow to multiple types
+watcher.on("*", (event) => {
+  if (isEventType(event, "payment.received", "payment.sent", "payment.self")) {
+    console.log(`Payment of ${event.amount} ${event.asset}`);
+  }
+});
+
+// Filter an array of events
+const allEvents: NormalizedEvent[] = [];
+const paymentEvents = allEvents.filter((e) =>
+  isEventType(e, "payment.received", "payment.sent", "payment.self")
+);
+
+// Combine with other checks
+watcher.on("*", (event) => {
+  if (isEventType(event, "trustline.added", "trustline.updated")) {
+    console.log(`Trustline for ${event.asset} on account ${event.account}`);
+  }
+});
+```
+
 ## Design principles
 
 - **Amounts are strings.** Stellar uses 7-decimal fixed-point. JavaScript numbers lose precision. Treat all amounts as strings and delegate arithmetic to `bignumber.js` or similar.

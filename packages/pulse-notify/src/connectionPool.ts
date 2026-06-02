@@ -80,7 +80,9 @@ export function acquireEventConnection(
   entry.subscribers.add(subscriber);
 
   return {
-    connected: entry.connected,
+    get connected() {
+      return entry.connected;
+    },
     unsubscribe: () => {
       entry.subscribers.delete(subscriber);
 
