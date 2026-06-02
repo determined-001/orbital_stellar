@@ -42,23 +42,27 @@ import express from "express";
 
 const app = express();
 
-app.post("/hooks/stellar", express.raw({ type: "application/json" }), (req, res) => {
-  const signature = req.header("x-orbital-signature");
-  const timestamp = req.header("x-orbital-timestamp");
-  if (!signature || !timestamp) return res.sendStatus(400);
+app.post(
+  "/hooks/stellar",
+  express.raw({ type: "application/json" }),
+  (req, res) => {
+    const signature = req.header("x-orbital-signature");
+    const timestamp = req.header("x-orbital-timestamp");
+    if (!signature || !timestamp) return res.sendStatus(400);
 
-  const event = verifyWebhook(
-    req.body,
-    signature,
-    process.env.WEBHOOK_SECRET!,
-    timestamp,
-  );
-  if (!event) return res.sendStatus(401);
+    const event = verifyWebhook(
+      req.body,
+      signature,
+      process.env.WEBHOOK_SECRET!,
+      timestamp,
+    );
+    if (!event) return res.sendStatus(401);
 
-  // event is a verified NormalizedEvent
-  console.log(`Verified payment: ${event.amount} ${event.asset}`);
-  res.sendStatus(200);
-});
+    // event is a verified NormalizedEvent
+    console.log(`Verified payment: ${event.amount} ${event.asset}`);
+    res.sendStatus(200);
+  },
+);
 ```
 
 ## Verifying in Cloudflare Workers
@@ -162,6 +166,29 @@ Edge-compatible version of `verifyWebhook` using Web Crypto API. Works in Cloudf
 The optional `options.version` field mirrors `verifyWebhook` — `"v1"` (default) is current behavior; `"v2"` is reserved.
 
 Uses constant-time comparison and Web Crypto for HMAC-SHA256 verification.
+
+### `verifyWebhookEdgeRaw(payload, signature, secret, timestamp)` → `Promise<boolean>`
+
+Edge-compatible version of `verifyWebhookRaw` using Web Crypto API. Verifies the signature without parsing JSON. Returns `true` if the signature is valid, `false` otherwise.
+
+Use this in edge runtimes when routing raw payloads to avoid JSON parse overhead.
+
+```js
+const isValid = await verifyWebhookEdgeRaw(
+  rawPayload,
+  signature,
+  secret,
+  timestamp,
+);
+if (isValid) {
+  // Send raw payload to R2, KV, or other Cloudflare service
+  await env.BUCKET.put(key, rawPayload);
+} else {
+  return new Response("Invalid signature", { status: 401 });
+}
+```
+
+**When to use:** Edge runtime webhook verification with no immediate need for parsed event data.
 
 ## Delivery contract
 

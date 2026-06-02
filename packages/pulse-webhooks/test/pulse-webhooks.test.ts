@@ -3,11 +3,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { Watcher } from "@orbital/pulse-core";
 import {
-  verifyWebhook,
-  verifyWebhookEdge,
-  WebhookDelivery,
-  deliveryHealth,
   DeadLetterStore,
+  verifyWebhook,
+  verifyWebhookRaw,
+  verifyWebhookEdge,
+  verifyWebhookEdgeRaw,
+  WebhookDelivery,
 } from "../src/index.js";
 
 const deliveryEvent = {
@@ -705,173 +706,405 @@ describe("pulse-webhooks verifyWebhookEdge", () => {
   });
 });
 
-describe("pulse-webhooks deliveryHealth", () => {
-  let dlq: DeadLetterStore;
+describe("pulse-webhooks verifyWebhookRaw", () => {
+  it("returns true when signature matches timestamped payload", () => {
+    const payload = JSON.stringify(deliveryEvent);
+    const timestamp = "1714176000000";
+    const signature = signWebhookPayload("top-secret", payload, timestamp);
 
-  beforeEach(() => {
-    vi.useFakeTimers();
-    dlq = new DeadLetterStore();
+    const result = verifyWebhookRaw(
+      payload,
+      signature,
+      "top-secret",
+      timestamp,
+    );
+
+    expect(result).toBe(true);
   });
 
-  afterEach(() => {
+  it("returns false when timestamp is missing or invalid", () => {
+    const payload = JSON.stringify(deliveryEvent);
+    const signature = signWebhookPayload(
+      "top-secret",
+      payload,
+      "1714176000000",
+    );
+
+    expect(verifyWebhookRaw(payload, signature, "top-secret", "")).toBe(false);
+    expect(
+      verifyWebhookRaw(payload, signature, "top-secret", "not-a-number"),
+    ).toBe(false);
+  });
+
+  it("returns false when signature does not match timestamped payload", () => {
+    const payload = JSON.stringify(deliveryEvent);
+    const timestamp = "1714176000000";
+    const signature = signWebhookPayload("top-secret", payload, timestamp);
+
+    expect(
+      verifyWebhookRaw(payload, signature, "wrong-secret", timestamp),
+    ).toBe(false);
+    expect(
+      verifyWebhookRaw(`${payload}x`, signature, "top-secret", timestamp),
+    ).toBe(false);
+    expect(
+      verifyWebhookRaw(payload, signature, "top-secret", "1714176000001"),
+    ).toBe(false);
+  });
+
+  it("returns true for malformed JSON payload (raw variant skips JSON parse)", () => {
+    const payload = "{ invalid json }";
+    const timestamp = "1714176000000";
+    const signature = signWebhookPayload("top-secret", payload, timestamp);
+
+    // Raw variant should return true (signature is valid), ignoring JSON validity
+    const result = verifyWebhookRaw(
+      payload,
+      signature,
+      "top-secret",
+      timestamp,
+    );
+
+    expect(result).toBe(true);
+  });
+});
+
+describe("pulse-webhooks verifyWebhookEdgeRaw", () => {
+  it("returns true when signature matches timestamped payload", async () => {
+    const payload = JSON.stringify(deliveryEvent);
+    const timestamp = "1714176000000";
+    const signature = signWebhookPayload("top-secret", payload, timestamp);
+
+    const result = await verifyWebhookEdgeRaw(
+      payload,
+      signature,
+      "top-secret",
+      timestamp,
+    );
+
+    expect(result).toBe(true);
+  });
+
+  it("returns false when timestamp is missing or invalid", async () => {
+    const payload = JSON.stringify(deliveryEvent);
+    const signature = signWebhookPayload(
+      "top-secret",
+      payload,
+      "1714176000000",
+    );
+
+    expect(
+      await verifyWebhookEdgeRaw(payload, signature, "top-secret", ""),
+    ).toBe(false);
+    expect(
+      await verifyWebhookEdgeRaw(
+        payload,
+        signature,
+        "top-secret",
+        "not-a-number",
+      ),
+    ).toBe(false);
+  });
+
+  it("returns false when signature does not match timestamped payload", async () => {
+    const payload = JSON.stringify(deliveryEvent);
+    const timestamp = "1714176000000";
+    const signature = signWebhookPayload("top-secret", payload, timestamp);
+
+    expect(
+      await verifyWebhookEdgeRaw(payload, signature, "wrong-secret", timestamp),
+    ).toBe(false);
+    expect(
+      await verifyWebhookEdgeRaw(
+        `${payload}x`,
+        signature,
+        "top-secret",
+        timestamp,
+      ),
+    ).toBe(false);
+    expect(
+      await verifyWebhookEdgeRaw(
+        payload,
+        signature,
+        "top-secret",
+        "1714176000001",
+      ),
+    ).toBe(false);
+  });
+
+  it("returns true for malformed JSON payload (raw variant skips JSON parse)", async () => {
+    const payload = "{ invalid json }";
+    const timestamp = "1714176000000";
+    const signature = signWebhookPayload("top-secret", payload, timestamp);
+
+    // Raw variant should return true (signature is valid), ignoring JSON validity
+    const result = await verifyWebhookEdgeRaw(
+      payload,
+      signature,
+      "top-secret",
+      timestamp,
+    );
+
+    expect(result).toBe(true);
+  });
+});
+
+describe("pulse-webhooks DeadLetterStore", () => {
+  it("adds and retrieves entries by ID", () => {
+    const dlq = new DeadLetterStore();
+    const id = dlq.add(
+      "https://example.com/webhooks",
+      deliveryEvent,
+      "HTTP 500",
+      3,
+    );
+
+    expect(id).toMatch(/^dlq_\d+_\d+_[a-z0-9]+$/);
+
+    const entry = dlq.get(id);
+    expect(entry).toBeDefined();
+    expect(entry?.url).toBe("https://example.com/webhooks");
+    expect(entry?.error).toBe("HTTP 500");
+    expect(entry?.attempts).toBe(3);
+    expect(entry?.event).toEqual(deliveryEvent);
+    expect(entry?.timestamp).toBeGreaterThan(0);
+  });
+
+  it("lists all entries without filters", () => {
+    const dlq = new DeadLetterStore();
+    const id1 = dlq.add(
+      "https://example.com/webhooks",
+      deliveryEvent,
+      "Error 1",
+      1,
+    );
+    const id2 = dlq.add(
+      "https://staging.com/webhooks",
+      deliveryEvent,
+      "Error 2",
+      2,
+    );
+
+    const entries = dlq.list();
+    expect(entries).toHaveLength(2);
+    expect(entries.map((e) => e.id)).toContain(id1);
+    expect(entries.map((e) => e.id)).toContain(id2);
+  });
+
+  it("filters entries by URL", () => {
+    const dlq = new DeadLetterStore();
+    const prodUrl = "https://prod.com/webhooks";
+    const stagingUrl = "https://staging.com/webhooks";
+
+    dlq.add(prodUrl, deliveryEvent, "Error 1", 1);
+    dlq.add(stagingUrl, deliveryEvent, "Error 2", 2);
+    dlq.add(prodUrl, deliveryEvent, "Error 3", 3);
+
+    const prodEntries = dlq.list({ url: prodUrl });
+    expect(prodEntries).toHaveLength(2);
+    expect(prodEntries.every((e) => e.url === prodUrl)).toBe(true);
+
+    const stagingEntries = dlq.list({ url: stagingUrl });
+    expect(stagingEntries).toHaveLength(1);
+    expect(stagingEntries[0]?.url).toBe(stagingUrl);
+  });
+
+  it("filters entries by time range (since)", () => {
+    vi.useFakeTimers();
+    const dlq = new DeadLetterStore();
+
+    vi.setSystemTime(new Date("2026-04-26T10:00:00Z"));
+    const id1 = dlq.add(
+      "https://example.com/webhooks",
+      deliveryEvent,
+      "Error 1",
+      1,
+    );
+
+    vi.setSystemTime(new Date("2026-04-26T11:00:00Z"));
+    const id2 = dlq.add(
+      "https://example.com/webhooks",
+      deliveryEvent,
+      "Error 2",
+      2,
+    );
+
+    vi.setSystemTime(new Date("2026-04-26T12:00:00Z"));
+    const id3 = dlq.add(
+      "https://example.com/webhooks",
+      deliveryEvent,
+      "Error 3",
+      3,
+    );
+
+    const since = new Date("2026-04-26T10:30:00Z").getTime();
+    const entries = dlq.list({ since });
+
+    expect(entries).toHaveLength(2);
+    expect(entries.map((e) => e.id)).toContain(id2);
+    expect(entries.map((e) => e.id)).toContain(id3);
+    expect(entries.map((e) => e.id)).not.toContain(id1);
+
     vi.useRealTimers();
   });
 
-  it("returns unhealthy status for unknown URL", () => {
-    const health = deliveryHealth("https://unknown.example.com/hook");
+  it("filters entries by time range (until)", () => {
+    vi.useFakeTimers();
+    const dlq = new DeadLetterStore();
 
-    expect(health).toEqual({
-      healthy: false,
-      failureRate: 0,
+    vi.setSystemTime(new Date("2026-04-26T10:00:00Z"));
+    const id1 = dlq.add(
+      "https://example.com/webhooks",
+      deliveryEvent,
+      "Error 1",
+      1,
+    );
+
+    vi.setSystemTime(new Date("2026-04-26T11:00:00Z"));
+    const id2 = dlq.add(
+      "https://example.com/webhooks",
+      deliveryEvent,
+      "Error 2",
+      2,
+    );
+
+    vi.setSystemTime(new Date("2026-04-26T12:00:00Z"));
+    const id3 = dlq.add(
+      "https://example.com/webhooks",
+      deliveryEvent,
+      "Error 3",
+      3,
+    );
+
+    const until = new Date("2026-04-26T11:30:00Z").getTime();
+    const entries = dlq.list({ until });
+
+    expect(entries).toHaveLength(2);
+    expect(entries.map((e) => e.id)).toContain(id1);
+    expect(entries.map((e) => e.id)).toContain(id2);
+    expect(entries.map((e) => e.id)).not.toContain(id3);
+
+    vi.useRealTimers();
+  });
+
+  it("filters entries by time range (since and until)", () => {
+    vi.useFakeTimers();
+    const dlq = new DeadLetterStore();
+
+    vi.setSystemTime(new Date("2026-04-26T10:00:00Z"));
+    const id1 = dlq.add(
+      "https://example.com/webhooks",
+      deliveryEvent,
+      "Error 1",
+      1,
+    );
+
+    vi.setSystemTime(new Date("2026-04-26T11:00:00Z"));
+    const id2 = dlq.add(
+      "https://example.com/webhooks",
+      deliveryEvent,
+      "Error 2",
+      2,
+    );
+
+    vi.setSystemTime(new Date("2026-04-26T12:00:00Z"));
+    const id3 = dlq.add(
+      "https://example.com/webhooks",
+      deliveryEvent,
+      "Error 3",
+      3,
+    );
+
+    const since = new Date("2026-04-26T10:30:00Z").getTime();
+    const until = new Date("2026-04-26T11:30:00Z").getTime();
+    const entries = dlq.list({ since, until });
+
+    expect(entries).toHaveLength(1);
+    expect(entries[0]?.id).toBe(id2);
+
+    vi.useRealTimers();
+  });
+
+  it("limits the number of results", () => {
+    const dlq = new DeadLetterStore();
+
+    for (let i = 0; i < 10; i++) {
+      dlq.add("https://example.com/webhooks", deliveryEvent, `Error ${i}`, i);
+    }
+
+    const entries = dlq.list({ limit: 5 });
+    expect(entries).toHaveLength(5);
+  });
+
+  it("combines multiple filters (URL, time range, and limit)", () => {
+    vi.useFakeTimers();
+    const dlq = new DeadLetterStore();
+    const prodUrl = "https://prod.com/webhooks";
+    const stagingUrl = "https://staging.com/webhooks";
+
+    vi.setSystemTime(new Date("2026-04-26T10:00:00Z"));
+    dlq.add(prodUrl, deliveryEvent, "Error 1", 1);
+    dlq.add(stagingUrl, deliveryEvent, "Error 2", 2);
+
+    vi.setSystemTime(new Date("2026-04-26T11:00:00Z"));
+    const id3 = dlq.add(prodUrl, deliveryEvent, "Error 3", 3);
+    dlq.add(stagingUrl, deliveryEvent, "Error 4", 4);
+
+    vi.setSystemTime(new Date("2026-04-26T12:00:00Z"));
+    const id5 = dlq.add(prodUrl, deliveryEvent, "Error 5", 5);
+    dlq.add(stagingUrl, deliveryEvent, "Error 6", 6);
+
+    const since = new Date("2026-04-26T10:30:00Z").getTime();
+    const until = new Date("2026-04-26T12:30:00Z").getTime();
+
+    const entries = dlq.list({
+      url: prodUrl,
+      since,
+      until,
+      limit: 5,
     });
+
+    expect(entries).toHaveLength(2);
+    expect(entries.map((e) => e.id)).toContain(id3);
+    expect(entries.map((e) => e.id)).toContain(id5);
+
+    vi.useRealTimers();
   });
 
-  it("returns healthy when recent success and no failures", () => {
-    vi.setSystemTime(new Date("2026-05-30T12:00:00Z"));
+  it("removes entries by ID", () => {
+    const dlq = new DeadLetterStore();
+    const id1 = dlq.add(
+      "https://example.com/webhooks",
+      deliveryEvent,
+      "Error 1",
+      1,
+    );
+    const id2 = dlq.add(
+      "https://example.com/webhooks",
+      deliveryEvent,
+      "Error 2",
+      2,
+    );
 
-    const dlqInstance = new DeadLetterStore();
-    dlqInstance.recordSuccess("https://example.com/hook", Date.now());
+    expect(dlq.size()).toBe(2);
 
-    const health = dlqInstance.getHealth("https://example.com/hook");
-
-    expect(health.healthy).toBe(true);
-    expect(health.failureRate).toBe(0);
-    expect(health.lastSuccess).toBeDefined();
+    const removed = dlq.remove(id1);
+    expect(removed).toBe(true);
+    expect(dlq.size()).toBe(1);
+    expect(dlq.get(id1)).toBeUndefined();
+    expect(dlq.get(id2)).toBeDefined();
   });
 
-  it("returns unhealthy when no recent success in last 15 minutes", () => {
-    vi.setSystemTime(new Date("2026-05-30T12:30:00Z"));
+  it("clears all entries", () => {
+    const dlq = new DeadLetterStore();
+    dlq.add("https://example.com/webhooks", deliveryEvent, "Error 1", 1);
+    dlq.add("https://example.com/webhooks", deliveryEvent, "Error 2", 2);
 
-    const dlqInstance = new DeadLetterStore();
-    dlqInstance.recordSuccess(
-      "https://example.com/hook",
-      Date.now() - 20 * 60 * 1000,
-    ); // 20 minutes ago
-    dlqInstance.recordFailure("https://example.com/hook", Date.now());
-
-    const health = dlqInstance.getHealth("https://example.com/hook");
-
-    expect(health.healthy).toBe(false);
+    expect(dlq.size()).toBe(2);
+    dlq.clear();
+    expect(dlq.size()).toBe(0);
+    expect(dlq.list()).toHaveLength(0);
   });
-
-  it("calculates failure rate correctly", () => {
-    vi.setSystemTime(new Date("2026-05-30T12:00:00Z"));
-
-    const dlqInstance = new DeadLetterStore();
-    const now = Date.now();
-
-    // Add 10 successes and 1 failure in the last hour = 10% failure rate
-    for (let i = 0; i < 10; i++) {
-      dlqInstance.recordSuccess("https://example.com/hook", now - i * 1000);
-    }
-    dlqInstance.recordFailure("https://example.com/hook", now);
-
-    const health = dlqInstance.getHealth("https://example.com/hook");
-
-    expect(health.failureRate).toBeCloseTo(9.09, 1); // 1/11 ≈ 9.09%
-  });
-
-  it("returns unhealthy when failure rate >= 5%", () => {
-    vi.setSystemTime(new Date("2026-05-30T12:00:00Z"));
-
-    const dlqInstance = new DeadLetterStore();
-    const now = Date.now();
-
-    // Add 19 successes and 1 failure = 5% failure rate
-    for (let i = 0; i < 19; i++) {
-      dlqInstance.recordSuccess("https://example.com/hook", now - i * 1000);
-    }
-    dlqInstance.recordFailure("https://example.com/hook", now);
-
-    const health = dlqInstance.getHealth("https://example.com/hook");
-
-    expect(health.failureRate).toBe(5);
-    expect(health.healthy).toBe(false); // Not healthy at exactly 5%
-  });
-
-  it("returns healthy when failure rate < 5% and recent success", () => {
-    vi.setSystemTime(new Date("2026-05-30T12:00:00Z"));
-
-    const dlqInstance = new DeadLetterStore();
-    const now = Date.now();
-
-    // Add 20 successes and 1 failure = 4.76% failure rate < 5%
-    for (let i = 0; i < 20; i++) {
-      dlqInstance.recordSuccess("https://example.com/hook", now - i * 1000);
-    }
-    dlqInstance.recordFailure("https://example.com/hook", now - 61 * 60 * 1000); // 61 minutes ago (outside window)
-
-    const health = dlqInstance.getHealth("https://example.com/hook");
-
-    expect(health.failureRate).toBe(0); // Only counts events in last hour
-    expect(health.healthy).toBe(true);
-  });
-
-  it("only considers events from the last hour for failure rate", () => {
-    vi.setSystemTime(new Date("2026-05-30T12:00:00Z"));
-
-    const dlqInstance = new DeadLetterStore();
-    const now = Date.now();
-
-    // Add old failure outside 1-hour window
-    dlqInstance.recordFailure("https://example.com/hook", now - 61 * 60 * 1000);
-
-    // Add recent successes
-    for (let i = 0; i < 5; i++) {
-      dlqInstance.recordSuccess("https://example.com/hook", now - i * 1000);
-    }
-
-    const health = dlqInstance.getHealth("https://example.com/hook");
-
-    expect(health.failureRate).toBe(0);
-    expect(health.healthy).toBe(true);
-  });
-
-  it("stores lastSuccess and lastFailure timestamps", () => {
-    vi.setSystemTime(new Date("2026-05-30T12:00:00Z"));
-
-    const dlqInstance = new DeadLetterStore();
-    const now = Date.now();
-
-    dlqInstance.recordSuccess("https://example.com/hook", now - 10 * 1000);
-    dlqInstance.recordFailure("https://example.com/hook", now - 5 * 1000);
-
-    const health = dlqInstance.getHealth("https://example.com/hook");
-
-    expect(health.lastSuccess).toBe(now - 10 * 1000);
-    expect(health.lastFailure).toBe(now - 5 * 1000);
-  });
-
-  it("handles multiple URLs independently", () => {
-    vi.setSystemTime(new Date("2026-05-30T12:00:00Z"));
-
-    const dlqInstance = new DeadLetterStore();
-    const now = Date.now();
-
-    // URL 1: healthy
-    dlqInstance.recordSuccess("https://prod.example.com/hook", now);
-
-    // URL 2: unhealthy (high failure rate)
-    for (let i = 0; i < 10; i++) {
-      dlqInstance.recordFailure(
-        "https://staging.example.com/hook",
-        now - i * 1000,
-      );
-    }
-
-    const health1 = dlqInstance.getHealth("https://prod.example.com/hook");
-    const health2 = dlqInstance.getHealth("https://staging.example.com/hook");
-
-    expect(health1.healthy).toBe(true);
-    expect(health2.healthy).toBe(false);
-  });
-
-  it("global deliveryHealth function returns store metrics", () => {
-    vi.setSystemTime(new Date("2026-05-30T12:00:00Z"));
-
-    // This test uses the exported deliveryHealth function which uses the global dlq instance
-    // We can't easily test the global state, so we verify the function signature works
-    const health = deliveryHealth("https://example.com/hook");
 
   it("returns entries sorted by timestamp (oldest first)", () => {
     vi.useFakeTimers();

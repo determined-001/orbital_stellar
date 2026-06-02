@@ -39,6 +39,7 @@ import type {
   WatcherNotification,
   WatcherNotificationType,
   Logger,
+  CursorStore,
 } from "./index.js";
 import { UnknownNetworkError } from "./index.js";
 
@@ -88,15 +89,22 @@ export class EventEngine {
   private server: Horizon.Server;
   private registry: Map<string, Watcher> = new Map();
   private contractRegistry: Map<string, { watcher: Watcher; filters: ContractSubscriptionFilter[] }> = new Map();
+  private subscriptionNames: Map<string, string> = new Map();
   private stopStream: HorizonStreamStopper | null = null;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private reconnectAttempt = 0;
   private pendingReconnectSuccessAttempt: number | null = null;
   private readonly reconnectConfig: Required<ReconnectConfig>;
   private isRunning = false;
+  private lastEventAt: string | null = null;
+  private horizonCursor?: string;
   private filters: Map<string, (event: NormalizedEvent) => boolean> = new Map();
   private log: Logger;
-  private lastEventAt: string | null = null;
+  private cursorStore?: CursorStore;
+  private streamKey: string;
+  private cursorFailureThreshold: number;
+  private consecutiveCursorFailures = 0;
+  private isCursorStoreUnhealthy = false;
 
   /**
    * Creates a new EventEngine instance.
@@ -127,6 +135,9 @@ export class EventEngine {
       ...config.reconnect,
     };
     this.log = config.logger ?? noop;
+    this.cursorStore = config.cursorStore;
+    this.streamKey = config.streamKey ?? "pulse-core-cursor";
+    this.cursorFailureThreshold = config.cursorFailureThreshold ?? 5;
   }
 
   /**
@@ -141,19 +152,23 @@ export class EventEngine {
     if (existingWatcher) {
       if (options?.filter) {
         this.log.warn(
-          `[pulse-core] subscribe() called for address ${address} which already has an active watcher — filter option ignored.`
+          `[pulse-core] subscribe() called for ${this.describeSubscription(address)} which already has an active watcher — filter option ignored.`
         );
       }
       return existingWatcher;
     }
 
     const watcher = new Watcher(address);
+    if (options?.name !== undefined) {
+      this.subscriptionNames.set(address, options.name);
+    }
     if (options?.filter) {
       this.filters.set(address, options.filter);
     }
     watcher.addStopHandler(() => {
       this.registry.delete(address);
       this.filters.delete(address);
+      this.subscriptionNames.delete(address);
     });
     this.registry.set(address, watcher);
     return watcher;
@@ -192,8 +207,12 @@ export class EventEngine {
 
     const watcher = new Watcher(id);
     const filters = options?.filters ?? [];
+    if (options?.name !== undefined) {
+      this.subscriptionNames.set(id, options.name);
+    }
     watcher.addStopHandler(() => {
       this.contractRegistry.delete(id);
+      this.subscriptionNames.delete(id);
     });
     this.contractRegistry.set(id, { watcher, filters });
     return watcher;
@@ -213,12 +232,14 @@ export class EventEngine {
    * tearing it down.
    */
   unsubscribeAllContracts(): void {
-    const notification = {
-      type: "engine.stopped" as const,
-      attempt: 0,
-      emittedAt: new Date().toISOString(),
-    };
-    for (const entry of this.contractRegistry.values()) {
+    for (const [id, entry] of this.contractRegistry.entries()) {
+      const name = this.subscriptionNames.get(id);
+      const notification = {
+        type: "engine.stopped" as const,
+        attempt: 0,
+        emittedAt: new Date().toISOString(),
+        ...(name !== undefined ? { name } : {}),
+      };
       entry.watcher.emit("engine.stopped", notification);
       entry.watcher.stop();
     }
@@ -246,8 +267,10 @@ export class EventEngine {
     return {
       running: this.isRunning,
       watcherCount: this.registry.size,
+      contractWatcherCount: this.contractRegistry.size,
       lastEventAt: this.lastEventAt,
       reconnectAttempt: this.reconnectAttempt,
+      pausedSources: this.pausedSources.size > 0 ? Array.from(this.pausedSources) : undefined,
     };
   }
 
@@ -268,6 +291,35 @@ export class EventEngine {
   }
 
   /**
+   * Pauses event emission from a specific source (Horizon or Soroban).
+   * Paused sources stop emitting events but the stream remains open.
+   * Cursors persist via CursorStore so resume continues from the last point.
+   * @param source - The source to pause: "horizon" or "soroban"
+   */
+  pauseSource(source: "horizon" | "soroban"): void {
+    if (this.pausedSources.has(source)) {
+      this.log.warn(`[pulse-core] pauseSource("${source}") called but source is already paused.`);
+      return;
+    }
+    this.pausedSources.add(source);
+    this.log.info(`[pulse-core] Source "${source}" paused.`);
+  }
+
+  /**
+   * Resumes event emission from a specific paused source.
+   * Continues from the last delivered cursor position.
+   * @param source - The source to resume: "horizon" or "soroban"
+   */
+  resumeSource(source: "horizon" | "soroban"): void {
+    if (!this.pausedSources.has(source)) {
+      this.log.warn(`[pulse-core] resumeSource("${source}") called but source is not paused.`);
+      return;
+    }
+    this.pausedSources.delete(source);
+    this.log.info(`[pulse-core] Source "${source}" resumed.`);
+  }
+
+  /**
    * Stops the SSE stream and all active watchers.
    * Cleans up all resources and resets reconnection state.
    */
@@ -278,6 +330,7 @@ export class EventEngine {
     this.lastEventAt = null;
     this.closeStream();
     this.isRunning = false;
+    this.horizonCursor = undefined;
 
     this.notifyWatchers("engine.stopped", {
       type: "engine.stopped",
@@ -290,10 +343,41 @@ export class EventEngine {
     }
   }
 
+  status(): EngineStatus {
+    const horizon = {
+      running: this.isRunning,
+      lastEventAt: this.lastEventAt,
+      reconnectAttempt: this.reconnectAttempt,
+      cursor: this.horizonCursor,
+    };
+
+    const soroban = {
+      running: false,
+      lastEventAt: null,
+      reconnectAttempt: 0,
+    };
+
+    const sources = { horizon, soroban };
+    const lastEventAt = [horizon.lastEventAt, soroban.lastEventAt].filter(
+      (value): value is string => value !== null
+    );
+
+    return {
+      running: horizon.running || soroban.running,
+      watcherCount: this.registry.size,
+      lastEventAt: lastEventAt.length
+        ? lastEventAt.sort()[lastEventAt.length - 1]
+        : null,
+      reconnectAttempt: Math.max(horizon.reconnectAttempt, soroban.reconnectAttempt),
+      sources,
+    };
+  }
+
   private openStream(isReconnect: boolean): void {
     this.closeStream();
     this.clearReconnectTimer();
     this.isRunning = true;
+    this.horizonCursor = "now";
     this.pendingReconnectSuccessAttempt = isReconnect
       ? this.reconnectAttempt
       : null;
@@ -319,6 +403,7 @@ export class EventEngine {
           return;
         }
 
+        this.lastEventAt = event.timestamp;
         this.route(event);
       },
       onerror: (error) => {
@@ -513,9 +598,43 @@ export class EventEngine {
     eventType: WatcherNotificationType,
     event: WatcherNotification
   ): void {
-    for (const watcher of this.registry.values()) {
-      watcher.emit(eventType, event);
+    for (const [address, watcher] of this.registry.entries()) {
+      const name = this.subscriptionNames.get(address);
+      watcher.emit(
+        eventType,
+        name !== undefined ? { ...event, name } : event
+      );
     }
+
+    for (const [id, { watcher }] of this.contractRegistry.entries()) {
+      const name = this.subscriptionNames.get(id);
+      watcher.emit(
+        eventType,
+        name !== undefined ? { ...event, name } : event
+      );
+    }
+  }
+
+  private handleCursorFailure(err: unknown): void {
+    this.consecutiveCursorFailures++;
+    this.log.warn("[pulse-core] cursorStore.set() failed.", {
+      key: this.streamKey,
+      consecutiveFailures: this.consecutiveCursorFailures,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    if (this.consecutiveCursorFailures >= this.cursorFailureThreshold) {
+      this.isCursorStoreUnhealthy = true;
+      this.notifyWatchers("engine.cursor_store_unhealthy", {
+        type: "engine.cursor_store_unhealthy",
+        attempt: 0,
+        emittedAt: new Date().toISOString(),
+      });
+    }
+  }
+
+  private describeSubscription(key: string): string {
+    const name = this.subscriptionNames.get(key);
+    return name !== undefined ? `${name} (${key})` : key;
   }
 
   private normalize(record: unknown): NormalizedEventOrPending | null {
@@ -525,7 +644,7 @@ export class EventEngine {
       const requiredFields = ["to", "from", "amount", "created_at"] as const;
       for (const field of requiredFields) {
         if (typeof r[field] !== "string" || r[field] === "") {
-          this.log.warn("[pulse-core] normalize() dropping payment record.", { field, record: raw });
+          this.log.warn("[pulse-core] normalize() dropping payment record.", { field, record });
           return null;
         }
       }
@@ -1091,7 +1210,7 @@ export class EventEngine {
       return filter(event);
     } catch (err) {
       this.log.warn(
-        `[pulse-core] subscribe() filter threw for address ${address} — treating as reject.`,
+        `[pulse-core] subscribe() filter threw for ${this.describeSubscription(address)} — treating as reject.`,
         err
       );
       return false;
@@ -1120,6 +1239,16 @@ export class EventEngine {
   }
 
   private route(event: NormalizedEventOrPending): void {
+    // Check if Soroban source is paused for contract events
+    if ((event.type === "contract.invoked" || event.type === "contract.emitted") && this.pausedSources.has("soroban")) {
+      return;
+    }
+
+    // Check if Horizon source is paused for all other events
+    if (event.type !== "contract.invoked" && event.type !== "contract.emitted" && this.pausedSources.has("horizon")) {
+      return;
+    }
+
     if (event.type === "account.created") {
       const funderWatcher = this.registry.get(event.funder);
       if (funderWatcher && this.passesFilter(event.funder, event)) {
