@@ -6,6 +6,7 @@ export type Network = "mainnet" | "testnet";
 
 export type PaymentEventType = "payment.received" | "payment.sent";
 export type AccountOptionsEventType = "account.options_changed";
+export type DecodeFailedEventType = "event.decode_failed";
 export type WatcherNotificationType =
   | "engine.reconnecting"
   | "engine.reconnected";
@@ -45,7 +46,13 @@ export type AccountOptionsEvent = {
   raw: unknown;
 };
 
-export type NormalizedEvent = PaymentEvent | AccountOptionsEvent;
+export type DecodeFailedEvent = {
+  type: DecodeFailedEventType;
+  timestamp: string;
+  raw: unknown;
+};
+
+export type NormalizedEvent = PaymentEvent | AccountOptionsEvent | DecodeFailedEvent;
 
 export type WatcherNotification = {
   type: WatcherNotificationType;
