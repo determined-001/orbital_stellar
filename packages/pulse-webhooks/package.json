@@ -1,6 +1,7 @@
 {
   "name": "@orbital/pulse-webhooks",
   "private": true,
+  "type": "module",
   "version": "0.0.0",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -14,6 +15,7 @@
   "devDependencies": {
     "@types/node": "^25.6.0",
     "tsx": "^4.0.0",
-    "vitest": "^4.1.5"
+    "vite": "^7.3.3",
+    "vitest": "^4.1.7"
   }
 }

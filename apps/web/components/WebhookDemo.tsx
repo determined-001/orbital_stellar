@@ -2,8 +2,6 @@
 
 import { useState } from 'react'
 
-const SERVER = process.env.NEXT_PUBLIC_SERVER_URL ?? 'http://localhost:3000'
-
 const DOTS = [
   { color: '#FF5F57' },
   { color: '#FEBC2E' },
@@ -23,71 +21,64 @@ const inputStyle: React.CSSProperties = {
   boxSizing: 'border-box',
 }
 
+interface SampleResponse {
+  event: Record<string, unknown>
+  payload: string
+  headers: Record<string, string>
+  secret?: string
+  verify: { node: string; edge: string }
+}
+
+interface LimitEnvelope {
+  error: 'demo_limit_reached'
+  reason: string
+  message: string
+  upgradeUrl: string
+}
+
+type State =
+  | { kind: 'idle' }
+  | { kind: 'loading' }
+  | { kind: 'ok'; data: SampleResponse }
+  | { kind: 'limit'; data: LimitEnvelope }
+  | { kind: 'error'; message: string }
+
 export default function WebhookDemo() {
   const [stellarAddress, setStellarAddress] = useState('')
-  const [webhookUrl, setWebhookUrl] = useState('')
   const [signingSecret, setSigningSecret] = useState('')
-  const [response, setResponse] = useState<{ ok: boolean; status?: number; body: string } | null>(null)
-  const [loading, setLoading] = useState(false)
+  const [state, setState] = useState<State>({ kind: 'idle' })
 
-  async function handleRegister() {
-    if (!stellarAddress.trim() || !webhookUrl.trim()) {
-      setResponse({
-        ok: false,
-        body: 'Address and webhook URL are required',
-      })
-      return
-    }
-
-    if (!signingSecret.trim()) {
-      setResponse({
-        ok: false,
-        body: 'Signing secret is required',
-      })
-      return
-    }
-
-    setLoading(true)
-    setResponse(null)
-
+  async function handleSign() {
+    setState({ kind: 'loading' })
     try {
-      const res = await fetch(`${SERVER}/webhooks/register`, {
+      const res = await fetch('/api/webhook-sample', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-
-        // ✅ MUST match server contract (apps/server/src/routes.ts)
         body: JSON.stringify({
-          address: stellarAddress.trim(),
-          url: webhookUrl.trim(),
-          secret: signingSecret.trim(),
+          address: stellarAddress.trim() || undefined,
+          secret: signingSecret.trim() || undefined,
         }),
       })
 
-      const data = await res.json().catch(() => null)
-
-      if (!res.ok) {
-        setResponse({
-          ok: false,
-          status: res.status,
-          body: data?.error || 'Webhook registration failed',
-        })
+      if (res.status === 429) {
+        const body = (await res.json()) as LimitEnvelope
+        setState({ kind: 'limit', data: body })
         return
       }
-
-      setResponse({
-        ok: true,
-        status: res.status,
-        body: JSON.stringify(data, null, 2),
-      })
+      if (!res.ok) {
+        setState({ kind: 'error', message: `HTTP ${res.status}` })
+        return
+      }
+      const data = (await res.json()) as SampleResponse
+      setState({ kind: 'ok', data })
     } catch (err) {
-      setResponse({
-        ok: false,
-        body: err instanceof Error ? err.message : 'Request failed.',
+      setState({
+        kind: 'error',
+        message: err instanceof Error ? err.message : 'Request failed.',
       })
-    } finally {
-      setLoading(false)
     }
   }
+
   return (
     <section style={{ padding: '120px 32px' }}>
       <div
@@ -112,7 +103,7 @@ export default function WebhookDemo() {
               marginBottom: '16px',
             }}
           >
-            Register a webhook in one call.
+            See a signed webhook in one call.
           </h2>
           <p
             style={{
@@ -122,7 +113,7 @@ export default function WebhookDemo() {
               lineHeight: 1.6,
             }}
           >
-            Point Orbit Stellar at your endpoint — we handle delivery, retries, and HMAC signing.
+            Generate an HMAC-SHA256-signed sample payload — exactly what Orbital sends your endpoint. Verify it locally with <code>verifyWebhook</code>.
           </p>
         </div>
 
@@ -166,7 +157,7 @@ export default function WebhookDemo() {
                 color: 'var(--muted)',
               }}
             >
-              webhook.register.ts
+              webhook.sign.ts
             </span>
           </div>
 
@@ -176,30 +167,23 @@ export default function WebhookDemo() {
               type="text"
               value={stellarAddress}
               onChange={(e) => setStellarAddress(e.target.value)}
-              placeholder="G... (Stellar address)"
-              style={inputStyle}
-            />
-            <input
-              type="text"
-              value={webhookUrl}
-              onChange={(e) => setWebhookUrl(e.target.value)}
-              placeholder="https://myapp.com/hooks/stellar"
+              placeholder="G... (Stellar address — optional)"
               style={inputStyle}
             />
             <input
               type="text"
               value={signingSecret}
               onChange={(e) => setSigningSecret(e.target.value)}
-              placeholder="whsec_..."
+              placeholder="whsec_... (your secret — optional, we'll generate one)"
               style={inputStyle}
             />
           </div>
 
-          {/* Button */}
+          {/* Button + result */}
           <div style={{ padding: '16px' }}>
             <button
-              onClick={handleRegister}
-              disabled={loading}
+              onClick={handleSign}
+              disabled={state.kind === 'loading'}
               style={{
                 width: '100%',
                 background: 'var(--accent)',
@@ -209,41 +193,100 @@ export default function WebhookDemo() {
                 fontSize: '14px',
                 padding: '12px',
                 border: 'none',
-                cursor: loading ? 'not-allowed' : 'pointer',
-                opacity: loading ? 0.6 : 1,
+                cursor: state.kind === 'loading' ? 'not-allowed' : 'pointer',
+                opacity: state.kind === 'loading' ? 0.6 : 1,
               }}
             >
-              {loading ? 'Registering...' : 'Register webhook'}
+              {state.kind === 'loading' ? 'Signing...' : 'Generate signed sample'}
             </button>
 
-            {/* Response */}
-            {response && (
-              <div style={{ marginTop: '16px' }}>
-                {response.status && (
-                  <p
-                    style={{
-                      fontFamily: 'var(--font-mono)',
-                      fontSize: '13px',
-                      color: response.ok ? '#c3e88d' : '#FF5370',
-                      marginBottom: '8px',
-                    }}
-                  >
-                    HTTP {response.status}
-                  </p>
-                )}
-                <pre
+            {state.kind === 'limit' && (
+              <div
+                style={{
+                  marginTop: '16px',
+                  padding: '14px',
+                  background: '#2a2a00',
+                  border: '1px solid #444400',
+                  color: '#facc15',
+                  fontFamily: 'var(--font-sans)',
+                  fontSize: '13px',
+                }}
+              >
+                <p style={{ marginBottom: '10px' }}>{state.data.message}</p>
+                <a
+                  href={state.data.upgradeUrl}
                   style={{
-                    fontFamily: 'var(--font-mono)',
-                    fontSize: '13px',
-                    color: response.ok ? 'var(--text)' : '#FF5370',
-                    background: 'var(--surface2)',
-                    padding: '12px',
-                    overflowX: 'auto',
-                    margin: 0,
+                    display: 'inline-block',
+                    background: 'var(--accent)',
+                    color: '#000',
+                    fontWeight: 700,
+                    fontSize: '12px',
+                    padding: '8px 14px',
+                    textDecoration: 'none',
                   }}
                 >
-                  {response.body}
-                </pre>
+                  Upgrade to Orbital Cloud →
+                </a>
+              </div>
+            )}
+
+            {state.kind === 'error' && (
+              <p
+                style={{
+                  marginTop: '16px',
+                  fontFamily: 'var(--font-mono)',
+                  fontSize: '13px',
+                  color: '#FF5370',
+                }}
+              >
+                {state.message}
+              </p>
+            )}
+
+            {state.kind === 'ok' && (
+              <div style={{ marginTop: '16px', fontFamily: 'var(--font-mono)', fontSize: '12px' }}>
+                <p style={{ color: '#c3e88d', marginBottom: '8px' }}>HTTP 200</p>
+                {state.data.secret && (
+                  <p style={{ color: 'var(--muted2)', fontSize: '11px', marginBottom: '10px' }}>
+                    Generated secret (save this): <code style={{ color: 'var(--accent)' }}>{state.data.secret}</code>
+                  </p>
+                )}
+                <details open>
+                  <summary style={{ color: 'var(--muted2)', cursor: 'pointer', marginBottom: '6px' }}>
+                    Signed headers
+                  </summary>
+                  <pre
+                    style={{
+                      color: 'var(--text)',
+                      background: 'var(--surface2)',
+                      padding: '10px',
+                      margin: 0,
+                      overflowX: 'auto',
+                      fontSize: '11px',
+                    }}
+                  >
+                    {Object.entries(state.data.headers)
+                      .map(([k, v]) => `${k}: ${v}`)
+                      .join('\n')}
+                  </pre>
+                </details>
+                <details style={{ marginTop: '10px' }}>
+                  <summary style={{ color: 'var(--muted2)', cursor: 'pointer', marginBottom: '6px' }}>
+                    Payload
+                  </summary>
+                  <pre
+                    style={{
+                      color: 'var(--text)',
+                      background: 'var(--surface2)',
+                      padding: '10px',
+                      margin: 0,
+                      overflowX: 'auto',
+                      fontSize: '11px',
+                    }}
+                  >
+                    {JSON.stringify(state.data.event, null, 2)}
+                  </pre>
+                </details>
               </div>
             )}
           </div>
