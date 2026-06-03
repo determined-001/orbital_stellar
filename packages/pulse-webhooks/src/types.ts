@@ -1,22 +1,6 @@
-export type Span = {
-  setAttribute(key: string, value: string | number | boolean): void;
-  end(): void;
-};
+import type { RetryQueue } from "./RetryQueue.js";
 
-export type Tracer = {
-  startSpan(name: string, attrs?: Record<string, string | number | boolean>): Span;
-};
-
-/** Outcome of a single delivery attempt. */
-export type WebhookAttemptStatus = "success" | "failure";
-
-/** Final outcome of a delivery after all attempts/retries are resolved. */
-export type WebhookTerminalOutcome = "success" | "failure" | "dropped";
-
-export type WebhookMetrics = {
-  recordAttempt(url: string, attempt: number, durationMs: number, status: WebhookAttemptStatus): void;
-  recordTerminal(url: string, outcome: WebhookTerminalOutcome): void;
-};
+export type { RetryRecord, RetryQueue } from "./RetryQueue.js";
 
 export type WebhookConfig = {
   url: string | string[];
@@ -56,18 +40,3 @@ export type VerifyWebhookOptions = {
    */
   schema?: (event: import("@orbital-stellar/pulse-core").NormalizedEvent) => boolean;
 };
-
-export interface RetryRecord {
-  id?: string | number;
-  url: string;
-  event: any;
-  attempt: number;
-  nextAttemptAt: number;
-}
-
-export interface RetryQueue {
-  enqueue(record: RetryRecord): Promise<void>;
-  dequeue(): Promise<RetryRecord | null>;
-  evictNewest(): Promise<RetryRecord | null>;
-  size(): Promise<number>;
-}
