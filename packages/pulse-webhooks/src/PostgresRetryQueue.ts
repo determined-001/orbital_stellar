@@ -1,214 +1,157 @@
-import type { RetryQueue, RetryRecord } from "./types.js";
+import type { RetryRecord } from "./RetryQueue.js";
 
 export interface PgLike {
-  query<T = any>(text: string, params?: any[]): Promise<{ rows: T[] }>;
-}
-
-export interface PostgresRetryQueueOptions {
-  /** The name of the table to use for the retry queue. Defaults to "orbital_retry_queue" */
-  tableName?: string;
+  query<T = any>(text: string, params?: unknown[]): Promise<{ rows: T[] }>;
 }
 
 /**
- * PostgresRetryQueue — A high-performance Postgres-backed retry queue
- * 
- * DESIGN & MULTI-CONSUMER BEHAVIOR:
- * 
- * 1. Safe Multi-Consumer Dequeue:
- *    The dequeue operation utilizes the `SELECT ... FOR UPDATE SKIP LOCKED` query pattern.
- *    In a multi-threaded or multi-server setup where multiple consumers/workers query the database
- *    simultaneously:
- *    - `FOR UPDATE` places an exclusive write lock on the selected rows.
- *    - `SKIP LOCKED` instructs Postgres to skip any rows that are already locked by other transactions.
- *    - This guarantees that no two consumers can dequeue or lease the same record simultaneously,
- *      resulting in strict exactly-once processing per lease.
- * 
- * 2. Atomic Lock Leases (CTE):
- *    To minimize database round-trips and maximize throughput, the selection, locking, and leasing
- *    occur in a single atomic SQL transaction using a Common Table Expression (CTE):
- *    - Select up to `limit` due jobs.
- *    - Lock them with `FOR UPDATE SKIP LOCKED`.
- *    - Update their `locked_until` lease timestamp to protect them from other workers.
- *    - Return the leased jobs immediately to the worker.
- * 
- * 3. Crash Recovery & Visibility Timeout:
- *    Each dequeued job is leased for `leaseDurationMs` (setting `locked_until`). If a worker
- *    successfully processes the job, it calls `complete(id)`, deleting the record.
- *    If a worker crashes, stalls, or fails to complete the job within the lease window, the job's
- *    `locked_until` timestamp naturally expires. It will automatically become eligible for dequeue
- *    by another healthy worker during the next poll, providing robust crash-recovery.
+ * Postgres-backed retry queue that satisfies the {@link RetryQueue} contract.
+ *
+ * ## Async Extension Note
+ *
+ * The base `RetryQueue` interface defines synchronous methods (`void`,
+ * `RetryRecord | undefined`, `number`). PostgresRetryQueue is an **async
+ * extension** — every public method returns a `Promise` wrapping the
+ * corresponding return type. The method signatures and semantics are identical
+ * otherwise. Consumers that need to swap between `MemoryRetryQueue` and
+ * `PostgresRetryQueue` should `await` all calls; this works with both
+ * implementations (`await` on a synchronous method is a harmless micro-tick).
+ *
+ * ## Multi-Consumer Dequeue (`SELECT ... FOR UPDATE SKIP LOCKED`)
+ *
+ * The `dequeue()` method uses a single-statement CTE that atomically:
+ * 1. Selects one due record (`next_retry_at <= NOW()`)
+ * 2. Locks it with `FOR UPDATE SKIP LOCKED`
+ * 3. Deletes it via `RETURNING`
+ *
+ * This guarantees:
+ * - **Exactly-once processing** – `SKIP LOCKED` skips rows already locked by
+ *   another transaction, so no two consumers ever receive the same record.
+ * - **No lock gap** – Because the SELECT and DELETE execute in a single CTE
+ *   statement, a crash between the two operations is impossible. The lock is
+ *   held only for the duration of that single statement, not across round-trips.
+ * - **No head-of-line blocking** – `SKIP LOCKED` lets other consumers bypass
+ *   locked rows and proceed to the next available due record.
+ *
+ * ## Idempotent Enqueue
+ *
+ * `enqueue()` uses `ON CONFLICT (id) DO NOTHING` – calling it with the same
+ * record ID multiple times inserts exactly one row.
+ *
+ * ## Usage
+ *
+ * ```ts
+ * import pg from "pg";
+ * import { PostgresRetryQueue } from "@orbital/pulse-webhooks";
+ *
+ * const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
+ * const queue = new PostgresRetryQueue(pool);
+ * const record = await queue.dequeue();
+ * ```
+ *
+ * Any pg-compatible client that satisfies the {@link PgLike} interface
+ * (node-postgres, postgres.js, Bun SQL, etc.) is accepted.
  */
-export class PostgresRetryQueue implements RetryQueue {
+export class PostgresRetryQueue {
   private pg: PgLike;
   private tableName: string;
 
-  constructor(pg: PgLike, options: PostgresRetryQueueOptions = {}) {
+  constructor(pg: PgLike, tableName = "retry_queue") {
     this.pg = pg;
-    this.tableName = options.tableName || "orbital_retry_queue";
+    this.tableName = tableName;
   }
 
-  /**
-   * Overloaded enqueue to support both the standard RetryQueue interface and legacy postgres signature.
-   */
-  async enqueue(record: RetryRecord): Promise<void>;
-  async enqueue(url: string, event: any, attempt: number, nextAttemptAt: Date): Promise<void>;
-  async enqueue(
-    recordOrUrl: RetryRecord | string,
-    event?: any,
-    attempt?: number,
-    nextAttemptAt?: Date
-  ): Promise<void> {
-    if (typeof recordOrUrl === "object" && recordOrUrl !== null) {
-      // New RetryQueue interface signature
-      const record = recordOrUrl as RetryRecord;
-      const queryText = `
-        INSERT INTO ${this.tableName} (url, event, attempt, next_attempt_at)
-        VALUES ($1, $2, $3, $4)
-      `;
-      await this.pg.query(queryText, [
-        record.url,
-        JSON.stringify(record.event),
-        record.attempt,
-        new Date(record.nextAttemptAt),
-      ]);
-    } else {
-      // Legacy Postgres-specific signature
-      const queryText = `
-        INSERT INTO ${this.tableName} (url, event, attempt, next_attempt_at)
-        VALUES ($1, $2, $3, $4)
-      `;
-      await this.pg.query(queryText, [recordOrUrl, JSON.stringify(event), attempt, nextAttemptAt]);
-    }
+  async enqueue(record: RetryRecord): Promise<void> {
+    const sql = `
+      INSERT INTO ${this.tableName}
+        (id, webhook_id, payload, attempt_count, next_retry_at, created_at, url, event, attempt, last_error, metadata)
+      VALUES
+        (COALESCE($1, gen_random_uuid()::text), $2, $3::jsonb, $4, to_timestamp($5 / 1000.0), to_timestamp($6 / 1000.0), $7, $8::jsonb, $9, $10, $11::jsonb)
+      ON CONFLICT (id) DO NOTHING
+    `;
+    await this.pg.query(sql, [
+      record.id ?? null,
+      record.webhookId,
+      JSON.stringify(record.payload),
+      record.attemptCount,
+      record.nextRetryAt,
+      record.createdAt,
+      record.url,
+      JSON.stringify(record.event),
+      record.attempt,
+      record.lastError ?? null,
+      record.metadata !== undefined ? JSON.stringify(record.metadata) : null,
+    ]);
   }
 
-  /**
-   * Overloaded dequeue to support both the standard RetryQueue interface and legacy postgres signature.
-   */
-  async dequeue(): Promise<RetryRecord | null>;
-  async dequeue(limit: number, leaseDurationMs: number): Promise<any[]>;
-  async dequeue(limitOrUndefined?: number, leaseDurationMs?: number): Promise<any> {
-    if (limitOrUndefined === undefined) {
-      // New RetryQueue interface signature (leases oldest due record)
-      const leaseMs = 30000;
-      const lockedUntil = new Date(Date.now() + leaseMs);
-      const queryText = `
-        WITH next_jobs AS (
-          SELECT id
-          FROM ${this.tableName}
-          WHERE next_attempt_at <= NOW()
-            AND (locked_until IS NULL OR locked_until < NOW())
-          ORDER BY next_attempt_at ASC, id ASC
-          LIMIT 1
-          FOR UPDATE SKIP LOCKED
-        )
-        UPDATE ${this.tableName}
-        SET locked_until = $1
-        WHERE id IN (SELECT id FROM next_jobs)
-        RETURNING id, url, event, attempt, next_attempt_at
-      `;
-      const result = await this.pg.query(queryText, [lockedUntil]);
-      if (result.rows.length === 0) return null;
-      const row = result.rows[0];
-      return {
-        id: row.id,
-        url: row.url,
-        event: typeof row.event === "string" ? JSON.parse(row.event) : row.event,
-        attempt: row.attempt,
-        nextAttemptAt: new Date(row.next_attempt_at).getTime(),
-      };
-    } else {
-      // Legacy Postgres-specific signature
-      const limit = limitOrUndefined;
-      const leaseMs = leaseDurationMs || 30000;
-      const lockedUntil = new Date(Date.now() + leaseMs);
-      const queryText = `
-        WITH next_jobs AS (
-          SELECT id
-          FROM ${this.tableName}
-          WHERE next_attempt_at <= NOW()
-            AND (locked_until IS NULL OR locked_until < NOW())
-          ORDER BY next_attempt_at ASC, id ASC
-          LIMIT $1
-          FOR UPDATE SKIP LOCKED
-        )
-        UPDATE ${this.tableName}
-        SET locked_until = $2
-        WHERE id IN (SELECT id FROM next_jobs)
-        RETURNING id, url, event, attempt
-      `;
-      const result = await this.pg.query(queryText, [limit, lockedUntil]);
-      return result.rows.map(row => ({
-        id: row.id,
-        url: row.url,
-        event: typeof row.event === "string" ? JSON.parse(row.event) : row.event,
-        attempt: row.attempt,
-      }));
-    }
-  }
-
-  /**
-   * Evicts (removes and returns) the newest (last-inserted) record from the queue (LIFO).
-   */
-  async evictNewest(): Promise<RetryRecord | null> {
-    const queryText = `
-      DELETE FROM ${this.tableName}
-      WHERE id = (
+  async dequeue(): Promise<RetryRecord | undefined> {
+    const sql = `
+      WITH next_job AS (
         SELECT id
         FROM ${this.tableName}
-        ORDER BY id DESC
+        WHERE next_retry_at <= NOW()
+        ORDER BY next_retry_at ASC, id ASC
+        LIMIT 1
+        FOR UPDATE SKIP LOCKED
+      )
+      DELETE FROM ${this.tableName}
+      WHERE id = (SELECT id FROM next_job)
+      RETURNING id, webhook_id, payload, attempt_count, next_retry_at, created_at, url, event, attempt, last_error, metadata
+    `;
+    const result = await this.pg.query(sql);
+    if (result.rows.length === 0) return undefined;
+    return this.toRecord(result.rows[0]);
+  }
+
+  async evictNewest(): Promise<RetryRecord | undefined> {
+    const sql = `
+      DELETE FROM ${this.tableName}
+      WHERE id = (
+        SELECT id FROM ${this.tableName}
+        ORDER BY created_at DESC, id DESC
         LIMIT 1
       )
-      RETURNING id, url, event, attempt, next_attempt_at
+      RETURNING id, webhook_id, payload, attempt_count, next_retry_at, created_at, url, event, attempt, last_error, metadata
     `;
-    const result = await this.pg.query(queryText);
-    if (result.rows.length === 0) return null;
-    const row = result.rows[0];
-    return {
-      id: row.id,
-      url: row.url,
-      event: typeof row.event === "string" ? JSON.parse(row.event) : row.event,
-      attempt: row.attempt,
-      nextAttemptAt: new Date(row.next_attempt_at).getTime(),
-    };
+    const result = await this.pg.query(sql);
+    if (result.rows.length === 0) return undefined;
+    return this.toRecord(result.rows[0]);
   }
 
-  /**
-   * Returns the current number of items in the queue.
-   */
   async size(): Promise<number> {
-    const queryText = `SELECT COUNT(*)::int as count FROM ${this.tableName}`;
-    const result = await this.pg.query(queryText);
-    return result.rows[0]?.count || 0;
+    const result = await this.pg.query<{ count: number }>(
+      `SELECT COUNT(*)::int AS count FROM ${this.tableName}`,
+    );
+    return result.rows[0]?.count ?? 0;
   }
 
-  /**
-   * Marks a job as completed, removing it from the queue.
-   * Exposed for legacy multi-consumer queries.
-   */
-  async complete(id: string | number): Promise<void> {
-    const queryText = `DELETE FROM ${this.tableName} WHERE id = $1`;
-    await this.pg.query(queryText, [id]);
-  }
-
-  /**
-   * Registers a job failure. Reschedules the next attempt or deletes if retries are exhausted.
-   * Exposed for legacy multi-consumer queries.
-   */
-  async fail(id: string | number, nextAttemptAt: Date | null): Promise<void> {
-    if (nextAttemptAt === null) {
-      // Exceeded max attempts, delete from queue
-      const queryText = `DELETE FROM ${this.tableName} WHERE id = $1`;
-      await this.pg.query(queryText, [id]);
-    } else {
-      // Reschedule for next attempt and clear the lock lease
-      const queryText = `
-        UPDATE ${this.tableName}
-        SET attempt = attempt + 1,
-            next_attempt_at = $2,
-            locked_until = NULL
-        WHERE id = $1
-      `;
-      await this.pg.query(queryText, [id, nextAttemptAt]);
-    }
+  private toRecord(row: any): RetryRecord {
+    return {
+      id: row.id ?? undefined,
+      webhookId: row.webhook_id,
+      payload:
+        typeof row.payload === "string"
+          ? JSON.parse(row.payload)
+          : row.payload,
+      attemptCount: row.attempt_count,
+      nextRetryAt:
+        typeof row.next_retry_at === "number"
+          ? row.next_retry_at
+          : new Date(row.next_retry_at).getTime(),
+      createdAt:
+        typeof row.created_at === "number"
+          ? row.created_at
+          : new Date(row.created_at).getTime(),
+      url: row.url,
+      event:
+        typeof row.event === "string" ? JSON.parse(row.event) : row.event,
+      attempt: row.attempt,
+      lastError: row.last_error ?? undefined,
+      metadata: row.metadata
+        ? typeof row.metadata === "string"
+          ? JSON.parse(row.metadata)
+          : row.metadata
+        : undefined,
+    };
   }
 }

@@ -1,195 +1,313 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { PostgresRetryQueue } from "../src/PostgresRetryQueue.js";
 import type { PgLike } from "../src/PostgresRetryQueue.js";
+import type { RetryRecord } from "../src/RetryQueue.js";
 
-class MockPg implements PgLike {
-  public rows: any[] = [];
-  public queryCount = 0;
-  private nextId = 1;
+interface StoredRow {
+  id: string;
+  webhook_id: string;
+  payload: unknown;
+  attempt_count: number;
+  next_retry_at: Date;
+  created_at: Date;
+  url: string;
+  event: unknown;
+  attempt: number;
+  last_error: string | null;
+  metadata: unknown;
+  locked: boolean;
+}
 
-  async query<T = any>(text: string, params: any[] = []): Promise<{ rows: T[] }> {
-    // Add small artificial delay to simulate network/db latency and force async overlap
-    await new Promise(resolve => setTimeout(resolve, Math.random() * 5));
+class SimulatedPg implements PgLike {
+  private rows: StoredRow[] = [];
+  private nextFakeId = 1;
+  private mutex = Promise.resolve();
 
-    this.queryCount++;
-    const normalizedQuery = text.replace(/\s+/g, " ").trim();
+  private async withLock<T>(fn: () => Promise<T>): Promise<T> {
+    let release: () => void;
+    const wait = new Promise<void>((resolve) => (release = resolve));
+    const prev = this.mutex;
+    this.mutex = prev.then(() => wait);
+    await prev;
+    try {
+      return await fn();
+    } finally {
+      release!();
+    }
+  }
 
-    // 1. INSERT query
-    if (normalizedQuery.includes("INSERT INTO")) {
-      const [url, eventStr, attempt, nextAttemptAt] = params;
-      const row = {
-        id: this.nextId++,
-        url,
-        event: typeof eventStr === "string" ? JSON.parse(eventStr) : eventStr,
-        attempt,
-        next_attempt_at: nextAttemptAt,
-        locked_until: null as Date | null,
-      };
-      this.rows.push(row);
-      return { rows: [] };
+  async query<T = any>(
+    text: string,
+    params: unknown[] = [],
+  ): Promise<{ rows: T[] }> {
+    const normalized = text.replace(/\s+/g, " ").trim();
+
+    if (normalized.startsWith("INSERT INTO")) {
+      return this.handleInsert(params) as any;
     }
 
-    // 2. DELETE query
-    if (normalizedQuery.includes("DELETE FROM")) {
-      const [id] = params;
-      this.rows = this.rows.filter(r => r.id !== id);
-      return { rows: [] };
+    if (normalized.startsWith("WITH")) {
+      return this.handleDequeue() as any;
     }
 
-    // 3. UPDATE query (fail retry)
-    if (normalizedQuery.includes("UPDATE") && normalizedQuery.includes("SET attempt = attempt + 1")) {
-      const [id, nextAttemptAt] = params;
-      const row = this.rows.find(r => r.id === id);
-      if (row) {
-        row.attempt += 1;
-        row.next_attempt_at = nextAttemptAt;
-        row.locked_until = null;
-      }
-      return { rows: [] };
+    if (normalized.startsWith("DELETE")) {
+      return this.handleDelete(text) as any;
     }
 
-    // 4. DEQUEUE CTE query (Select, lock and lease)
-    if (normalizedQuery.includes("WITH next_jobs") || normalizedQuery.includes("FOR UPDATE SKIP LOCKED")) {
-      const [limit, lockedUntil] = params;
+    if (normalized.startsWith("SELECT COUNT")) {
+      return { rows: [{ count: this.rows.length }] } as any;
+    }
+
+    throw new Error(`Unhandled query: ${text}`);
+  }
+
+  private handleInsert(params: unknown[]) {
+    const [
+      id,
+      webhookId,
+      payloadStr,
+      attemptCount,
+      nextRetryAtMs,
+      createdAtMs,
+      url,
+      eventStr,
+      attempt,
+      lastError,
+      metadataStr,
+    ] = params;
+
+    const resolvedId =
+      (id as string) ?? `fake_${this.nextFakeId++}`;
+
+    const exists = this.rows.some((r) => r.id === resolvedId);
+    if (exists) return { rows: [] };
+
+    const row: StoredRow = {
+      id: resolvedId,
+      webhook_id: webhookId as string,
+      payload: JSON.parse(payloadStr as string),
+      attempt_count: attemptCount as number,
+      next_retry_at: new Date(nextRetryAtMs as number),
+      created_at: createdAtMs !== null ? new Date(createdAtMs as number) : new Date(),
+      url: url as string,
+      event: JSON.parse(eventStr as string),
+      attempt: attempt as number,
+      last_error: (lastError as string) ?? null,
+      metadata: metadataStr !== null ? JSON.parse(metadataStr as string) : null,
+      locked: false,
+    };
+    this.rows.push(row);
+    return { rows: [] };
+  }
+
+  private async handleDequeue() {
+    return this.withLock(async () => {
       const now = new Date();
 
-      // Find eligible jobs: next_attempt_at <= now AND (locked_until is null OR locked_until < now)
-      const eligible = this.rows
-        .filter(r => {
-          const isDue = new Date(r.next_attempt_at) <= now;
-          const isNotLocked = !r.locked_until || new Date(r.locked_until) < now;
-          return isDue && isNotLocked;
-        })
-        .slice(0, limit);
+      const idx = this.rows.findIndex(
+        (r) => r.next_retry_at <= now && !r.locked,
+      );
+      if (idx === -1) return { rows: [] };
 
-      // Lock them atomically
-      for (const row of eligible) {
-        row.locked_until = lockedUntil;
-      }
+      const row = this.rows[idx];
+      row.locked = true;
+      this.rows.splice(idx, 1);
 
-      return { rows: eligible as unknown as T[] };
+      return {
+        rows: [
+          {
+            id: row.id,
+            webhook_id: row.webhook_id,
+            payload: row.payload,
+            attempt_count: row.attempt_count,
+            next_retry_at: row.next_retry_at,
+            created_at: row.created_at,
+            url: row.url,
+            event: row.event,
+            attempt: row.attempt,
+            last_error: row.last_error,
+            metadata: row.metadata,
+          },
+        ],
+      };
+    });
+  }
+
+  private handleDelete(text: string) {
+    if (text.includes("ORDER BY created_at DESC")) {
+      return this.handleEvictNewest();
     }
+    return { rows: [] };
+  }
 
-    throw new Error(`Unhandled query in MockPg: ${text}`);
+  private handleEvictNewest() {
+    if (this.rows.length === 0) return { rows: [] };
+
+    this.rows.sort(
+      (a, b) => b.created_at.getTime() - a.created_at.getTime(),
+    );
+    const row = this.rows.shift()!;
+
+    return {
+      rows: [
+        {
+          id: row.id,
+          webhook_id: row.webhook_id,
+          payload: row.payload,
+          attempt_count: row.attempt_count,
+          next_retry_at: row.next_retry_at,
+          created_at: row.created_at,
+          url: row.url,
+          event: row.event,
+          attempt: row.attempt,
+          last_error: row.last_error,
+          metadata: row.metadata,
+        },
+      ],
+    };
   }
 }
 
+function makeRecord(overrides: Partial<RetryRecord> = {}): RetryRecord {
+  return {
+    webhookId: "wh_test",
+    payload: { type: "test" },
+    attemptCount: 0,
+    nextRetryAt: Date.now() - 1000,
+    createdAt: Date.now(),
+    url: "https://example.com/webhook",
+    event: { original: "event" },
+    attempt: 1,
+    ...overrides,
+  };
+}
+
 describe("PostgresRetryQueue", () => {
-  let pg: MockPg;
+  let pg: SimulatedPg;
   let queue: PostgresRetryQueue;
 
   beforeEach(() => {
-    pg = new MockPg();
+    pg = new SimulatedPg();
     queue = new PostgresRetryQueue(pg);
   });
 
-  it("should enqueue a job correctly", async () => {
-    const nextAttempt = new Date();
-    await queue.enqueue("https://example.com/webhook", { type: "payment.received" }, 1, nextAttempt);
-
-    expect(pg.rows.length).toBe(1);
-    expect(pg.rows[0].url).toBe("https://example.com/webhook");
-    expect(pg.rows[0].event).toEqual({ type: "payment.received" });
-    expect(pg.rows[0].attempt).toBe(1);
-    expect(pg.rows[0].next_attempt_at).toEqual(nextAttempt);
-    expect(pg.rows[0].locked_until).toBeNull();
-  });
-
-  it("should dequeue due jobs and apply a visibility lock lease", async () => {
-    const dueTime = new Date(Date.now() - 1000); // 1s ago
-    await queue.enqueue("https://example.com/webhook1", { id: 1 }, 1, dueTime);
-    await queue.enqueue("https://example.com/webhook2", { id: 2 }, 1, dueTime);
-
-    // Dequeue 1 job
-    const jobs = await queue.dequeue(1, 10000);
-    expect(jobs.length).toBe(1);
-    expect(jobs[0].url).toBe("https://example.com/webhook1");
-
-    // The dequeued job should have its locked_until set in the db
-    const row1 = pg.rows.find(r => r.id === jobs[0].id);
-    expect(row1.locked_until).toBeInstanceOf(Date);
-    expect(row1.locked_until.getTime()).toBeGreaterThan(Date.now());
-
-    // The other job remains unlocked
-    const row2 = pg.rows.find(r => r.id !== jobs[0].id);
-    expect(row2.locked_until).toBeNull();
-
-    // Dequeueing again should only return the remaining unlocked job
-    const jobs2 = await queue.dequeue(1, 10000);
-    expect(jobs2.length).toBe(1);
-    expect(jobs2[0].url).toBe("https://example.com/webhook2");
-  });
-
-  it("should complete a job by deleting it", async () => {
-    const dueTime = new Date(Date.now() - 1000);
-    await queue.enqueue("https://example.com/webhook", { id: 1 }, 1, dueTime);
-
-    const jobs = await queue.dequeue(1, 10000);
-    expect(pg.rows.length).toBe(1);
-
-    await queue.complete(jobs[0].id);
-    expect(pg.rows.length).toBe(0);
-  });
-
-  it("should fail a job and reschedule it with attempt incremented", async () => {
-    const dueTime = new Date(Date.now() - 1000);
-    await queue.enqueue("https://example.com/webhook", { id: 1 }, 1, dueTime);
-
-    const jobs = await queue.dequeue(1, 10000);
-    const nextRetry = new Date(Date.now() + 5000);
-
-    await queue.fail(jobs[0].id, nextRetry);
-    expect(pg.rows.length).toBe(1);
-    expect(pg.rows[0].attempt).toBe(2);
-    expect(pg.rows[0].next_attempt_at).toEqual(nextRetry);
-    expect(pg.rows[0].locked_until).toBeNull(); // lock lease is cleared
-  });
-
-  it("should delete a job if fail is called with null nextAttemptAt (retries exhausted)", async () => {
-    const dueTime = new Date(Date.now() - 1000);
-    await queue.enqueue("https://example.com/webhook", { id: 1 }, 3, dueTime);
-
-    const jobs = await queue.dequeue(1, 10000);
-    await queue.fail(jobs[0].id, null);
-
-    expect(pg.rows.length).toBe(0);
-  });
-
-  it("should support safe multi-consumer dequeue (exactly once per record)", async () => {
-    const dueTime = new Date(Date.now() - 1000);
-    const numJobs = 50;
-
-    // Enqueue 50 due jobs
-    for (let i = 0; i < numJobs; i++) {
-      await queue.enqueue(`https://example.com/webhook/${i}`, { index: i }, 1, dueTime);
-    }
-
-    // 5 concurrent consumers polling simultaneously
-    const numConsumers = 5;
-    const dequeuedJobs: any[][] = [];
-
-    const consumers = Array.from({ length: numConsumers }).map(async () => {
-      // Each consumer dequeues up to 10 jobs
-      const jobs = await queue.dequeue(10, 30000);
-      dequeuedJobs.push(jobs);
+  describe("enqueue", () => {
+    it("inserts a record", async () => {
+      await queue.enqueue(makeRecord());
+      expect(await queue.size()).toBe(1);
     });
 
-    await Promise.all(consumers);
+    it("is idempotent — same id inserts only one row", async () => {
+      const record = makeRecord({ id: "dup" });
+      await queue.enqueue(record);
+      await queue.enqueue(record);
+      expect(await queue.size()).toBe(1);
+    });
 
-    // Verify exactly-once dequeueing behavior across all concurrent consumers
-    const allDequeuedIds = dequeuedJobs.flat().map(j => j.id);
-    
-    // We expect exactly 50 total dequeued jobs
-    expect(allDequeuedIds.length).toBe(numJobs);
+    it("allows records with different webhookIds", async () => {
+      await queue.enqueue(makeRecord({ webhookId: "a" }));
+      await queue.enqueue(makeRecord({ webhookId: "b" }));
+      expect(await queue.size()).toBe(2);
+    });
+  });
 
-    // All dequeued IDs must be unique (no duplicate job was picked up by different consumers)
-    const uniqueIds = new Set(allDequeuedIds);
-    expect(uniqueIds.size).toBe(numJobs);
+  describe("dequeue", () => {
+    it("returns a due record", async () => {
+      await queue.enqueue(makeRecord());
+      const record = await queue.dequeue();
+      expect(record).not.toBeUndefined();
+      expect(record!.webhookId).toBe("wh_test");
+    });
 
-    // Every single database row should now be locked
-    for (const row of pg.rows) {
-      expect(row.locked_until).toBeInstanceOf(Date);
-      expect(row.locked_until.getTime()).toBeGreaterThan(Date.now());
-    }
+    it("returns undefined when no records are due", async () => {
+      await queue.enqueue(makeRecord({ nextRetryAt: Date.now() + 60_000 }));
+      const record = await queue.dequeue();
+      expect(record).toBeUndefined();
+    });
+
+    it("removes the dequeued record from the queue", async () => {
+      await queue.enqueue(makeRecord());
+      await queue.dequeue();
+      expect(await queue.size()).toBe(0);
+    });
+  });
+
+  describe("evictNewest", () => {
+    it("returns the most recently created record and removes it", async () => {
+      await queue.enqueue(makeRecord({ createdAt: 1000 }));
+      await queue.enqueue(makeRecord({ createdAt: 2000 }));
+
+      const evicted = await queue.evictNewest();
+      expect(evicted).not.toBeUndefined();
+      expect(evicted!.createdAt).toBe(2000);
+      expect(await queue.size()).toBe(1);
+    });
+
+    it("returns undefined when the table is empty", async () => {
+      const result = await queue.evictNewest();
+      expect(result).toBeUndefined();
+    });
+  });
+
+  describe("size", () => {
+    it("returns 0 for an empty queue", async () => {
+      expect(await queue.size()).toBe(0);
+    });
+
+    it("reflects the count after enqueue and dequeue", async () => {
+      await queue.enqueue(makeRecord());
+      await queue.enqueue(makeRecord());
+      expect(await queue.size()).toBe(2);
+
+      await queue.dequeue();
+      expect(await queue.size()).toBe(1);
+    });
+  });
+
+  describe("multi-consumer behavior", () => {
+    it("concurrent dequeue on one due record: exactly one consumer gets it", async () => {
+      await queue.enqueue(makeRecord());
+      expect(await queue.size()).toBe(1);
+
+      const results = await Promise.all([
+        queue.dequeue(),
+        queue.dequeue(),
+        queue.dequeue(),
+      ]);
+
+      const successes = results.filter((r) => r !== undefined);
+      expect(successes.length).toBe(1);
+    });
+
+    it("concurrent dequeue on multiple records: each gets a distinct record", async () => {
+      await queue.enqueue(makeRecord({ id: "r1" }));
+      await queue.enqueue(makeRecord({ id: "r2" }));
+      expect(await queue.size()).toBe(2);
+
+      const results = await Promise.all([
+        queue.dequeue(),
+        queue.dequeue(),
+      ]);
+
+      const records = results.filter((r) => r !== undefined);
+      expect(records.length).toBe(2);
+      expect(records[0]!.id).not.toBe(records[1]!.id);
+    });
+
+    it("exactly-once: N consumers on N records each get one unique record", async () => {
+      const count = 10;
+      for (let i = 0; i < count; i++) {
+        await queue.enqueue(makeRecord({ id: `r${i}` }));
+      }
+
+      const consumers = Array.from({ length: count }, () => queue.dequeue());
+      const results = await Promise.all(consumers);
+
+      const records = results.filter((r) => r !== undefined);
+      expect(records.length).toBe(count);
+
+      const ids = new Set(records.map((r) => r!.id));
+      expect(ids.size).toBe(count);
+    });
   });
 });

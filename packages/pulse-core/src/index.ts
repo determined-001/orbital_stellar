@@ -4,6 +4,7 @@ export { EventEngine } from "./EventEngine.js";
 export { SorobanSubscriber } from "./SorobanSubscriber.js";
 export { validateContractFilters } from "./contractFilters.js";
 export { Watcher } from "./Watcher.js";
+export { SorobanSubscriber } from "./SorobanSubscriber.js";
 export type {
   SorobanSubscriberOptions,
   SorobanRpc,

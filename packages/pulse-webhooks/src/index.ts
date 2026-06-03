@@ -12,7 +12,7 @@ export { verifyWebhookEdge, verifyWebhookEdgeRaw } from "./edge.js";
 export { PostgresRetryQueue } from "./PostgresRetryQueue.js";
 export { MemoryRetryQueue } from "./RetryQueue.js";
 export { RedisRetryQueue } from "./RedisRetryQueue.js";
-export type { PgLike, PostgresRetryQueueOptions } from "./PostgresRetryQueue.js";
+export type { PgLike } from "./PostgresRetryQueue.js";
 export type { RedisLike, RedisRetryQueueOptions } from "./RedisRetryQueue.js";
 export type { RetryRecord, RetryQueue } from "./RetryQueue.js";
 export type {
