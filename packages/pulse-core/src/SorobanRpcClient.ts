@@ -1,3 +1,49 @@
+export type SorobanNetworkInfo = {
+  friendbotUrl?: string;
+  passphrase: string;
+  protocolVersion?: number;
+};
+
+/**
+ * Simple process-global cache for Soroban RPC /network result.
+ * The real implementation may fetch from the RPC endpoint; for now the
+ * cache is sufficient for the EventEngine network-drift detection test.
+ */
+export class SorobanRpcClient {
+  private static cachedNetwork: SorobanNetworkInfo | null = null;
+
+  /** Set the process-cached network information (used in tests or initialization). */
+  static setCachedNetwork(info: SorobanNetworkInfo | null): void {
+    SorobanRpcClient.cachedNetwork = info;
+  }
+
+  /** Returns the cached network info or null if none is cached. */
+  static getCachedNetwork(): SorobanNetworkInfo | null {
+    return SorobanRpcClient.cachedNetwork;
+  }
+
+  /**
+   * Synchronous getter used by EventEngine.start() to detect network drift.
+   * Returns the cached value or throws if no cached value is available.
+   * Tests set the cache directly via setCachedNetwork().
+   */
+  static getNetwork(): SorobanNetworkInfo {
+    if (!SorobanRpcClient.cachedNetwork) {
+      throw new Error("SorobanRpcClient.getNetwork() called before network info was cached.");
+    }
+    return SorobanRpcClient.cachedNetwork;
+  }
+
+  /**
+   * Placeholder async fetcher (not used in these tests). In production this
+   * would call the RPC /network endpoint and cache the result.
+   */
+  static async fetchAndCacheNetwork(_url: string): Promise<SorobanNetworkInfo> {
+    // Not implemented here; callers may stub this in tests or call setCachedNetwork.
+    throw new Error("fetchAndCacheNetwork not implemented");
+  }
+}
+
 /**
  * Options for creating a SorobanRpcClient.
  */
