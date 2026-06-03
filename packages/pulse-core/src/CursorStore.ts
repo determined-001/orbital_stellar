@@ -12,4 +12,10 @@ export interface CursorStore {
    * Stores or updates the cursor for a given stream key.
    */
   set(streamKey: string, cursor: string): Promise<void>;
+
+  /**
+   * Optional liveness probe. If present, EventEngine.healthCheck() will call
+   * it and report ok: false if it rejects.
+   */
+  ping?(): Promise<void>;
 }
