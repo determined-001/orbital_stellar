@@ -2,7 +2,6 @@ import express, { type Request, type Response } from "express";
 import { EventEngine } from "@orbital/pulse-core";
 import { WebhookRegistry } from "./registry.js";
 import { createRoutes } from "./routes.js";
-import { DlqStore, createDlqRoutes } from "@orbital/pulse-webhooks";
 
 // --- Environment validation ---
 
@@ -40,27 +39,6 @@ const app = express();
 app.use(express.json());
 app.use(createRoutes(registry, engine));
 
-// --- DLQ routes (requires DATABASE_URL) ---
-
-if (process.env.DATABASE_URL) {
-  // Lazy-require pg so the server starts without it when DATABASE_URL is absent.
-  const { Pool } = await import("pg");
-  const pool = new Pool({ connectionString: process.env.DATABASE_URL });
-  const dlqStore = new DlqStore(pool);
-
-  const redeliver = async (id: string): Promise<boolean> => {
-    const payload = await dlqStore.markReplayed(id);
-    if (!payload) return false;
-    console.log(`[dlq] Replaying entry ${id} for address ${payload.to}`);
-    return true;
-  };
-
-  app.use(createDlqRoutes(dlqStore, redeliver));
-  console.log("[server] DLQ routes enabled");
-} else {
-  console.warn("[server] DATABASE_URL not set — DLQ routes disabled");
-}
-
 app.get("/health", (_req: Request, res: Response) => {
   res.json({ status: "ok", network: NETWORK });
 });
@@ -76,10 +54,12 @@ const SHUTDOWN_TIMEOUT_MS = 5000;
 function shutdown(signal: string): void {
   console.log(`[server] Received ${signal}, shutting down...`);
 
+  // Hard-exit if graceful shutdown takes too long
   const forceExit = setTimeout(() => {
     console.error("[server] Graceful shutdown timed out, forcing exit.");
     process.exit(1);
   }, SHUTDOWN_TIMEOUT_MS) as unknown as NodeJS.Timeout;
+  // Don't let this timer keep the process alive on its own
   forceExit.unref();
   engine.stop();
 
