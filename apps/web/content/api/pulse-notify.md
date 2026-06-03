@@ -68,6 +68,54 @@ type EventState<T extends NormalizedEvent = NormalizedEvent> = {
 };
 ```
 
+## useStellarEventSuspense
+
+A [React Suspense](https://react.dev/reference/react/Suspense)-compatible hook. It throws a Promise until the first matching event arrives, so the nearest `<Suspense>` boundary renders its `fallback` until the component is ready to display real data.
+
+```tsx
+"use client";
+import { Suspense } from "react";
+import { useStellarEventSuspense } from "@orbital/pulse-notify";
+
+// The component never receives null — it is suspended until data arrives.
+function LiveBalance({ address }: { address: string }) {
+  const event = useStellarEventSuspense(
+    "https://events.example.com",
+    address,
+    { event: "payment.received" },
+  );
+  return <p>+{event.amount} {event.asset} from {event.from.slice(0, 8)}…</p>;
+}
+
+export default function Page() {
+  return (
+    <Suspense fallback={<p>Waiting for first event…</p>}>
+      <LiveBalance address="GABC..." />
+    </Suspense>
+  );
+}
+```
+
+Also accepts a single config object — same shape as `useStellarEvent`.
+
+### Return value
+
+Returns `T` (never `null`). The component is suspended until the first event arrives, so the return value is always a fully-populated event object.
+
+### Shared connection
+
+Uses the same connection pool as `useStellarEvent` — multiple hook instances with the same `(serverUrl, address)` arguments share one `EventSource`. The connection is released when the last instance unmounts.
+
+### Trade-offs
+
+| Consideration | Detail |
+|---|---|
+| **Invisible until ready** | The component renders nothing (fallback shows instead) until the first event arrives. For addresses that rarely receive events this can mean a long — or permanent — fallback. |
+| **No loading skeleton inside** | You cannot render partial UI inside the suspended component. Put loading UI in the `fallback` prop of `<Suspense>` instead. |
+| **Prefer `useStellarEvent` when…** | You want to show a "no events yet" state, a loading indicator inside the component, or you need `connected` / `error` status. |
+| **Client-only** | `EventSource` is not available in Node.js. Mark consuming components with `"use client"` in Next.js App Router. |
+| **Error boundaries** | Pair with an `<ErrorBoundary>` to handle connection failures gracefully — the hook does not surface errors through its return value. |
+
 ## useStellarPayment
 
 Convenience hook — only updates on `payment.received` events. Equivalent to `useStellarEvent(serverUrl, address, { event: "payment.received" })`.

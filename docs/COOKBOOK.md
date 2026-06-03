@@ -155,6 +155,8 @@ The URL must be `http://` or `https://`. The engine validates the URL at constru
 
 `WebhookDelivery` attaches to a watcher and POSTs every event to your endpoint with HMAC-SHA256 signing, exponential backoff retry, and a configurable per-attempt timeout. ✅
 
+**Sender side** — attach delivery to the watcher:
+
 ```ts
 import { EventEngine } from "@orbital/pulse-core";
 import { WebhookDelivery } from "@orbital/pulse-webhooks";
@@ -172,7 +174,38 @@ new WebhookDelivery(watcher, {
 });
 ```
 
-Each request carries `x-orbital-signature` (hex HMAC-SHA256 over `${timestamp}.${body}`), `x-orbital-timestamp`, and `x-orbital-attempt`. Verify on the receiver side with `verifyWebhook` (Node) or `verifyWebhookEdge` (edge runtimes).
+**Receiver side** — verify the signature and enforce the replay window with `maxAgeMs`:
+
+```ts
+import { verifyWebhook } from "@orbital/pulse-webhooks";
+import express from "express";
+
+const app = express();
+
+app.post(
+  "/hooks/stellar",
+  express.raw({ type: "application/json" }),
+  (req, res) => {
+    const signature = req.header("x-orbital-signature");
+    const timestamp = req.header("x-orbital-timestamp");
+    if (!signature || !timestamp) return res.sendStatus(400);
+
+    const event = verifyWebhook(
+      req.body.toString(),
+      signature,
+      process.env.WEBHOOK_SECRET!,
+      timestamp,
+      { maxAgeMs: 5 * 60 * 1000 }, // reject signatures older than 5 minutes
+    );
+    if (!event) return res.sendStatus(401);
+
+    console.log(`Verified ${event.type}`);
+    res.sendStatus(200);
+  },
+);
+```
+
+Each request carries `x-orbital-signature` (hex HMAC-SHA256 over `${timestamp}.${body}`), `x-orbital-timestamp`, and `x-orbital-attempt`. Always pass `maxAgeMs` to bound replay — a signature without a replay window is valid indefinitely. The default is `300_000` (5 minutes), matching the recommendation in `SECURITY.md`.
 
 ---
 
@@ -201,6 +234,7 @@ export default {
       signature,
       env.WEBHOOK_SECRET,
       timestamp,
+      { maxAgeMs: 5 * 60 * 1000 }, // reject signatures older than 5 minutes
     );
     if (!event) return new Response("Invalid signature", { status: 401 });
 
