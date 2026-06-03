@@ -1,0 +1,39 @@
+{
+  "specs": [
+    {
+      "name": "Stellar Asset Contract (SAC) Interface",
+      "contract_id": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
+      "file": "sac-interface.json",
+      "description": "Common interface implemented by every Stellar Asset Contract (SAC). SACs are the standard Soroban wrappers for Stellar classic assets and implement the full SEP-41 token interface plus SAC-specific admin operations.",
+      "tags": ["sep41", "sac", "interface"]
+    },
+    {
+      "name": "Native Asset Wrapper (XLM SAC)",
+      "contract_id": "CAS3J7GYLGXMF6TDJBBYYSE3HQ6BBSMLNUQ34T6TZMYMW2EVH34XOWMA",
+      "file": "native-asset-wrapper.json",
+      "description": "Stellar Asset Contract wrapping the native XLM asset. Exposes XLM as a SEP-41-compatible Soroban token.",
+      "tags": ["sep41", "sac", "native", "xlm"]
+    },
+    {
+      "name": "USD Coin (USDC)",
+      "contract_id": "CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75",
+      "file": "usdc.json",
+      "description": "Circle's USD-backed stablecoin on Stellar mainnet, deployed as a Stellar Asset Contract (SAC).",
+      "tags": ["sep41", "sac", "stablecoin", "usd", "circle"]
+    },
+    {
+      "name": "Euro Coin (EURC)",
+      "contract_id": "CDTKPWPLOURQA2SGTKTUQOWRCBZEORB4BWBOMJ3D3ZTQQSGE5F6JBQLV",
+      "file": "eurc.json",
+      "description": "Circle's EUR-backed stablecoin on Stellar mainnet, deployed as a Stellar Asset Contract (SAC). MiCA-compliant.",
+      "tags": ["sep41", "sac", "stablecoin", "eur", "circle", "mica"]
+    },
+    {
+      "name": "Aquarius (AQUA)",
+      "contract_id": "CAUIKL3IYGMERDRUN5QQVPKPLZTRNVXV27LFCWQIRNOHSNGB3ZXAEFBX",
+      "file": "aqua.json",
+      "description": "Governance and liquidity incentive token of the Aquarius protocol on Stellar mainnet.",
+      "tags": ["sep41", "sac", "governance", "defi", "aquarius"]
+    }
+  ]
+}

@@ -9,21 +9,23 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@orbital/pulse-core": "workspace:*",
     "framer-motion": "^12.36.0",
     "geist": "^1.7.0",
     "gray-matter": "^4.0.3",
-    "marked": "^17.0.5",
-    "next": "^16.2.2",
-    "react": "^18.3.0",
-    "react-dom": "^18.3.0"
+    "marked": "^18.0.2",
+    "next": "^16.2.6",
+    "react": "^19.2.5",
+    "react-dom": "^19.2.5"
   },
   "devDependencies": {
-    "@types/node": "^25.5.0",
-    "@types/react": "^18.3.0",
-    "@types/react-dom": "^18.3.0",
-    "autoprefixer": "^10.4.19",
-    "postcss": "^8.4.38",
-    "tailwindcss": "^4.2.2",
-    "typescript": "^6.0.2"
+    "@tailwindcss/postcss": "^4.3.0",
+    "@types/node": "^25.6.0",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "autoprefixer": "^10.5.0",
+    "postcss": "^8.5.12",
+    "tailwindcss": "^4.2.4",
+    "typescript": "^6.0.3"
   }
 }

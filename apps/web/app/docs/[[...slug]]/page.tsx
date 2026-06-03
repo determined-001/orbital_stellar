@@ -3,11 +3,11 @@ import { getDocPage } from '@/lib/docs'
 import { allDocPages } from '@/lib/docroutes'
 
 type Props = {
-  params: { slug?: string[] }
+  params: Promise<{ slug?: string[] }>
 }
 
 export async function generateMetadata({ params }: Props) {
-  const { slug } = params
+  const { slug } = await params
   if (!slug || slug.length === 0) return {}
   const page = await getDocPage(slug)
   if (!page) return {}
@@ -24,7 +24,7 @@ export function generateStaticParams() {
 }
 
 export default async function DocPage({ params }: Props) {
-  const { slug } = params
+  const { slug } = await params
 
   // /docs → redirect to first page
   if (!slug || slug.length === 0) {

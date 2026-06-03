@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 
-const SERVER = process.env.NEXT_PUBLIC_SERVER_URL ?? 'http://localhost:3000'
+const NETWORK = process.env.NEXT_PUBLIC_NETWORK ?? 'testnet'
 
 interface StellarEvent {
   type: string
@@ -12,55 +12,125 @@ interface StellarEvent {
   timestamp: string
 }
 
+interface LimitEnvelope {
+  error: 'demo_limit_reached'
+  reason: 'per_ip_stream_limit' | 'session_expired' | 'rate_limit'
+  message: string
+  upgradeUrl: string
+}
+
 const DOTS = [
   { color: '#FF5F57' },
   { color: '#FEBC2E' },
   { color: '#28C840' },
 ]
 
+type Status = 'idle' | 'connecting' | 'live' | 'error' | 'limit'
+
+async function streamEvents(
+  address: string,
+  signal: AbortSignal,
+  onEvent: (e: StellarEvent) => void,
+  onLimit: (l: LimitEnvelope) => void
+) {
+  const res = await fetch(`/api/events/${encodeURIComponent(address)}`, { signal })
+
+  if (res.status === 429 || res.status === 400) {
+    const body = (await res.json().catch(() => null)) as LimitEnvelope | null
+    if (body?.error === 'demo_limit_reached') onLimit(body)
+    else throw new Error(`HTTP ${res.status}`)
+    return
+  }
+  if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`)
+
+  const reader = res.body.getReader()
+  const decoder = new TextDecoder()
+  let buf = ''
+
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) return
+    buf += decoder.decode(value, { stream: true })
+
+    const chunks = buf.split('\n\n')
+    buf = chunks.pop() ?? ''
+
+    for (const chunk of chunks) {
+      const lines = chunk.split('\n')
+      const eventLine = lines.find((l) => l.startsWith('event: '))
+      const dataLine = lines.find((l) => l.startsWith('data: '))
+      if (!dataLine) continue
+
+      const data = dataLine.slice(6)
+      if (eventLine === 'event: session_expired') {
+        try {
+          onLimit(JSON.parse(data) as LimitEnvelope)
+        } catch {
+          /* malformed */
+        }
+        return
+      }
+      try {
+        onEvent(JSON.parse(data) as StellarEvent)
+      } catch {
+        /* skip */
+      }
+    }
+  }
+}
+
 export default function LiveDemo() {
   const [address, setAddress] = useState('')
   const [events, setEvents] = useState<StellarEvent[]>([])
-  const [status, setStatus] = useState<'idle' | 'connecting' | 'live' | 'error'>('idle')
+  const [status, setStatus] = useState<Status>('idle')
   const [errorMsg, setErrorMsg] = useState('')
-  const esRef = useRef<EventSource | null>(null)
+  const [limit, setLimit] = useState<LimitEnvelope | null>(null)
+  const abortRef = useRef<AbortController | null>(null)
 
   function handleWatch() {
     if (!address.trim()) return
-    esRef.current?.close()
+    abortRef.current?.abort()
     setEvents([])
     setErrorMsg('')
+    setLimit(null)
     setStatus('connecting')
 
-    const es = new EventSource(`${SERVER}/events/${encodeURIComponent(address.trim())}`)
-    esRef.current = es
-    es.onopen = () => setStatus('live')
-    es.onmessage = (e) => {
-      try {
-        const data = JSON.parse(e.data) as StellarEvent
-        setEvents((prev) => [data, ...prev].slice(0, 50))
-      } catch { /* skip malformed */ }
-    }
-    es.onerror = () => {
+    const ac = new AbortController()
+    abortRef.current = ac
+
+    streamEvents(
+      address.trim(),
+      ac.signal,
+      (ev) => {
+        setStatus('live')
+        setEvents((prev) => [ev, ...prev].slice(0, 50))
+      },
+      (l) => {
+        setLimit(l)
+        setStatus('limit')
+      }
+    ).catch((err: unknown) => {
+      if (ac.signal.aborted) return
       setStatus('error')
-      setErrorMsg('Connection failed or lost. Check the address and try again.')
-      es.close()
-    }
+      setErrorMsg(
+        err instanceof Error
+          ? err.message
+          : 'Connection failed. Check the address and try again.'
+      )
+    })
   }
 
   useEffect(() => {
     return () => {
-      if (esRef.current) {
-        esRef.current.close()
-        esRef.current = null
-      }
+      abortRef.current?.abort()
+      abortRef.current = null
     }
   }, [])
 
   return (
     <section style={{ padding: '120px 32px' }}>
 
-      {/* ✅ TESTNET NOTICE */}
+      {/* Network notice */}
       <div
         style={{
           maxWidth: 'var(--max-width)',
@@ -73,8 +143,7 @@ export default function LiveDemo() {
           fontFamily: 'var(--font-sans)',
         }}
       >
-        ⚠️ This demo streams <strong>Stellar testnet</strong> events only. Mainnet
-        addresses will not produce any events.
+        ⚠️ This demo streams <strong>Stellar {NETWORK}</strong> events only.
       </div>
 
       <div
@@ -106,7 +175,7 @@ export default function LiveDemo() {
               lineHeight: 1.6,
             }}
           >
-            Connect to a real Stellar address and watch events arrive in real time — straight from the testnet.
+            Connect to a real Stellar address and watch events arrive in real time — straight from the {NETWORK}.
           </p>
         </div>
 
@@ -205,7 +274,7 @@ export default function LiveDemo() {
               padding: '16px',
             }}
           >
-            {(status === 'idle' || (status === 'live' && events.length === 0)) && (
+            {status === 'idle' && (
               <p
                 style={{
                   fontFamily: 'var(--font-sans)',
@@ -215,7 +284,7 @@ export default function LiveDemo() {
                   marginTop: '80px',
                 }}
               >
-                Waiting for events on testnet...
+                Paste a Stellar address to start watching.
               </p>
             )}
             {status === 'connecting' && (
@@ -231,6 +300,19 @@ export default function LiveDemo() {
                 Connecting...
               </p>
             )}
+            {status === 'live' && events.length === 0 && (
+              <p
+                style={{
+                  fontFamily: 'var(--font-sans)',
+                  fontSize: '14px',
+                  color: 'var(--muted)',
+                  textAlign: 'center',
+                  marginTop: '80px',
+                }}
+              >
+                Waiting for events on {NETWORK}...
+              </p>
+            )}
             {status === 'error' && (
               <p
                 style={{
@@ -244,10 +326,43 @@ export default function LiveDemo() {
                 {errorMsg}
               </p>
             )}
+            {status === 'limit' && limit && (
+              <div
+                style={{
+                  textAlign: 'center',
+                  marginTop: '60px',
+                  fontFamily: 'var(--font-sans)',
+                }}
+              >
+                <p
+                  style={{
+                    fontSize: '14px',
+                    color: '#facc15',
+                    marginBottom: '12px',
+                  }}
+                >
+                  {limit.message}
+                </p>
+                <a
+                  href={limit.upgradeUrl}
+                  style={{
+                    display: 'inline-block',
+                    background: 'var(--accent)',
+                    color: '#000',
+                    fontWeight: 700,
+                    fontSize: '13px',
+                    padding: '10px 18px',
+                    textDecoration: 'none',
+                  }}
+                >
+                  Upgrade to Orbital Cloud →
+                </a>
+              </div>
+            )}
             <AnimatePresence initial={false}>
-              {events.map((ev) => (
+              {events.map((ev, idx) => (
                 <motion.div
-                  key={`${ev.type}-${ev.timestamp}`}
+                  key={`${ev.type}-${ev.timestamp}-${idx}`}
                   initial={{ opacity: 0, x: -8 }}
                   animate={{ opacity: 1, x: 0 }}
                   transition={{ duration: 0.2 }}
