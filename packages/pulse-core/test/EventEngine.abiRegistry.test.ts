@@ -14,8 +14,8 @@ function makeEmittedRecord(overrides: Record<string, unknown> = {}): Record<stri
     topics: ["transfer", "GABC"],
     data: { amount: "100" },
     ledger: 1000,
-    event_id: "evt-001",
-    tx_hash: "txhash001",
+    eventId: "evt-001",
+    txHash: "txhash001",
     in_successful_contract_call: true,
     created_at: "2024-01-01T00:00:00Z",
     ...overrides,
@@ -170,7 +170,7 @@ describe("EventEngine — ABI registry integration", () => {
       function: "transfer",
       args: [],
       ledger: 1000,
-      tx_hash: "txhash001",
+      txHash: "txhash001",
       created_at: "2024-01-01T00:00:00Z",
     });
 

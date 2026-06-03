@@ -1,6 +1,9 @@
 import { Horizon } from "@stellar/stellar-sdk";
 import { Watcher } from "./Watcher.js";
-import { EngineAlreadyStartedError, HorizonStreamError } from "./errors.js";
+import { EngineAlreadyStartedError, HorizonStreamError, NetworkMismatchError } from "./errors.js";
+import { SorobanSubscriber } from "./SorobanSubscriber.js";
+import type { SorobanRpcLike, SorobanEvent, CursorStoreLike } from "./SorobanSubscriber.js";
+import { SorobanRpcClient } from "./SorobanRpcClient.js";
 import { toAccountAddress, toContractAddress } from "./address.js";
 import type { ContractAddress } from "./address.js";
 import type {
@@ -34,6 +37,7 @@ import type {
   OfferEventType,
   PaymentEvent,
   PaymentEventType,
+  StellarAmount,
   ReconnectConfig,
   SubscribeOptions,
   TrustAuthEvent,
@@ -86,7 +90,7 @@ const DEFAULT_RECONNECT: Required<ReconnectConfig> = {
 
 const STELLAR_MAX_TRUSTLINE_LIMIT = "922337203685.4775807";
 
-const noop: Logger = { info: () => {}, warn: () => {}, error: () => {} };
+const noop: Logger = { info: () => { }, warn: () => { }, error: () => { } };
 
 export class EventEngine {
   private server: Horizon.Server;
@@ -98,8 +102,8 @@ export class EventEngine {
   private reconnectAttempt = 0;
   private pendingReconnectSuccessAttempt: number | null = null;
   private readonly reconnectConfig: Required<ReconnectConfig>;
+  private readonly network: Network;
   private isRunning = false;
-  private filters: Map<string, (event: NormalizedEvent) => boolean> = new Map();
   // Waiters for contract subscription activation: map contractId -> array of waiters
   private contractPollWaiters: Map<
     string,
@@ -110,15 +114,16 @@ export class EventEngine {
       timeout?: ReturnType<typeof setTimeout> | null;
     }>
   > = new Map();
-  private log: Required<NonNullable<CoreConfig["logger"]>>;
   private lastEventAt: string | null = null;
+  private horizonCursor?: string;
+  private filters: Map<string, (event: NormalizedEvent) => boolean> = new Map();
+  private log: Required<NonNullable<CoreConfig["logger"]>>;
   private cursorStore?: CursorStore;
   private streamKey: string;
   private cursorFailureThreshold: number;
   private consecutiveCursorFailures = 0;
   private isCursorStoreUnhealthy = false;
   private pausedSources = new Set<"horizon" | "soroban">();
-  private horizonCursor?: string;
   private abiRegistry?: AbiRegistryClientLike;
 
   /**
@@ -150,6 +155,7 @@ export class EventEngine {
       ...config.reconnect,
     };
     this.log = config.logger ?? noop;
+    this.network = config.network;
     this.cursorStore = config.cursorStore;
     this.streamKey = config.streamKey ?? "pulse-core-cursor";
     this.cursorFailureThreshold = config.cursorFailureThreshold ?? 5;
@@ -310,6 +316,11 @@ export class EventEngine {
   subscribeContract(id: string, options?: ContractSubscribeOptions): Watcher {
     const existing = this.contractRegistry.get(id);
     if (existing) {
+      if (options?.filter) {
+        this.log.warn(
+          `[pulse-core] subscribeContract() called for ${this.describeSubscription(id)} which already has an active watcher — filter option ignored.`
+        );
+      }
       return existing.watcher;
     }
 
@@ -318,9 +329,13 @@ export class EventEngine {
     if (options?.name !== undefined) {
       this.subscriptionNames.set(id, options.name);
     }
+    if (options?.filter) {
+      this.filters.set(id, options.filter);
+    }
     watcher.addStopHandler(() => {
       this.contractRegistry.delete(id);
       this.subscriptionNames.delete(id);
+      this.filters.delete(id);
     });
     this.contractRegistry.set(id, { watcher, filters });
     return watcher;
@@ -336,6 +351,55 @@ export class EventEngine {
       this.contractRegistry.delete(id);
       this.subscriptionNames.delete(id);
     }
+  }
+
+  /**
+   * Performs a one-shot bounded replay of Soroban contract events between two
+   * ledger positions.
+   *
+   * - Events are delivered to `onEvent` in ledger order.
+   * - `onDone` is called once every event whose ledger is < `endLedger` has
+   *   been delivered, or when the RPC reports no further events.
+   * - The `CursorStore` is **not** consulted or updated during replay: cursors
+   *   are ephemeral and progress is intentionally discarded when the run ends.
+   *
+   * @param options.rpc         - A Soroban RPC client compatible with `SorobanRpcLike`.
+   * @param options.filters     - Optional contract subscription filters (same semantics as `subscribeContract`).
+   * @param options.startLedger - Ledger sequence to begin replay from (passed as initial cursor hint).
+   * @param options.endLedger   - Ledger sequence at which replay stops (exclusive).
+   * @param options.onEvent     - Called for every event in range.
+   * @param options.onDone      - Called once when replay is complete.
+   * @param options.pageSize    - Optional page size override (default 100).
+   */
+  replayContracts(options: {
+    rpc: SorobanRpcLike;
+    filters?: ContractSubscriptionFilter[];
+    startLedger: number;
+    endLedger: number;
+    onEvent: (event: SorobanEvent) => Promise<void>;
+    onDone: () => void;
+    pageSize?: number;
+  }): SorobanSubscriber {
+    // A no-op CursorStore: replay never reads from or writes to persistent storage.
+    const noCursorStore = {
+      async getCursor(): Promise<string | undefined> {
+        return undefined;
+      },
+      async saveCursor(_cursor: string): Promise<void> {
+        // intentional no-op — replay does not persist cursor progress
+      },
+    };
+
+    const subscriber = new SorobanSubscriber({
+      rpc: options.rpc,
+      cursorStore: noCursorStore,
+      onEvent: options.onEvent,
+      endLedger: options.endLedger,
+      onDone: options.onDone,
+      pageSize: options.pageSize,
+    });
+
+    return subscriber;
   }
 
   /**
@@ -376,6 +440,29 @@ export class EventEngine {
         }
       );
       return false;
+    }
+
+    // Detect Soroban RPC / network drift if a cached network is available.
+    // This check is intentionally synchronous so any mismatch can be reported
+    // immediately before opening subscriptions. Tests populate the SorobanRpcClient cache.
+    try {
+      const cached = SorobanRpcClient.getCachedNetwork();
+      if (cached) {
+        const passphrases = {
+          mainnet: "Public Global Stellar Network ; September 2015",
+          testnet: "Test SDF Network ; September 2015",
+        };
+        const expected = passphrases[this.network];
+        const actual = cached.passphrase;
+        if (actual !== expected) {
+          throw new NetworkMismatchError(expected, actual);
+        }
+      }
+    } catch (e) {
+      if (e instanceof NetworkMismatchError) {
+        throw e;
+      }
+      // Otherwise ignore missing cache or other non-fatal failures — no drift detection available.
     }
 
     this.openStream(false);
@@ -633,7 +720,7 @@ export class EventEngine {
       this.getNumericField(error, "statusCode") ??
       (this.isRecord(error.response)
         ? this.getNumericField(error.response, "status") ??
-          this.getNumericField(error.response, "statusCode")
+        this.getNumericField(error.response, "statusCode")
         : undefined)
     );
   }
@@ -759,7 +846,7 @@ export class EventEngine {
 
   private describeSubscription(key: string): string {
     const name = this.subscriptionNames.get(key);
-    return name !== undefined ? `${name} (${key})` : key;
+    return name !== undefined ? `${name} (${key})` : `address ${key}`;
   }
 
   private normalize(record: unknown): NormalizedEventOrPending | null {
@@ -769,7 +856,12 @@ export class EventEngine {
       const requiredFields = ["to", "from", "amount", "created_at"] as const;
       for (const field of requiredFields) {
         if (typeof r[field] !== "string" || r[field] === "") {
-          this.log.warn("[pulse-core] normalize() dropping payment record.", { field, record: record });
+          this.log.warn("[pulse-core] normalize() dropping payment record.", {
+            field,
+            record,
+            source: r.from,
+            address: r.to,
+          });
           return null;
         }
       }
@@ -782,7 +874,7 @@ export class EventEngine {
         type: "unknown",
         to: toAccountAddress(r.to as string),
         from: toAccountAddress(r.from as string),
-        amount: r.amount as string,
+        amount: r.amount as StellarAmount,
         asset,
         timestamp: r.created_at as string,
         raw: record,
@@ -897,7 +989,7 @@ export class EventEngine {
       source: toAccountAddress(r.source_account),
       buying_asset,
       selling_asset,
-      amount,
+      amount: amount as StellarAmount,
       price: r.price as string,
       timestamp: r.created_at,
       raw,
@@ -1131,7 +1223,7 @@ export class EventEngine {
         predicate: c.predicate,
       })),
       asset,
-      amount: r.amount as string,
+      amount: r.amount as StellarAmount,
       timestamp: r.created_at as string,
       raw,
     };
@@ -1320,13 +1412,17 @@ export class EventEngine {
   ): ContractInvokedEvent | null {
     if (typeof r.contract_id !== "string" || r.contract_id === "") return null;
     if (typeof r.function !== "string") return null;
+    if (typeof r.ledger !== "number") return null;
+    if (typeof r.txHash !== "string") return null;
+    if (typeof r.created_at !== "string") return null;
     return {
       type: "contract.invoked",
       contractId: toContractAddress(r.contract_id),
       function: r.function,
-      topics: Array.isArray(r.topics) ? (r.topics as string[]) : [],
-      data: r.data ?? null,
-      timestamp: typeof r.created_at === "string" ? r.created_at : "",
+      args: Array.isArray(r.args) ? (r.args as unknown[]) : [],
+      ledger: r.ledger,
+      txHash: r.txHash,
+      timestamp: r.created_at,
       raw,
     };
   }
@@ -1336,12 +1432,21 @@ export class EventEngine {
     raw: unknown
   ): ContractEmittedEvent | null {
     if (typeof r.contract_id !== "string" || r.contract_id === "") return null;
+    if (typeof r.ledger !== "number") return null;
+    if (typeof r.eventId !== "string") return null;
+    if (typeof r.txHash !== "string") return null;
+    if (typeof r.created_at !== "string") return null;
     return {
       type: "contract.emitted",
       contractId: toContractAddress(r.contract_id),
       topics: Array.isArray(r.topics) ? (r.topics as string[]) : [],
       data: r.data ?? null,
-      timestamp: typeof r.created_at === "string" ? r.created_at : "",
+      decodedData: r.decodedData,
+      ledger: r.ledger,
+      eventId: r.eventId,
+      txHash: r.txHash,
+      inSuccessfulContractCall: Boolean(r.inSuccessfulContractCall),
+      timestamp: r.created_at,
       raw,
     };
   }
@@ -1362,7 +1467,7 @@ export class EventEngine {
   }
 
   private matchesContractFilters(
-    event: { type: string; contractId: ContractAddress; topics: string[] },
+    event: ContractInvokedEvent | ContractEmittedEvent,
     filters: ContractSubscriptionFilter[]
   ): boolean {
     // No filters = match everything
@@ -1373,9 +1478,16 @@ export class EventEngine {
       if (f.type !== undefined && f.type !== event.type) return false;
       if (f.contractIds !== undefined && !f.contractIds.includes(event.contractId)) return false;
       if (f.topicFilters !== undefined) {
-        for (let i = 0; i < f.topicFilters.length; i++) {
-          const pattern = f.topicFilters[i];
-          if (pattern !== null && pattern !== event.topics[i]) return false;
+        // Only ContractEmittedEvent has topics
+        if (event.type === "contract.emitted") {
+          const emittedEvent = event as ContractEmittedEvent;
+          for (let i = 0; i < f.topicFilters.length; i++) {
+            const pattern = f.topicFilters[i];
+            if (pattern !== null && pattern !== emittedEvent.topics[i]) return false;
+          }
+        } else {
+          // ContractInvokedEvent doesn't have topics, so topicFilters don't apply
+          return false;
         }
       }
       return true;
@@ -1385,7 +1497,7 @@ export class EventEngine {
   /** Dispatch a contract event (invoked or emitted) to all matching contract watchers. */
   private dispatchContractEvent(event: ContractInvokedEvent | ContractEmittedEvent): void {
     for (const { watcher, filters } of this.contractRegistry.values()) {
-      if (this.matchesContractFilters(event, filters)) {
+      if (this.matchesContractFilters(event, filters) && this.passesFilter(watcher.address, event)) {
         watcher.emit(event.type, event);
         watcher.emit("*", event);
       }
@@ -1642,6 +1754,7 @@ export class EventEngine {
 
 /** @internal */
 export interface RpcContractInvokedEvent {
+  // export interface SorobanContractInvokedEvent {
   type: "contract_invoked";
   id: string;
   pagingToken: string;
@@ -1655,6 +1768,7 @@ export interface RpcContractInvokedEvent {
 
 /** @internal */
 export interface RpcContractEmittedEvent {
+  // export interface SorobanContractEmittedEvent {
   type: "contract_emitted";
   id: string;
   pagingToken: string;
@@ -1673,8 +1787,10 @@ export interface RpcContractEmittedEvent {
  * Handles malformed fields safely by logging warnings and returning null.
  */
 export function normalizeContractEvent(
-  rawRpcEvent: unknown
+  rawRpcEvent: any
 ): RpcContractInvokedEvent | RpcContractEmittedEvent | null {
+  // export function normalizeContractEvent(rawRpcEvent: any): SorobanContractInvokedEvent | SorobanContractEmittedEvent | null {
+  // 1. Structural check patterns
   if (!rawRpcEvent || typeof rawRpcEvent !== "object") {
     console.warn(
       "[pulse-core] Dropping malformed Soroban event: payload is not a valid object.",
@@ -1705,12 +1821,9 @@ export function normalizeContractEvent(
   }
 
   const {
-    id,
-    pagingToken,
     contractId,
     txHash,
     ledger,
-    ledgerClosedAt,
     type,
     inSuccessfulContractCall,
     topic,
@@ -1720,12 +1833,12 @@ export function normalizeContractEvent(
   if (type === "system" || type === "diagnostic") {
     return {
       type: "contract_invoked",
-      id: String(id),
-      pagingToken: String(pagingToken),
+      id: String(e.id),
+      pagingToken: String(e.pagingToken),
       contractId: String(contractId),
       txHash: String(txHash),
       ledger: Number(ledger),
-      ledgerClosedAt: String(ledgerClosedAt),
+      ledgerClosedAt: String(e.ledgerClosedAt),
       inSuccessfulContractCall: Boolean(inSuccessfulContractCall),
       raw: rawRpcEvent,
     };
@@ -1742,12 +1855,12 @@ export function normalizeContractEvent(
 
     return {
       type: "contract_emitted",
-      id: String(id),
-      pagingToken: String(pagingToken),
+      id: String(e.id),
+      pagingToken: String(e.pagingToken),
       contractId: String(contractId),
       txHash: String(txHash),
       ledger: Number(ledger),
-      ledgerClosedAt: String(ledgerClosedAt),
+      ledgerClosedAt: String(e.ledgerClosedAt),
       topics: (topic as unknown[]).map((t) => String(t)),
       value: String(value),
       inSuccessfulContractCall: Boolean(inSuccessfulContractCall),

@@ -41,6 +41,9 @@ function makeEmittedRecord(overrides: Record<string, unknown> = {}): Record<stri
     topics: ["transfer", "GABC"],
     data: { amount: "100" },
     created_at: "2024-01-01T00:00:00Z",
+    ledger: 12345,
+    eventId: "0000000001-0000000002",
+    txHash: "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
     ...overrides,
   };
 }
@@ -53,9 +56,12 @@ function makeInvokedRecord(overrides: Record<string, unknown> = {}): Record<stri
     topics: ["transfer"],
     data: null,
     created_at: "2024-01-01T00:00:00Z",
+    ledger: 12345,
+    txHash: "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
     ...overrides,
   };
 }
+
 
 // ---------------------------------------------------------------------------
 // Tests

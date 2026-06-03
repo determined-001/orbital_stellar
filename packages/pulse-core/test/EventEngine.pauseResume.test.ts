@@ -65,6 +65,8 @@ function makeContractInvokedRecord(overrides: Record<string, unknown> = {}): Rec
     topics: ["transfer"],
     data: null,
     created_at: new Date().toISOString(),
+    ledger: 12345,
+    txHash: "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
     ...overrides,
   };
 }
@@ -76,6 +78,9 @@ function makeContractEmittedRecord(overrides: Record<string, unknown> = {}): Rec
     topics: ["transfer", "GABC"],
     data: { amount: "100" },
     created_at: new Date().toISOString(),
+    ledger: 12345,
+    eventId: "0000000001-0000000002",
+    txHash: "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
     ...overrides,
   };
 }

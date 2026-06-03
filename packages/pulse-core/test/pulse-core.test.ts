@@ -192,8 +192,8 @@ describe("pulse-core EventEngine", () => {
     ).normalize.bind(engine);
 
     const missingFieldCases: Array<[string, Record<string, unknown>]> = [
-      ["from",       { type: "payment", to: "GDEST", amount: "1", created_at: "2026-01-01T00:00:00Z" }],
-      ["amount",     { type: "payment", to: "GDEST", from: "GSRC", created_at: "2026-01-01T00:00:00Z" }],
+      ["from", { type: "payment", to: "GDEST", amount: "1", created_at: "2026-01-01T00:00:00Z" }],
+      ["amount", { type: "payment", to: "GDEST", from: "GSRC", created_at: "2026-01-01T00:00:00Z" }],
       ["created_at", { type: "payment", to: "GDEST", from: "GSRC", amount: "1" }],
     ];
 
@@ -842,7 +842,7 @@ describe("pulse-core EventEngine", () => {
 
       expect(handler).not.toHaveBeenCalled();
       expect(log.warn).toHaveBeenCalledWith(
-        "[pulse-core] subscribe() filter threw for GDEST — treating as reject.",
+        "[pulse-core] subscribe() filter threw for address GDEST — treating as reject.",
         expect.objectContaining({ error: "filter boom" })
       );
 
@@ -860,7 +860,7 @@ describe("pulse-core EventEngine", () => {
 
       expect(second).toBe(first);
       expect(log.warn).toHaveBeenCalledWith(
-        "[pulse-core] subscribe() called for GDEST which already has an active watcher — filter option ignored.",
+        "[pulse-core] subscribe() called for address GDEST which already has an active watcher — filter option ignored.",
         expect.objectContaining({ address: "GDEST", hasFilter: true })
       );
     });
@@ -1369,7 +1369,7 @@ describe("pulse-core EventEngine", () => {
   describe("status()", () => {
     it("returns accurate snapshot in initial state", () => {
       const engine = new EventEngine({ network: "testnet" });
-      expect(engine.status()).toEqual(expect.objectContaining({ running: false, watcherCount: 0, lastEventAt: null, reconnectAttempt: 0 }));
+      expect(engine.status()).toMatchObject({ running: false, watcherCount: 0, lastEventAt: null, reconnectAttempt: 0 });
     });
 
     it("returns accurate snapshot after start()", () => {
@@ -1377,7 +1377,7 @@ describe("pulse-core EventEngine", () => {
       engine.subscribe("GABC");
       engine.start();
 
-      expect(engine.status()).toEqual(expect.objectContaining({ running: true, watcherCount: 1, lastEventAt: null, reconnectAttempt: 0 }));
+      expect(engine.status()).toMatchObject({ running: true, watcherCount: 1, lastEventAt: null, reconnectAttempt: 0 });
     });
 
     it("updates lastEventAt after a message", () => {
@@ -1397,7 +1397,7 @@ describe("pulse-core EventEngine", () => {
 
       latestStream().handlers.onerror(new Error("disconnect"));
 
-      expect(engine.status()).toEqual(expect.objectContaining({ running: false, watcherCount: 0, lastEventAt: null, reconnectAttempt: 1 }));
+      expect(engine.status()).toMatchObject({ running: false, watcherCount: 0, lastEventAt: null, reconnectAttempt: 1 });
     });
 
     it("resets state when stop() is called", () => {
@@ -1408,7 +1408,7 @@ describe("pulse-core EventEngine", () => {
 
       engine.stop();
 
-      expect(engine.status()).toEqual(expect.objectContaining({ running: false, watcherCount: 0, lastEventAt: null, reconnectAttempt: 0 }));
+      expect(engine.status()).toMatchObject({ running: false, watcherCount: 0, lastEventAt: null, reconnectAttempt: 0 });
     });
   });
 
@@ -2038,6 +2038,7 @@ describe("pulse-core EventEngine", () => {
       contractWatcherCount: 0,
       lastEventAt: null,
       reconnectAttempt: 0,
+      pausedSources: undefined,
       sources: {
         horizon: {
           running: false,

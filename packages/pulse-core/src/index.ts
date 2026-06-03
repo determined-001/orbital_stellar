@@ -1,3 +1,5 @@
+import { CursorStore } from "./CursorStore.js";
+import type { StellarAmount } from "./amount.js";
 export { SorobanRpcClient } from "./SorobanRpcClient.js";
 export type { SorobanRpcClientOptions } from "./SorobanRpcClient.js";
 export { EventEngine } from "./EventEngine.js";
@@ -13,12 +15,13 @@ export type {
 export { EngineAlreadyStartedError, HorizonStreamError } from "./errors.js";
 export { StrKey } from "@stellar/stellar-sdk";
 export { CursorStore } from "./CursorStore.js";
-import type { CursorStore } from "./CursorStore.js";
 export { PostgresCursorStore, PgLike } from "./PostgresCursorStore.js";
 export { cacheCursorStore } from "./cacheCursorStore.js";
 export { evaluatePredicate, normalizeClaimPredicate, isClaimPredicateType } from "./claimPredicate.js";
 export type { ClaimPredicate } from "./claimPredicate.js";
 export { isEventType } from "./eventTypeGuard.js";
+export type { StellarAmount } from "./amount.js";
+export { toBigInt } from "./amount.js";
 export {
   isAccountAddress,
   isMuxedAddress,
@@ -146,7 +149,7 @@ export type PaymentEvent = {
   /** The source address of the payment. */
   from: AccountAddress | MuxedAddress;
   /** The amount of the payment as a string. */
-  amount: string;
+  amount: StellarAmount;
   /** The asset being transferred (e.g., "XLM" or "ASSET:issuer"). */
   asset: string;
   /** ISO 8601 timestamp of the payment. */
@@ -177,7 +180,7 @@ export type OfferEvent = {
   source: AccountAddress;
   buying_asset: string;
   selling_asset: string;
-  amount: string;
+  amount: StellarAmount;
   price: string;
   timestamp: string;
   raw: unknown;
@@ -202,7 +205,7 @@ export type ClaimableCreatedEvent = {
   balanceId: string;
   claimants: ClaimableBalanceClaimant[];
   asset: string;
-  amount: string;
+  amount: StellarAmount;
   timestamp: string;
   raw: unknown;
 };
@@ -229,7 +232,7 @@ export type DataEvent = {
 
 export type LiquidityPoolReserve = {
   asset: string;
-  amount: string;
+  amount: StellarAmount;
 };
 
 export type LiquidityPoolDepositEvent = {
@@ -458,11 +461,15 @@ export type ContractInvokedEvent = {
   contractId: ContractAddress;
   /** The function name that was invoked. */
   function: string;
-  /** Ordered list of topic strings (XDR-encoded or decoded). */
-  topics: string[];
-  /** Arbitrary event data payload. */
-  data: unknown;
+  /** Ordered list of arguments passed to the function. */
+  args: unknown[];
+  /** The ledger sequence number where the invocation occurred. */
+  ledger: number;
+  /** The transaction hash of the transaction containing this invocation. */
+  txHash: string;
+  /** ISO 8601 timestamp of the invocation. */
   timestamp: string;
+  /** The original raw record from the Soroban API. */
   raw: unknown;
 };
 
@@ -482,7 +489,12 @@ export type ContractEmittedEvent = {
    * decode error, or when no registry is configured.
    */
   decodedData?: unknown;
+  ledger: number;
+  eventId: string;
+  txHash: string;
+  inSuccessfulContractCall: boolean;
   timestamp: string;
+  /** The original raw record from the Soroban API. */
   raw: unknown;
 };
 
@@ -514,6 +526,7 @@ export type ContractSubscriptionFilter = {
 /** Options for subscribeContract(). */
 export type ContractSubscribeOptions = {
   filters?: ContractSubscriptionFilter[];
+  filter?: (event: NormalizedEvent) => boolean;
   /** Optional human-friendly label for observability — appears in log lines and lifecycle notifications. */
   name?: string;
 };
