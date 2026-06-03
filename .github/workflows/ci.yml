@@ -62,6 +62,137 @@ jobs:
       - name: Test packages
         run: pnpm -r --if-present test
 
+  bundle-size:
+    needs: changes
+    if: ${{ needs.changes.outputs.packages == 'true' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Build pulse-core
+        run: pnpm tsc -p packages/pulse-core/tsconfig.json
+      - name: Build pulse-notify
+        run: pnpm tsc -p packages/pulse-notify/tsconfig.json
+      - name: Check bundle size
+        run: pnpm --filter @orbital/pulse-notify size
+
+  typecheck-web:
+    needs: changes
+    if: ${{ needs.changes.outputs.web == 'true' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Build pulse-core
+        run: pnpm tsc -p packages/pulse-core/tsconfig.json
+      - name: Typecheck apps/web
+        run: pnpm tsc --noEmit -p apps/web/tsconfig.json
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["**"]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      packages: ${{ steps.filter.outputs.packages }}
+      web: ${{ steps.filter.outputs.web }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v4
+        id: filter
+        with:
+          filters: |
+            packages:
+              - 'packages/**'
+              - 'tsconfig.base.json'
+            web:
+              - 'apps/web/**'
+              - 'packages/**'
+
+  typecheck-packages:
+    needs: changes
+    if: ${{ needs.changes.outputs.packages == 'true' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      matrix:
+        node-version: [20, 22]
+      fail-fast: false
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Build pulse-core
+        run: pnpm tsc -p packages/pulse-core/tsconfig.json
+      - name: Typecheck abi-registry
+        run: pnpm tsc --noEmit -p packages/abi-registry/tsconfig.json
+      - name: Typecheck pulse-webhooks
+        run: pnpm tsc --noEmit -p packages/pulse-webhooks/tsconfig.json
+      - name: Typecheck pulse-notify
+        run: pnpm tsc --noEmit -p packages/pulse-notify/tsconfig.json
+      - name: Test packages
+        run: pnpm -r --if-present test
+
+  bundle-size:
+    needs: changes
+    if: ${{ needs.changes.outputs.packages == 'true' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Build pulse-core
+        run: pnpm tsc -p packages/pulse-core/tsconfig.json
+      - name: Build pulse-notify
+        run: pnpm tsc -p packages/pulse-notify/tsconfig.json
+      - name: Check bundle size
+        run: pnpm --filter @orbital/pulse-notify size
+
   typecheck-web:
     needs: changes
     if: ${{ needs.changes.outputs.web == 'true' }}

@@ -15,7 +15,6 @@ function makeRecord(overrides: Partial<RetryRecord> = {}): RetryRecord {
     url: "https://example.com/hook",
     event: { type: "test", id: 1 },
     attempt: 1,
-    nextAttemptAt: Date.now() - 1000,
     ...overrides,
   };
 }

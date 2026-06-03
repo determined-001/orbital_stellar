@@ -4,11 +4,12 @@ export interface RetryRecord {
   attemptCount: number;
   nextRetryAt: number;
   createdAt: number;
-  id?: string | number;
+  id?: string;
   url: string;
   event: any;
   attempt: number;
-  nextAttemptAt: number;
+  lastError?: string;
+  metadata?: Record<string, unknown>;
 }
 
 export interface RetryQueue {
