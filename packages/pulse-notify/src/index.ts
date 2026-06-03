@@ -88,6 +88,8 @@ export function useStellarEvent<T extends NormalizedEvent = NormalizedEvent>(
     typeof configOrUrl === "string"
       ? (options?.hideAfterMs ?? 30000)
       : (configOrUrl.hideAfterMs ?? 30000);
+
+  const eventKey = Array.isArray(eventType)
     ? [...eventType].sort().join(",")
     : eventType;
 
