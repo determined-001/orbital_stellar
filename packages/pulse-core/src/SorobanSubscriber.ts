@@ -39,6 +39,15 @@ export interface SorobanSubscriberOptions {
   rpc: SorobanRpc;
   cursorStore: CursorStore;
   onEvent: (event: SorobanEvent) => Promise<void>;
+  /**
+   * When set, the subscriber operates in bounded-replay mode: polling stops
+   * (and `onDone` is called) once every event whose ledger is strictly less
+   * than `endLedger` has been delivered.  The cursor store is **not** updated
+   * during replay — progress is ephemeral and intentionally discarded.
+   */
+  endLedger?: number;
+  /** Called once when a bounded replay run has delivered all events up to endLedger. */
+  onDone?: () => void;
   pageSize?: number;
 }
 
@@ -47,6 +56,7 @@ export class SorobanSubscriber {
   private readonly cursorStore: CursorStore;
   private readonly onEvent: (event: SorobanEvent) => Promise<void>;
   private readonly pageSize: number;
+private readonly seen: LruSet; main
 
   private isStopped = false;
 
@@ -68,6 +78,7 @@ export class SorobanSubscriber {
     this.cursorStore = options.cursorStore;
     this.onEvent = options.onEvent;
     this.pageSize = options.pageSize ?? 100;
+this.seen = new LruSet(options.dedupCacheSize ?? 1024); main
   }
 
   /**
@@ -129,8 +140,18 @@ export class SorobanSubscriber {
   // Private helpers
   // ---------------------------------------------------------------------------
 
+  private get isReplayMode(): boolean {
+    return this.endLedger !== undefined;
+  }
+
   private async _doPoll(signal: AbortSignal): Promise<void> {
-    const currentCursor = await this.cursorStore.getCursor();
+    // In replay mode, bail immediately if we've already reached endLedger.
+    if (this.isReplayMode && this.replayDone) return;
+
+    // In replay mode use the ephemeral replayCursor; otherwise read from store.
+    const currentCursor = this.isReplayMode
+      ? this.replayCursor
+      : await this.cursorStore.getCursor();
 
     let result: { events: SorobanEvent[] };
     try {
@@ -148,12 +169,34 @@ export class SorobanSubscriber {
         // concurrently (e.g. from within the onEvent handler).
         if (this.isStopped) return;
 
+if (this.seen.has(event.id)) continue;
         await this.onEvent(event);
-        await this.cursorStore.saveCursor(event.pagingToken);
+        this.seen.add(event.id);
+        await this.cursorStore.saveCursor(event.pagingToken); main
       }
     } finally {
       this.isPolling = false;
     }
+  }
+
+  /**
+   * Extracts the ledger sequence number from a SorobanEvent.
+   * The Soroban RPC embeds the ledger in the event `id` field as
+   * `<ledger>-<index>` (e.g. "1234-0").  Falls back to a `ledger` field if
+   * present on the raw event object.
+   */
+  private extractLedger(event: SorobanEvent): number | undefined {
+    // Prefer explicit ledger field (available in some RPC responses).
+    const raw = event as unknown as Record<string, unknown>;
+    if (typeof raw.ledger === "number") return raw.ledger;
+
+    // Parse from paging token / id encoded as "<ledger>-<index>".
+    const match = event.id.match(/^(\d+)-/);
+    if (match) {
+      const n = parseInt(match[1], 10);
+      if (!isNaN(n)) return n;
+    }
+    return undefined;
   }
 
   private isAbortError(err: unknown): boolean {

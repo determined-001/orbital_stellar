@@ -54,3 +54,10 @@ export class EngineAlreadyStartedError extends Error {
     this.name = "EngineAlreadyStartedError";
   }
 }
+
+export class NetworkMismatchError extends Error {
+  constructor(expected: string, actual: string) {
+    super(`[pulse-core] Soroban RPC network mismatch: expected passphrase "${expected}", got "${actual}"`);
+    this.name = "NetworkMismatchError";
+  }
+}
