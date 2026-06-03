@@ -17,6 +17,12 @@ export type UseEventConfig<T extends NormalizedEvent = NormalizedEvent> = {
   withCredentials?: boolean;
   /** Side-effect callback fired for every incoming event, before filter is applied */
   onEvent?: (event: NormalizedEvent) => void;
+  /**
+   * Close EventSource connection when tab is hidden for this duration (ms).
+   * Defaults to 30000 (30s). Set to 0 to disable.
+   * Saves bandwidth and battery on mobile when tab is not visible.
+   */
+  hideAfterMs?: number;
 };
 
 export type EventState<T extends NormalizedEvent = NormalizedEvent> = {
@@ -27,36 +33,45 @@ export type EventState<T extends NormalizedEvent = NormalizedEvent> = {
 };
 
 export function useStellarEvent<T extends NormalizedEvent = NormalizedEvent>(
-  config: UseEventConfig<T>
+  config: UseEventConfig<T>,
 ): EventState<T>;
 export function useStellarEvent<T extends NormalizedEvent = NormalizedEvent>(
   serverUrl: string,
   address: string,
   options?: Pick<
     UseEventConfig<T>,
-    "event" | "token" | "initialEvent" | "filter" | "withCredentials" | "onEvent"
-  >
+    | "event"
+    | "token"
+    | "initialEvent"
+    | "filter"
+    | "withCredentials"
+    | "onEvent"
+    | "hideAfterMs"
+  >,
 ): EventState<T>;
 export function useStellarEvent<T extends NormalizedEvent = NormalizedEvent>(
   configOrUrl: UseEventConfig<T> | string,
   address?: string,
   options?: Pick<
     UseEventConfig<T>,
-    "event" | "token" | "initialEvent" | "filter" | "withCredentials" | "onEvent"
-  >
+    | "event"
+    | "token"
+    | "initialEvent"
+    | "filter"
+    | "withCredentials"
+    | "onEvent"
+    | "hideAfterMs"
+  >,
 ): EventState<T> {
   const serverUrl =
     typeof configOrUrl === "string" ? configOrUrl : configOrUrl.serverUrl;
-  const addr =
-    typeof configOrUrl === "string" ? address! : configOrUrl.address;
+  const addr = typeof configOrUrl === "string" ? address! : configOrUrl.address;
   const eventType: string | string[] =
     typeof configOrUrl === "string"
-      ? options?.event ?? "*"
-      : configOrUrl.event ?? "*";
+      ? (options?.event ?? "*")
+      : (configOrUrl.event ?? "*");
   const token =
-    typeof configOrUrl === "string"
-      ? options?.token
-      : configOrUrl.token;
+    typeof configOrUrl === "string" ? options?.token : configOrUrl.token;
   const initialEvent: T | null =
     (typeof configOrUrl === "string"
       ? options?.initialEvent
@@ -69,8 +84,10 @@ export function useStellarEvent<T extends NormalizedEvent = NormalizedEvent>(
       : configOrUrl.withCredentials;
   const onEvent =
     typeof configOrUrl === "string" ? options?.onEvent : configOrUrl.onEvent;
-
-  const eventKey = Array.isArray(eventType)
+  const hideAfterMs =
+    typeof configOrUrl === "string"
+      ? (options?.hideAfterMs ?? 30000)
+      : (configOrUrl.hideAfterMs ?? 30000);
     ? [...eventType].sort().join(",")
     : eventType;
 
@@ -110,7 +127,11 @@ export function useStellarEvent<T extends NormalizedEvent = NormalizedEvent>(
           if (!allowed) return;
           if (filterRef.current && !filterRef.current(incoming)) return;
 
-          setState((prev) => ({ ...prev, event: incoming as T, lastEventAt: incoming.timestamp ?? null }));
+          setState((prev) => ({
+            ...prev,
+            event: incoming as T,
+            lastEventAt: incoming.timestamp ?? null,
+          }));
         },
         onParseError: () => {
           setState((prev) => ({ ...prev, error: "Failed to parse event" }));
@@ -122,24 +143,54 @@ export function useStellarEvent<T extends NormalizedEvent = NormalizedEvent>(
             error: "Connection lost — retrying...",
           }));
         },
-      }
+      },
     );
 
     if (connection.connected) {
       setState((prev) => ({ ...prev, connected: true, error: null }));
     }
 
+    // Handle tab visibility — close connection when hidden for > hideAfterMs
+    let hideTimer: ReturnType<typeof setTimeout> | undefined;
+
+    const handleVisibilityChange = () => {
+      if (hideAfterMs === 0) return; // Disabled
+
+      if (document.visibilityState === "hidden") {
+        // Tab is now hidden — start timer to close connection
+        hideTimer = setTimeout(() => {
+          connection.close();
+        }, hideAfterMs);
+      } else {
+        // Tab is now visible — cancel timer and re-establish if needed
+        if (hideTimer) {
+          clearTimeout(hideTimer);
+          hideTimer = undefined;
+        }
+        connection.reopenIfClosed();
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
     return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      if (hideTimer) {
+        clearTimeout(hideTimer);
+      }
       connection.unsubscribe();
     };
     // ✅ eventKey is a serialised string — stable even when the caller passes
     // an array literal, which would otherwise be a new reference every render.
-  }, [serverUrl, addr, eventKey, token, withCredentials]);
+  }, [serverUrl, addr, eventKey, token, withCredentials, hideAfterMs]);
 
   return state;
 }
 
-export type PaymentEvent = Extract<NormalizedEvent, { type: "payment.received" }>;
+export type PaymentEvent = Extract<
+  NormalizedEvent,
+  { type: "payment.received" }
+>;
 
 export function useStellarPayment(
   serverUrl: string,
@@ -148,13 +199,15 @@ export function useStellarPayment(
     initialEvent?: PaymentEvent | null;
     filter?: (event: NormalizedEvent) => boolean;
     withCredentials?: boolean;
-  }
+    hideAfterMs?: number;
+  },
 ) {
   const base = useStellarEvent<PaymentEvent>(serverUrl, address, {
     event: "payment.received",
     initialEvent: options?.initialEvent,
     filter: options?.filter,
     withCredentials: options?.withCredentials,
+    hideAfterMs: options?.hideAfterMs,
   });
   const amountStroop: bigint | null =
     base.event?.amount != null
@@ -170,13 +223,15 @@ export function useStellarActivity(
     initialEvent?: NormalizedEvent | null;
     filter?: (event: NormalizedEvent) => boolean;
     withCredentials?: boolean;
-  }
+    hideAfterMs?: number;
+  },
 ) {
   return useStellarEvent(serverUrl, address, {
     event: "*",
     initialEvent: options?.initialEvent,
     filter: options?.filter,
     withCredentials: options?.withCredentials,
+    hideAfterMs: options?.hideAfterMs,
   });
 }
 
@@ -193,24 +248,29 @@ export type UseHistoryOptions = {
   capacity?: number;
 };
 
-export type HistoryState<T extends NormalizedEvent = NormalizedEvent> = EventState<T> & {
-  history: T[];
-};
+export type HistoryState<T extends NormalizedEvent = NormalizedEvent> =
+  EventState<T> & {
+    history: T[];
+  };
 
 export function useStellarHistory<T extends NormalizedEvent = NormalizedEvent>(
   serverUrl: string,
   address: string,
-  options?: UseHistoryOptions
+  options?: UseHistoryOptions,
 ): HistoryState<T> {
   const [history, setHistory] = useState<T[]>([]);
   const capacity = options?.capacity ?? 100;
-  const base = useStellarActivity<T>(serverUrl, address, { initialEvent: null });
+  const base = useStellarActivity<T>(serverUrl, address, {
+    initialEvent: null,
+  });
 
   useEffect(() => {
     if (base.event) {
       setHistory((prev) => {
         const next = [...prev, base.event as T];
-        return next.length > capacity ? next.slice(next.length - capacity) : next;
+        return next.length > capacity
+          ? next.slice(next.length - capacity)
+          : next;
       });
     }
   }, [base.event, capacity]);
