@@ -341,3 +341,6 @@ export type SubscribeOptions = {
    *  is suppressed and a warning is logged — the engine continues running. */
   filter?: (event: NormalizedEvent) => boolean;
 };
+
+export type { CursorStore } from "./CursorStore";
+export { MemoryCursorStore } from "./MemoryCursorStore";
