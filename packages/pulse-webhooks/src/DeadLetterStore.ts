@@ -18,11 +18,6 @@ export interface DeadLetterStore {
   list(filter?: DeadLetterFilter): FailureRecord[];
 }
 
-/**
- * MemoryDeadLetterStore — An in-memory DeadLetterStore implementation.
- * Keeps up to the configured cap (default 1000), evicting the oldest
- * record (FIFO) when full. NOT safe for concurrent environments.
- */
 export class MemoryDeadLetterStore implements DeadLetterStore {
   private records: FailureRecord[] = [];
   private readonly cap: number;
