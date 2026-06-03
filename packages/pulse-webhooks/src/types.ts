@@ -1,3 +1,7 @@
+import type { RetryQueue } from "./RetryQueue.js";
+
+export type { RetryRecord, RetryQueue } from "./RetryQueue.js";
+
 export type WebhookConfig = {
   url: string | string[];
   secret: string;
@@ -24,18 +28,3 @@ export type VerifyWebhookOptions = {
   /** Override current time for testing. Defaults to Date.now(). */
   nowMs?: number;
 };
-
-export interface RetryRecord {
-  id?: string | number;
-  url: string;
-  event: any;
-  attempt: number;
-  nextAttemptAt: number;
-}
-
-export interface RetryQueue {
-  enqueue(record: RetryRecord): Promise<void>;
-  dequeue(): Promise<RetryRecord | null>;
-  evictNewest(): Promise<RetryRecord | null>;
-  size(): Promise<number>;
-}

@@ -1,14 +1,15 @@
 import type { NormalizedEvent, Watcher, WatcherNotification } from "@orbital/pulse-core";
 import { createHmac, timingSafeEqual } from "crypto";
-import { MemoryRetryQueue } from "./RetryQueue.js";
 
-import type { VerifyWebhookOptions, WebhookConfig, RetryRecord, RetryQueue } from "./types.js";
+import type { VerifyWebhookOptions, WebhookConfig } from "./types.js";
 import { DEFAULT_MAX_AGE_MS, DEFAULT_CLOCK_SKEW_MS } from "./types.js";
+import type { RetryRecord } from "./RetryQueue.js";
 export { verifyWebhookEdge } from "./edge.js";
 export { PostgresRetryQueue } from "./PostgresRetryQueue.js";
 export { MemoryRetryQueue } from "./RetryQueue.js";
 export type { PgLike, PostgresRetryQueueOptions } from "./PostgresRetryQueue.js";
-export type { VerifyWebhookOptions, WebhookConfig, RetryRecord, RetryQueue } from "./types.js";
+export type { VerifyWebhookOptions, WebhookConfig } from "./types.js";
+export type { RetryRecord, RetryQueue } from "./RetryQueue.js";
 
 type ResolvedWebhookConfig = Omit<Required<WebhookConfig>, "url" | "urlValidator" | "retryQueue"> & {
   urls: string[];
@@ -19,8 +20,6 @@ type ResolvedWebhookConfig = Omit<Required<WebhookConfig>, "url" | "urlValidator
 export class WebhookDelivery {
   private config: ResolvedWebhookConfig;
   private watcher: Watcher;
-  private retryQueue: RetryQueue;
-  // Map of record ID -> active timer
   private retryTimers: Map<string, { timer: ReturnType<typeof setTimeout>; record: RetryRecord }> = new Map();
 
   constructor(watcher: Watcher, config: WebhookConfig) {
@@ -34,7 +33,6 @@ export class WebhookDelivery {
       urls: Array.isArray(config.url) ? [...config.url] : [config.url],
     };
     this.config.maxConcurrentRetries = Math.max(1, this.config.maxConcurrentRetries);
-    this.retryQueue = config.retryQueue || new MemoryRetryQueue();
 
     this.watcher.addStopHandler(() => {
       this.clearRetryTimers();
@@ -108,6 +106,11 @@ export class WebhookDelivery {
         const id = Math.random().toString(36).slice(2);
 
         const record: RetryRecord = {
+          webhookId: url,
+          payload: event,
+          attemptCount: attempt,
+          nextRetryAt: nextAttemptAt,
+          createdAt: Date.now(),
           id,
           url,
           event,
@@ -115,39 +118,37 @@ export class WebhookDelivery {
           nextAttemptAt,
         };
 
-        if (this.retryTimers.size >= this.config.maxConcurrentRetries) {
-          const newestId = [...this.retryTimers.keys()].at(-1);
-          if (newestId) {
-            const active = this.retryTimers.get(newestId);
-            if (active) {
-              clearTimeout(active.timer);
-              this.retryTimers.delete(newestId);
-              void this.retryQueue.evictNewest();
-              
-              this.watcher.emit("webhook.dropped", {
-                ...active.record.event,
-                raw: {
-                  reason: "retry_cap_exceeded",
-                  url: active.record.url,
-                  maxConcurrentRetries: this.config.maxConcurrentRetries,
-                  originalEvent: active.record.event,
-                },
-              } as unknown as NormalizedEvent);
+        if (this.config.retryQueue) {
+          this.config.retryQueue.enqueue(record);
+        } else {
+          if (this.retryTimers.size >= this.config.maxConcurrentRetries) {
+            const newestId = [...this.retryTimers.keys()].at(-1);
+            if (newestId) {
+              const active = this.retryTimers.get(newestId);
+              if (active) {
+                clearTimeout(active.timer);
+                this.retryTimers.delete(newestId);
+
+                this.watcher.emit("webhook.dropped", {
+                  ...active.record.event,
+                  raw: {
+                    reason: "retry_cap_exceeded",
+                    url: active.record.url,
+                    maxConcurrentRetries: this.config.maxConcurrentRetries,
+                    originalEvent: active.record.event,
+                  },
+                } as unknown as NormalizedEvent);
+              }
             }
           }
+
+          const timer = setTimeout(() => {
+            this.retryTimers.delete(id);
+            void this.deliverToUrl(event, url, attempt + 1);
+          }, delay);
+
+          this.retryTimers.set(id, { timer, record });
         }
-
-        void this.retryQueue.enqueue(record);
-
-        const timer = setTimeout(async () => {
-          this.retryTimers.delete(id);
-          const dequeued = await this.retryQueue.dequeue();
-          if (dequeued) {
-            void this.deliverToUrl(dequeued.event, dequeued.url, dequeued.attempt + 1);
-          }
-        }, delay);
-
-        this.retryTimers.set(id, { timer, record });
       } else {
         this.emitFailure(event, url, errorMessage, attempt);
       }
