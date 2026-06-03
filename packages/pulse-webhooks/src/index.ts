@@ -2,14 +2,16 @@ import type { NormalizedEvent, Watcher, WatcherNotification } from "@orbital/pul
 import { createHmac, timingSafeEqual } from "crypto";
 import { MemoryRetryQueue } from "./RetryQueue.js";
 
-import type { VerifyWebhookOptions, WebhookConfig, RetryRecord, RetryQueue, DeadLetterRecord, DeadLetterFilter, DeadLetterStore } from "./types.js";
+import type { VerifyWebhookOptions, WebhookConfig, RetryRecord, RetryQueue } from "./types.js";
 import { DEFAULT_MAX_AGE_MS, DEFAULT_CLOCK_SKEW_MS } from "./types.js";
+import type { DeadLetterStore, FailureRecord } from "./DeadLetterStore.js";
 export { verifyWebhookEdge } from "./edge.js";
 export { PostgresRetryQueue } from "./PostgresRetryQueue.js";
 export { MemoryRetryQueue } from "./RetryQueue.js";
 export { MemoryDeadLetterStore } from "./DeadLetterStore.js";
 export type { PgLike, PostgresRetryQueueOptions } from "./PostgresRetryQueue.js";
-export type { VerifyWebhookOptions, WebhookConfig, RetryRecord, RetryQueue, DeadLetterRecord, DeadLetterFilter, DeadLetterStore } from "./types.js";
+export type { VerifyWebhookOptions, WebhookConfig, RetryRecord, RetryQueue } from "./types.js";
+export type { DeadLetterStore, FailureRecord, DeadLetterFilter } from "./DeadLetterStore.js";
 
 type ResolvedWebhookConfig = Omit<Required<WebhookConfig>, "url" | "urlValidator" | "retryQueue" | "deadLetterStore"> & {
   urls: string[];
@@ -43,22 +45,26 @@ export class WebhookDelivery {
 
       this.watcher.on("webhook.failed", (ev: any) => {
         if (ev && ev.raw) {
-          void store.record({
-            url: ev.raw.url,
-            event: ev.raw.originalEvent,
-            error: ev.raw.error,
-            attempts: ev.raw.attempts,
+          store.record({
+            eventType: "webhook.failed",
+            webhookId: ev.raw.url,
+            payload: ev.raw.originalEvent,
+            reason: ev.raw.error,
+            timestamp: Date.now(),
+            attemptCount: ev.raw.attempts,
           });
         }
       });
 
       this.watcher.on("webhook.dropped", (ev: any) => {
         if (ev && ev.raw) {
-          void store.record({
-            url: ev.raw.url,
-            event: ev.raw.originalEvent,
+          store.record({
+            eventType: "webhook.dropped",
+            webhookId: ev.raw.url,
+            payload: ev.raw.originalEvent,
             reason: ev.raw.reason,
-            attempts: ev.raw.maxConcurrentRetries ? ev.raw.maxConcurrentRetries : 1,
+            timestamp: Date.now(),
+            attemptCount: ev.raw.maxConcurrentRetries ? ev.raw.maxConcurrentRetries : 1,
           });
         }
       });

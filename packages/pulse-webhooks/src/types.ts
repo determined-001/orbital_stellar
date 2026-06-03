@@ -1,3 +1,5 @@
+import type { DeadLetterStore } from "./DeadLetterStore.js";
+
 export type WebhookConfig = {
   url: string | string[];
   secret: string;
@@ -40,25 +42,4 @@ export interface RetryQueue {
   dequeue(): Promise<RetryRecord | null>;
   evictNewest(): Promise<RetryRecord | null>;
   size(): Promise<number>;
-}
-
-export interface DeadLetterRecord {
-  id: string;
-  url: string;
-  event: any;
-  error?: string;
-  reason?: string;
-  attempts: number;
-  timestamp: number;
-}
-
-export interface DeadLetterFilter {
-  url?: string;
-  type?: string;
-  reason?: string;
-}
-
-export interface DeadLetterStore {
-  record(failure: Omit<DeadLetterRecord, "id" | "timestamp">): Promise<void>;
-  list(filter?: DeadLetterFilter): Promise<DeadLetterRecord[]>;
 }
