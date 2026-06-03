@@ -18,4 +18,10 @@ export interface CursorStore {
    * it and report ok: false if it rejects.
    */
   ping?(): Promise<void>;
+
+  /**
+   * Returns all stored stream-key → cursor entries.
+   * Used by the cursor migration utility to bulk-copy state between stores.
+   */
+  getAll(): Promise<Array<{ streamKey: string; cursor: string }>>;
 }

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { EventEngine } from "../src/EventEngine.js";
-import type { ContractEmittedEvent, ContractInvokedEvent } from "../src/index.js";
+import type { ContractEmittedEvent, ContractInvokedEvent, ContractSubscriptionConfig } from "../src/index.js";
 
 function buildEngine(log?: any): {
   engine: EventEngine;
@@ -194,5 +194,124 @@ describe("EventEngine.awaitContractSubscriptionActive", () => {
     engine.notifyContractPolled("C4", ["whatever"]);
 
     await expect(p).resolves.toBeUndefined();
+  });
+});
+
+function makeEngine(): EventEngine {
+  return new EventEngine({ network: "testnet" });
+}
+
+describe("engine.subscribeContract(config)", () => {
+  it("returns a Watcher for a valid config", () => {
+    const engine = makeEngine();
+    const watcher = engine.subscribeContract({
+      filters: [{ contractIds: ["CA1234"] }],
+    });
+    expect(watcher).toBeDefined();
+    expect(typeof watcher.on).toBe("function");
+  });
+
+  it("returns the same Watcher instance for semantically equal configs", () => {
+    const engine = makeEngine();
+    const config: ContractSubscriptionConfig = {
+      filters: [{ contractIds: ["CA1234"] }],
+    };
+    const w1 = engine.subscribeContract(config);
+    const w2 = engine.subscribeContract({ filters: [{ contractIds: ["CA1234"] }] });
+    expect(w1).toBe(w2);
+  });
+
+  it("deduplicates regardless of contractIds order", () => {
+    const engine = makeEngine();
+    const w1 = engine.subscribeContract({ filters: [{ contractIds: ["CA", "CB"] }] });
+    const w2 = engine.subscribeContract({ filters: [{ contractIds: ["CB", "CA"] }] });
+    expect(w1).toBe(w2);
+  });
+
+  it("returns different Watchers for different filter shapes", () => {
+    const engine = makeEngine();
+    const w1 = engine.subscribeContract({ filters: [{ contractIds: ["CA"] }] });
+    const w2 = engine.subscribeContract({ filters: [{ contractIds: ["CB"] }] });
+    expect(w1).not.toBe(w2);
+  });
+
+  it("accepts an empty filters array", () => {
+    const engine = makeEngine();
+    expect(() => engine.subscribeContract({ filters: [] })).not.toThrow();
+  });
+
+  it("accepts exactly 5 filters", () => {
+    const engine = makeEngine();
+    const filters = Array.from({ length: 5 }, (_, i) => ({ contractIds: [`C${i}`] }));
+    expect(() => engine.subscribeContract({ filters })).not.toThrow();
+  });
+
+  it("throws synchronously when filters.length > 5", () => {
+    const engine = makeEngine();
+    const filters = Array.from({ length: 6 }, (_, i) => ({ contractIds: [`C${i}`] }));
+    expect(() => engine.subscribeContract({ filters })).toThrow(
+      /filters.*≤ 5/i
+    );
+  });
+
+  it("throws synchronously when a filter's contractIds.length > 5", () => {
+    const engine = makeEngine();
+    const contractIds = ["C1", "C2", "C3", "C4", "C5", "C6"];
+    expect(() =>
+      engine.subscribeContract({ filters: [{ contractIds }] })
+    ).toThrow(/contractIds.*≤ 5/i);
+  });
+
+  it("accepts a filter with exactly 5 contractIds", () => {
+    const engine = makeEngine();
+    const contractIds = ["C1", "C2", "C3", "C4", "C5"];
+    expect(() =>
+      engine.subscribeContract({ filters: [{ contractIds }] })
+    ).not.toThrow();
+  });
+
+  it("accepts all optional ContractFilter fields", () => {
+    const engine = makeEngine();
+    expect(() =>
+      engine.subscribeContract({
+        filters: [
+          {
+            type: "contract",
+            contractIds: ["CA1234"],
+            topics: [["transfer"], ["GABC"]],
+          },
+        ],
+      })
+    ).not.toThrow();
+  });
+
+  it("accepts type 'system'", () => {
+    const engine = makeEngine();
+    expect(() =>
+      engine.subscribeContract({ filters: [{ type: "system" }] })
+    ).not.toThrow();
+  });
+
+  it("accepts type 'diagnostic'", () => {
+    const engine = makeEngine();
+    expect(() =>
+      engine.subscribeContract({ filters: [{ type: "diagnostic" }] })
+    ).not.toThrow();
+  });
+
+  it("does not interfere with the legacy string-id subscribeContract", () => {
+    const engine = makeEngine();
+    const legacyWatcher = engine.subscribeContract("my-sub");
+    const configWatcher = engine.subscribeContract({ filters: [{ contractIds: ["CA"] }] });
+    expect(legacyWatcher).not.toBe(configWatcher);
+  });
+
+  it("stop() removes the watcher so a new call creates a fresh instance", () => {
+    const engine = makeEngine();
+    const config: ContractSubscriptionConfig = { filters: [{ contractIds: ["CA"] }] };
+    const w1 = engine.subscribeContract(config);
+    w1.stop();
+    const w2 = engine.subscribeContract(config);
+    expect(w1).not.toBe(w2);
   });
 });

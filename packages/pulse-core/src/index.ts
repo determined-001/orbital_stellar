@@ -16,6 +16,8 @@ export { StrKey } from "@stellar/stellar-sdk";
 export { CursorStore } from "./CursorStore.js";
 export { PostgresCursorStore, PgLike } from "./PostgresCursorStore.js";
 export { cacheCursorStore } from "./cacheCursorStore.js";
+export { migrateCursors } from "./migrateCursors.js";
+export type { MigrateCursorsResult } from "./migrateCursors.js";
 export { evaluatePredicate, normalizeClaimPredicate, isClaimPredicateType } from "./claimPredicate.js";
 export type { ClaimPredicate } from "./claimPredicate.js";
 export type { StellarAmount } from "./amount.js";
@@ -437,6 +439,11 @@ export type CoreConfig = {
   streamKey?: string;
   /** Number of consecutive cursor store failures before marking it unhealthy. Defaults to 5. */
   cursorFailureThreshold?: number;
+  /** Soroban RPC configuration. */
+  soroban?: {
+    /** Pagination limit for RPC `getEvents` calls. Must be 1–10,000. Defaults to 100. */
+    pageLimit?: number;
+  };
 };
 
 // Error class for invalid network validation
@@ -552,3 +559,17 @@ export type ContractSubscribeOptions = {
  * function handlePayment(e: events.PaymentEvent) { ... }
  */
 export * as events from "./events.js";
+
+// ---------------------------------------------------------------------------
+// Phase 1 — new RPC-shaped contract subscription API
+// ---------------------------------------------------------------------------
+
+export type ContractFilter = {
+  type?: "system" | "contract" | "diagnostic";
+  contractIds?: string[];
+  topics?: string[][];
+};
+
+export type ContractSubscriptionConfig = {
+  filters: ContractFilter[];
+};
