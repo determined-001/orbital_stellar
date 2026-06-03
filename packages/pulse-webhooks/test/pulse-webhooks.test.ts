@@ -838,6 +838,7 @@ describe("pulse-webhooks verifyWebhookRaw", () => {
       signature,
       "top-secret",
       timestamp,
+      { nowMs: Number(timestamp) },
     );
 
     expect(result).toBe(true);
@@ -863,13 +864,19 @@ describe("pulse-webhooks verifyWebhookRaw", () => {
     const signature = signWebhookPayload("top-secret", payload, timestamp);
 
     expect(
-      verifyWebhookRaw(payload, signature, "wrong-secret", timestamp),
+      verifyWebhookRaw(payload, signature, "wrong-secret", timestamp, {
+        nowMs: Number(timestamp),
+      }),
     ).toBe(false);
     expect(
-      verifyWebhookRaw(`${payload}x`, signature, "top-secret", timestamp),
+      verifyWebhookRaw(`${payload}x`, signature, "top-secret", timestamp, {
+        nowMs: Number(timestamp),
+      }),
     ).toBe(false);
     expect(
-      verifyWebhookRaw(payload, signature, "top-secret", "1714176000001"),
+      verifyWebhookRaw(payload, signature, "top-secret", "1714176000001", {
+        nowMs: Number(timestamp),
+      }),
     ).toBe(false);
   });
 
@@ -884,6 +891,7 @@ describe("pulse-webhooks verifyWebhookRaw", () => {
       signature,
       "top-secret",
       timestamp,
+      { nowMs: Number(timestamp) },
     );
 
     expect(result).toBe(true);
@@ -901,6 +909,7 @@ describe("pulse-webhooks verifyWebhookEdgeRaw", () => {
       signature,
       "top-secret",
       timestamp,
+      { nowMs: Number(timestamp) },
     );
 
     expect(result).toBe(true);
@@ -933,7 +942,9 @@ describe("pulse-webhooks verifyWebhookEdgeRaw", () => {
     const signature = signWebhookPayload("top-secret", payload, timestamp);
 
     expect(
-      await verifyWebhookEdgeRaw(payload, signature, "wrong-secret", timestamp),
+      await verifyWebhookEdgeRaw(payload, signature, "wrong-secret", timestamp, {
+        nowMs: Number(timestamp),
+      }),
     ).toBe(false);
     expect(
       await verifyWebhookEdgeRaw(
@@ -941,6 +952,7 @@ describe("pulse-webhooks verifyWebhookEdgeRaw", () => {
         signature,
         "top-secret",
         timestamp,
+        { nowMs: Number(timestamp) },
       ),
     ).toBe(false);
     expect(
@@ -949,6 +961,7 @@ describe("pulse-webhooks verifyWebhookEdgeRaw", () => {
         signature,
         "top-secret",
         "1714176000001",
+        { nowMs: Number(timestamp) },
       ),
     ).toBe(false);
   });
@@ -964,6 +977,7 @@ describe("pulse-webhooks verifyWebhookEdgeRaw", () => {
       signature,
       "top-secret",
       timestamp,
+      { nowMs: Number(timestamp) },
     );
 
     expect(result).toBe(true);

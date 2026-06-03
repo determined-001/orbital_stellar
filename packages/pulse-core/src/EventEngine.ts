@@ -813,7 +813,6 @@ export class EventEngine {
       const requiredFields = ["to", "from", "amount", "created_at"] as const;
       for (const field of requiredFields) {
         if (typeof r[field] !== "string" || r[field] === "") {
-          this.log.warn("[pulse-core] normalize() dropping payment record.", { field, record: r });
           this.log.warn("[pulse-core] normalize() dropping payment record.", { field, record: record });
           return null;
         }
@@ -1400,7 +1399,6 @@ export class EventEngine {
     } catch (err) {
       this.log.warn(
         `[pulse-core] subscribe() filter threw for address ${address} — treating as reject.`,
-        { error: err }
         err as Record<string, unknown>
       );
       return false;
@@ -1677,7 +1675,6 @@ export class EventEngine {
   }
 }
 
-export interface SorobanContractInvokedEvent {
 // ---------------------------------------------------------------------------
 // Legacy Soroban RPC normalizer
 //
@@ -1700,7 +1697,6 @@ export interface RpcContractInvokedEvent {
   raw: unknown;
 }
 
-export interface SorobanContractEmittedEvent {
 /** @internal */
 export interface RpcContractEmittedEvent {
   type: "contract_emitted";
@@ -1720,8 +1716,6 @@ export interface RpcContractEmittedEvent {
  * Normalizes a raw Soroban RPC event into a typed domain event structure.
  * Handles malformed fields safely by logging warnings and returning null.
  */
-export function normalizeContractEvent(rawRpcEvent: any): SorobanContractInvokedEvent | SorobanContractEmittedEvent | null {
-  // 1. Structural check patterns
 export function normalizeContractEvent(
   rawRpcEvent: unknown
 ): RpcContractInvokedEvent | RpcContractEmittedEvent | null {

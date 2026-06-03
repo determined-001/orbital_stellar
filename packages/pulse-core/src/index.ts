@@ -436,7 +436,6 @@ export class UnknownNetworkError extends Error {
 export type EngineStatus = {
   running: boolean;
   watcherCount: number;
-  contractWatcherCount: number;
   contractWatcherCount?: number;
   lastEventAt: string | null;
   reconnectAttempt: number;

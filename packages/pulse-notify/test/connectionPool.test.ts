@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { test } from "vitest";
 import {
   __getConnectionPoolSizeForTests,
   __resetConnectionPoolForTests,
@@ -32,73 +31,77 @@ function reset() {
   MockEventSource.instances = [];
 }
 
-test("connection pool behavior", () => {
-  reset();
+reset();
 
-  const firstEvents: string[] = [];
-  const secondEvents: string[] = [];
+const firstEvents: string[] = [];
+const secondEvents: string[] = [];
 
-  const first = acquireEventConnection(
-    { serverUrl: "https://events.example.com", address: "GABC", token: "secret" },
-    {
-      onOpen: () => undefined,
-      onEvent: (event) => firstEvents.push(event.type),
-      onParseError: () => undefined,
-      onError: () => undefined,
-    }
-  );
+const first = acquireEventConnection(
+  { serverUrl: "https://events.example.com", address: "GABC", token: "secret" },
+  {
+    onOpen: () => undefined,
+    onEvent: (event) => firstEvents.push(event.type),
+    onParseError: () => undefined,
+    onError: () => undefined,
+  }
+);
 
-  const second = acquireEventConnection(
-    { serverUrl: "https://events.example.com", address: "GABC", token: "secret" },
-    {
-      onOpen: () => undefined,
-      onEvent: (event) => secondEvents.push(event.type),
-      onParseError: () => undefined,
-      onError: () => undefined,
-    }
-  );
+const second = acquireEventConnection(
+  { serverUrl: "https://events.example.com", address: "GABC", token: "secret" },
+  {
+    onOpen: () => undefined,
+    onEvent: (event) => secondEvents.push(event.type),
+    onParseError: () => undefined,
+    onError: () => undefined,
+  }
+);
 
-  assert.equal(MockEventSource.instances.length, 1);
-  assert.equal(__getConnectionPoolSizeForTests(), 1);
+assert.equal(MockEventSource.instances.length, 1);
+assert.equal(__getConnectionPoolSizeForTests(), 1);
 
-  MockEventSource.instances[0]?.onmessage?.({
-    data: JSON.stringify({ type: "payment.received" }),
-  });
+assert.equal(first.connected, false);
+assert.equal(second.connected, false);
+MockEventSource.instances[0]?.onopen?.();
+assert.equal(first.connected, true);
+assert.equal(second.connected, true);
 
-  assert.deepEqual(firstEvents, ["payment.received"]);
-  assert.deepEqual(secondEvents, ["payment.received"]);
-
-  first.unsubscribe();
-  assert.equal(MockEventSource.instances[0]?.closeCount, 0);
-  assert.equal(__getConnectionPoolSizeForTests(), 1);
-
-  second.unsubscribe();
-  assert.equal(MockEventSource.instances[0]?.closeCount, 1);
-  assert.equal(__getConnectionPoolSizeForTests(), 0);
-
-  const withoutToken = acquireEventConnection(
-    { serverUrl: "https://events.example.com", address: "GABC" },
-    {
-      onOpen: () => undefined,
-      onEvent: () => undefined,
-      onParseError: () => undefined,
-      onError: () => undefined,
-    }
-  );
-  const withToken = acquireEventConnection(
-    { serverUrl: "https://events.example.com", address: "GABC", token: "secret" },
-    {
-      onOpen: () => undefined,
-      onEvent: () => undefined,
-      onParseError: () => undefined,
-      onError: () => undefined,
-    }
-  );
-
-  assert.equal(MockEventSource.instances.length, 3);
-  assert.equal(__getConnectionPoolSizeForTests(), 2);
-
-  withoutToken.unsubscribe();
-  withToken.unsubscribe();
-  reset();
+MockEventSource.instances[0]?.onmessage?.({
+  data: JSON.stringify({ type: "payment.received" }),
 });
+
+assert.deepEqual(firstEvents, ["payment.received"]);
+assert.deepEqual(secondEvents, ["payment.received"]);
+
+first.unsubscribe();
+assert.equal(MockEventSource.instances[0]?.closeCount, 0);
+assert.equal(__getConnectionPoolSizeForTests(), 1);
+
+second.unsubscribe();
+assert.equal(MockEventSource.instances[0]?.closeCount, 1);
+assert.equal(__getConnectionPoolSizeForTests(), 0);
+
+const withoutToken = acquireEventConnection(
+  { serverUrl: "https://events.example.com", address: "GABC" },
+  {
+    onOpen: () => undefined,
+    onEvent: () => undefined,
+    onParseError: () => undefined,
+    onError: () => undefined,
+  }
+);
+const withToken = acquireEventConnection(
+  { serverUrl: "https://events.example.com", address: "GABC", token: "secret" },
+  {
+    onOpen: () => undefined,
+    onEvent: () => undefined,
+    onParseError: () => undefined,
+    onError: () => undefined,
+  }
+);
+
+assert.equal(MockEventSource.instances.length, 3);
+assert.equal(__getConnectionPoolSizeForTests(), 2);
+
+withoutToken.unsubscribe();
+withToken.unsubscribe();
+reset();

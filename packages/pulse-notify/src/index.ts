@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import type { NormalizedEvent, PaymentEvent } from "@orbital/pulse-core";
+import type { NormalizedEvent } from "@orbital/pulse-core";
 import { acquireEventConnection } from "./connectionPool.js";
 export { useStellarEventSuspense } from "./useStellarEventSuspense.js";
 
@@ -137,6 +137,26 @@ export function useStellarEvent<T extends NormalizedEvent = NormalizedEvent>(
   }, [serverUrl, addr, eventKey, token, withCredentials]);
 
   return state;
+}
+
+export type PaymentEvent = Extract<NormalizedEvent, { type: "payment.received" }>;
+
+/**
+ * Converts a Stellar decimal amount string (e.g. "12.3456789") to stroops
+ * (1 XLM = 10,000,000 stroops) as a bigint.
+ *
+ * Uses integer arithmetic only — no parseFloat, no floating-point rounding.
+ * Returns null if the string is not a valid non-negative decimal number.
+ */
+function amountToStroop(amount: string): bigint | null {
+  if (!/^\d+(\.\d+)?$/.test(amount)) return null;
+  const [whole, frac = ""] = amount.split(".");
+  const fracPadded = frac.slice(0, 7).padEnd(7, "0");
+  try {
+    return BigInt(whole) * 10_000_000n + BigInt(fracPadded);
+  } catch {
+    return null;
+  }
 }
 
 export function useStellarPayment(
