@@ -1,15 +1,123 @@
-import type { NormalizedEvent, Watcher, WatcherNotification } from "@orbital/pulse-core";
+import type {
+  NormalizedEvent,
+  Watcher,
+  WatcherNotification,
+} from "@orbital/pulse-core";
 import { createHmac, timingSafeEqual } from "crypto";
 
 import type { Tracer, VerifyWebhookOptions, WebhookConfig } from "./types.js";
 import { DEFAULT_MAX_AGE_MS, DEFAULT_CLOCK_SKEW_MS } from "./types.js";
-export { PostgresDeadLetterStore } from "./PostgresDeadLetterStore.js";
-export { RedisRetryQueue } from "./RedisRetryQueue.js";
-export { verifyWebhookEdge } from "./edge.js";
-export type { DeadLetterFilter, DeadLetterInput, DeadLetterRecord, DeadLetterStore, PgLike } from "./PostgresDeadLetterStore.js";
-export type { RedisLike, RedisRetryQueueOptions } from "./RedisRetryQueue.js";
+export { verifyWebhookEdge, verifyWebhookEdgeRaw } from "./edge.js";
 export type { RetryQueue, RetryRecord } from "./RetryQueue.js";
-export type { Span, Tracer, VerifierSignatureVersion, VerifyWebhookOptions, WebhookConfig } from "./types.js";
+export type {
+  Span,
+  Tracer,
+  VerifierSignatureVersion,
+  VerifyWebhookOptions,
+  WebhookConfig,
+} from "./types.js";
+
+export interface DeadLetterEntry {
+  id: string;
+  url: string;
+  event: NormalizedEvent;
+  error: string;
+  attempts: number;
+  timestamp: number;
+}
+
+export interface DeadLetterFilter {
+  url?: string;
+  since?: number;
+  until?: number;
+  limit?: number;
+}
+
+export interface DeadLetterHealth {
+  healthy: boolean;
+  lastSuccess?: number;
+  lastFailure?: number;
+  failureRate: number;
+}
+
+/**
+ * Dead Letter Queue for failed webhook deliveries.
+ * Stores failed webhooks keyed by unique failure ID.
+ * Supports querying by URL, time window, and limit.
+ *
+ * For best query performance, create indexes on:
+ * - `url` (for URL-first queries)
+ * - `timestamp` (for time-window queries)
+ * - Composite index on `(url, timestamp)` (for combined filters)
+ */
+export class DeadLetterStore {
+  private entries: Map<string, DeadLetterEntry> = new Map();
+  private nextId: number = 0;
+  private successTimestamps: Map<string, number> = new Map(); // url -> last success timestamp
+
+  /**
+   * Add a failed webhook delivery to the dead letter store.
+   */
+  add(
+    url: string,
+    event: NormalizedEvent,
+    error: string,
+    attempts: number,
+  ): string {
+    const id = `dlq_${this.nextId++}_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+    const timestamp = Date.now();
+
+    this.entries.set(id, {
+      id,
+      url,
+      event,
+      error,
+      attempts,
+      timestamp,
+    });
+
+    return id;
+  }
+
+  /**
+   * Query the dead letter store with optional filters.
+   * Returns entries matching all provided filters.
+   *
+   * @param filter - Filter criteria { url?, since?, until?, limit? }
+   * @returns Array of matching DeadLetterEntry objects
+   *
+   * Filter behavior:
+   * - url: exact string match
+   * - since: timestamp >= since (inclusive)
+   * - until: timestamp <= until (inclusive)
+   * - limit: return at most limit entries (from oldest first)
+   */
+  list(filter: DeadLetterFilter = {}): DeadLetterEntry[] {
+    let results = Array.from(this.entries.values());
+
+    // Filter by URL
+    if (filter.url !== undefined) {
+      results = results.filter((entry) => entry.url === filter.url);
+    }
+
+    // Filter by time range
+    if (filter.since !== undefined) {
+      results = results.filter((entry) => entry.timestamp >= filter.since!);
+    }
+    if (filter.until !== undefined) {
+      results = results.filter((entry) => entry.timestamp <= filter.until!);
+    }
+
+    // Sort by timestamp (oldest first) for consistent ordering
+    results.sort((a, b) => a.timestamp - b.timestamp);
+
+    // Apply limit
+    if (filter.limit !== undefined && filter.limit > 0) {
+      results = results.slice(0, filter.limit);
+    }
+
+    return results;
+  }
 
 type ResolvedWebhookConfig = Omit<Required<WebhookConfig>, "url" | "tracer" | "urlValidator" | "retryQueue"> & {
   urls: string[];
@@ -21,12 +129,14 @@ type ResolvedWebhookConfig = Omit<Required<WebhookConfig>, "url" | "tracer" | "u
 export class WebhookDelivery {
   private config: ResolvedWebhookConfig;
   private watcher: Watcher;
+  private dlq: DeadLetterStore;
   // Map of timer -> event so we can evict the newest entry when the cap is hit.
   private retryTimers: Map<ReturnType<typeof setTimeout>, { event: NormalizedEvent; url: string }> = new Map();
   private pollTimer?: ReturnType<typeof setInterval>;
 
-  constructor(watcher: Watcher, config: WebhookConfig) {
+  constructor(watcher: Watcher, config: WebhookConfig, dlq?: DeadLetterStore) {
     this.watcher = watcher;
+    this.dlq = dlq ?? globalDLQ;
     this.config = {
       retries: 3,
       deliveryTimeoutMs: 10000,
@@ -34,11 +144,13 @@ export class WebhookDelivery {
       random: Math.random,
       pollIntervalMs: 1000,
       ...config,
-      tracer: config.tracer,
       urls: Array.isArray(config.url) ? [...config.url] : [config.url],
       retryQueue: config.retryQueue,
     };
-    this.config.maxConcurrentRetries = Math.max(1, this.config.maxConcurrentRetries);
+    this.config.maxConcurrentRetries = Math.max(
+      1,
+      this.config.maxConcurrentRetries,
+    );
 
     this.watcher.addStopHandler(() => {
       this.clearRetryTimers();
@@ -63,6 +175,13 @@ export class WebhookDelivery {
     });
   }
 
+  /**
+   * Get the dead letter store for this delivery instance.
+   */
+  getDeadLetterStore(): DeadLetterStore {
+    return this.dlq;
+  }
+
   private async deliverToUrl(
     event: NormalizedEvent,
     url: string,
@@ -70,42 +189,12 @@ export class WebhookDelivery {
   ): Promise<void> {
     if (this.watcher.stopped) return;
 
-    let customValidationError: string | null = null;
-    try {
-      customValidationError = this.config.urlValidator
-        ? await this.config.urlValidator(url)
-        : null;
-    } catch (err) {
-      if (this.watcher.stopped) return;
-
-      this.emitFailure(event, url, this.getErrorMessage(err), attempt);
-      return;
-    }
-
-    if (this.watcher.stopped) return;
-
-    if (customValidationError) {
-      this.emitFailure(event, url, customValidationError, attempt);
-      return;
-    }
-
     const payload = JSON.stringify(event);
     const timestamp = Date.now().toString();
     const signature = this.sign(payload, timestamp);
     const controller = new AbortController();
     const timeoutMs = this.config.deliveryTimeoutMs;
     const abortTimer = setTimeout(() => controller.abort(), timeoutMs);
-
-    const parentTraceId = this.extractTraceId(event);
-    const spanAttrs: Record<string, string | number | boolean> = {
-      "webhook.url": url,
-      "webhook.attempt": attempt,
-    };
-    if (parentTraceId !== undefined) {
-      spanAttrs["webhook.parent_trace_id"] = parentTraceId;
-    }
-    const span = this.config.tracer?.startSpan("webhook.delivery", spanAttrs);
-    const startMs = Date.now();
 
     try {
       const res = await fetch(url, {
@@ -122,12 +211,9 @@ export class WebhookDelivery {
 
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
-      span?.setAttribute("webhook.status", res.status);
-      span?.setAttribute("webhook.latency_ms", Date.now() - startMs);
+      // Record successful delivery for health metrics
+      this.dlq.recordSuccess(url);
     } catch (err) {
-      span?.setAttribute("webhook.latency_ms", Date.now() - startMs);
-      span?.setAttribute("webhook.error", this.getErrorMessage(err));
-
       if (this.watcher.stopped) return;
 
       const errorMessage = this.getErrorMessage(err);
@@ -195,11 +281,22 @@ export class WebhookDelivery {
           this.retryTimers.set(retryTimer, { event, url });
         }
       } else {
-        this.emitFailure(event, url, errorMessage, attempt);
+        // Add to dead letter store
+        const dlqId = this.dlq.add(url, event, errorMessage, attempt);
+
+        this.watcher.emit("webhook.failed", {
+          ...event,
+          raw: {
+            dlqId,
+            error: errorMessage,
+            url,
+            attempts: attempt,
+            originalEvent: event,
+          },
+        } as unknown as NormalizedEvent);
       }
     } finally {
       clearTimeout(abortTimer);
-      span?.end();
     }
   }
 
@@ -269,24 +366,50 @@ export class WebhookDelivery {
   }
 }
 
+/**
+ * Verifies webhook signature and returns parsed event.
+ * Use when you need to access the event payload immediately.
+ *
+ * @param payload - The raw request body
+ * @param signature - The x-orbital-signature header value
+ * @param secret - Your webhook secret
+ * @param timestamp - The x-orbital-timestamp header value
+ * @returns Parsed NormalizedEvent if verification succeeds, null otherwise
+ */
 export function verifyWebhook(
   payload: string,
   signature: string,
   secret: string,
   timestamp: string,
-  options: VerifyWebhookOptions = {},
 ): NormalizedEvent | null {
-  if (!/^\d+$/.test(timestamp)) return null;
+  if (!verifyWebhookRaw(payload, signature, secret, timestamp)) {
+    return null;
+  }
 
-  const timestampMs = Number(timestamp);
-  if (!Number.isFinite(timestampMs)) return null;
+  try {
+    return JSON.parse(payload) as NormalizedEvent;
+  } catch {
+    return null;
+  }
+}
 
-  const maxAgeMs = options.maxAgeMs ?? DEFAULT_MAX_AGE_MS;
-  const clockSkewMs = options.clockSkewMs ?? DEFAULT_CLOCK_SKEW_MS;
-  const nowMs = options.nowMs ?? Date.now();
-
-  if (timestampMs > nowMs + clockSkewMs) return null;
-  if (timestampMs < nowMs - maxAgeMs - clockSkewMs) return null;
+/**
+ * Verifies webhook signature without parsing JSON.
+ * Use when routing raw body to another consumer (e.g., queue) to avoid parse overhead.
+ *
+ * @param payload - The raw request body
+ * @param signature - The x-orbital-signature header value
+ * @param secret - Your webhook secret
+ * @param timestamp - The x-orbital-timestamp header value
+ * @returns true if signature is valid, false otherwise
+ */
+export function verifyWebhookRaw(
+  payload: string,
+  signature: string,
+  secret: string,
+  timestamp: string,
+): boolean {
+  if (!/^\d+$/.test(timestamp)) return false;
 
   const expected = createHmac("sha256", secret)
     .update(`${timestamp}.${payload}`)
@@ -295,12 +418,7 @@ export function verifyWebhook(
   const expectedBuffer = Buffer.from(expected, "hex");
   const signatureBuffer = Buffer.from(signature, "hex");
 
-  if (expectedBuffer.length !== signatureBuffer.length) return null;
-  if (!timingSafeEqual(expectedBuffer, signatureBuffer)) return null;
+  if (expectedBuffer.length !== signatureBuffer.length) return false;
 
-  try {
-    return JSON.parse(payload) as NormalizedEvent;
-  } catch {
-    return null;
-  }
+  return timingSafeEqual(expectedBuffer, signatureBuffer);
 }

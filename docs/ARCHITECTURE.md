@@ -90,12 +90,26 @@ together inside a single Next.js route handler — about 50 lines of glue.
 | **`WebhookDelivery`** | Attaches to a `Watcher`, signs each event, POSTs it with retry + timeout + concurrent-retry cap. Emits `webhook.failed` / `webhook.dropped` on terminal failure. | `packages/pulse-webhooks/src/index.ts` | ✅ |
 | **`verifyWebhook`** | Node-side HMAC verifier using `crypto.timingSafeEqual`. | `packages/pulse-webhooks/src/index.ts` | ✅ |
 | **`verifyWebhookEdge`** | Edge-runtime HMAC verifier using Web Crypto API + constant-time XOR. | `packages/pulse-webhooks/src/edge.ts` | ✅ |
+| **`@orbital/abi-registry`** | Shared Soroban ABI package that exports the canonical registry client, publisher interface, and scval conversion helpers. | `packages/abi-registry/src/index.ts` | ✅ |
 | **`useStellarEvent<T>`** | React hook that opens an `EventSource`, parses incoming SSE messages, optionally filters by event type, and re-renders on each event. Stable dep-array via sorted `eventKey`. | `packages/pulse-notify/src/index.ts` | ✅ |
 | **`useStellarPayment` / `useStellarActivity`** | Convenience wrappers over `useStellarEvent`. | `packages/pulse-notify/src/index.ts` | ✅ |
 | **Reference composition** | A Next.js Node-runtime route handler that subscribes to an address and streams events as SSE; plus a `webhook-sample` route that returns an HMAC-signed payload for the demo. | `apps/web/app/api/events/[address]/route.ts`, `apps/web/app/api/webhook-sample/route.ts` | ✅ |
 | **Soroban subscriber** | Subscribes to Stellar RPC for contract events, decodes via the ABI Registry, normalizes into the same `NormalizedEvent` union. | `packages/pulse-core` (planned) | 🛠️ Phase 1 |
 | **Cursor persistence** | Pluggable durable store for the Horizon cursor so a process restart resumes from where it left off. | `packages/pulse-core` (planned) | 🛠️ Phase 1 |
 | **Replay adapters** | Pluggable durable queues (Redis / Postgres / S3) for in-flight webhook retries. | `packages/pulse-webhooks` (planned) | 🛠️ Phase 1 |
+
+---
+
+## 2.1 ABI Registry (`@orbital/abi-registry`)
+
+`@orbital/abi-registry` is the shared contract-interface package for Orbital.
+
+- It holds the canonical ABI client surface for Soroban event decoding and publishing.
+- It keeps ABI-related helpers in one place instead of duplicating schema logic in `pulse-core` or application code.
+- It exposes the registry-facing building blocks the rest of the repo consumes: `AbiRegistryClient`, `RegistryPublisher`, `LocalFilePublisher`, `scvalToJs`, and `jsToScval`.
+- It is the MIT package surface. The hosted registry service described in `docs/open-source-policy.md` is a separate product boundary.
+
+The package-level reference lives in [`packages/abi-registry/README.md`](../packages/abi-registry/README.md).
 
 ---
 
@@ -371,8 +385,8 @@ API:
   (`contract.invoked`, `contract.emitted`) join the `NormalizedEvent` union;
   existing consumers ignore them unless they subscribe.
 - **ABI Registry client.** Decodes Soroban event topics + data into typed,
-  human-readable JSON. Lives as a separate package (`@orbital/abi-registry`
-  TBD) so the registry data layer is independently versioned.
+  human-readable JSON. Lives in the separate `@orbital/abi-registry`
+  package so the registry data layer is independently versioned.
 - **Cursor persistence.** A pluggable `CursorStore` interface stored on
   `EventEngine` config. Implementations: in-memory (default, current
   behavior), local file, Redis, Postgres, S3. On reconnect, the engine

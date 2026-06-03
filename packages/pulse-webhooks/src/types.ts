@@ -9,6 +9,11 @@ export type Tracer = {
   startSpan(name: string, attrs?: Record<string, string | number | boolean>): Span;
 };
 
+export type WebhookMetrics = {
+  recordAttempt(url: string, attempt: number, durationMs: number, status: number | "timeout" | "error"): void;
+  recordTerminal(url: string, outcome: "success" | "failed" | "dropped"): void;
+};
+
 export type WebhookConfig = {
   url: string | string[];
   secret: string;
