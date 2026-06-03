@@ -126,50 +126,69 @@ Attaches a delivery driver to a `Watcher`. Every event the watcher emits is deli
 | `config.retries`              | `number`             | `3`      | Number of retry attempts before emitting `webhook.failed`                             |
 | `config.deliveryTimeoutMs`    | `number`             | `10_000` | Abort threshold for each HTTP attempt                                                 |
 | `config.allowPrivateNetworks` | `boolean`            | `false`  | If true, bypass SSRF checks for local/private IP ranges                               |
-| `config.random`               | `() => number`       | `random` | Optional RNG for testing jitter. Defaults to `Math.random`.                           |
 
-### `verifyWebhook(payload, signature, secret, timestamp)` → `NormalizedEvent | null`
+### `new RedisRetryQueue(client, options?)`
+
+Provides a Redis-backed `RetryQueue` adapter without bundling a Redis client. Pass any client that implements the small `RedisLike` sorted-set surface: `zadd`, `zrangebyscore`, `zrevrange`, `zrem`, and `zcard`.
+
+Records are stored in a sorted set keyed by `nextRetryAt`. The key convention is `<keyPrefix>:retry-queue:<queueName>` — defaults to `orbital:pulse-webhooks:retry-queue:default`.
+
+### `verifyWebhook(payload, signature, secret, timestamp, options?)` → `NormalizedEvent | null`
 
 Verifies that `payload` was signed with `secret` using `timestamp + "." + payload`. Returns the parsed event on success, `null` on any failure (bad signature, malformed JSON, invalid timestamp, length mismatch).
-
+The optional `options.version` field is a negotiation hook for future signature header formats. `"v1"` (default) preserves current `x-orbital-signature` behavior; `"v2"` is a reserved placeholder for a future `x-orbital-signature-v2` implementation.
 Uses `crypto.timingSafeEqual` under the hood — do not roll your own comparison.
 
-### `verifyWebhookEdge(payload, signature, secret, timestamp)` → `Promise<NormalizedEvent | null>`
+**When to use:** Standard webhook verification when you need access to the event payload immediately.
+
+### `verifyWebhookRaw(payload, signature, secret, timestamp)` → `boolean`
+
+Verifies the signature of `payload` without parsing JSON. Returns `true` if the signature is valid, `false` otherwise.
+
+Use this when routing the raw body to another consumer (e.g., a message queue) to avoid the JSON parse overhead.
+
+```ts
+const isValid = verifyWebhookRaw(rawPayload, signature, secret, timestamp);
+if (isValid) {
+  // Send raw payload to SQS, Kafka, etc. without parsing
+  await queue.send(rawPayload);
+} else {
+  res.sendStatus(401);
+}
+```
+
+**When to use:** When you're routing webhooks to a queue or other service and don't need to access the event data immediately.
+
+### `verifyWebhookEdge(payload, signature, secret, timestamp, options?)` → `Promise<NormalizedEvent | null>`
 
 Edge-compatible version of `verifyWebhook` using Web Crypto API. Works in Cloudflare Workers, Deno, and browsers. Returns a Promise that resolves to the parsed event on success, `null` on any failure.
 
+The optional `options.version` field mirrors `verifyWebhook` — `"v1"` (default) is current behavior; `"v2"` is reserved.
+
 Uses constant-time comparison and Web Crypto for HMAC-SHA256 verification.
 
-### Failure events
+### `verifyWebhookEdgeRaw(payload, signature, secret, timestamp)` → `Promise<boolean>`
 
-When a delivery cannot be completed, the `Watcher` emits special events for routing and debugging.
+Edge-compatible version of `verifyWebhookRaw` using Web Crypto API. Verifies the signature without parsing JSON. Returns `true` if the signature is valid, `false` otherwise.
 
-#### `webhook.failed`
+Use this in edge runtimes when routing raw payloads to avoid JSON parse overhead.
 
-Emitted after all retry attempts are exhausted for a given URL. The event payload is a `NormalizedEvent` where the `raw` field is a `WebhookFailureRaw` object:
-
-```ts
-import type { WebhookFailureRaw } from "@orbital/pulse-webhooks";
-
-watcher.on("webhook.failed", (event) => {
-  const meta = event.raw as WebhookFailureRaw;
-  console.error(`Delivery failed to ${meta.url}: ${meta.error}`);
-  console.log(`Original event: ${meta.originalEvent.type}`);
-});
+```js
+const isValid = await verifyWebhookEdgeRaw(
+  rawPayload,
+  signature,
+  secret,
+  timestamp,
+);
+if (isValid) {
+  // Send raw payload to R2, KV, or other Cloudflare service
+  await env.BUCKET.put(key, rawPayload);
+} else {
+  return new Response("Invalid signature", { status: 401 });
+}
 ```
 
-#### `webhook.dropped`
-
-Emitted when a pending retry is dropped because the `maxConcurrentRetries` cap has been reached. This happens before the retry is even attempted. The `raw` field is a `WebhookDroppedRaw` object:
-
-```ts
-import type { WebhookDroppedRaw } from "@orbital/pulse-webhooks";
-
-watcher.on("webhook.dropped", (event) => {
-  const meta = event.raw as WebhookDroppedRaw;
-  console.warn(`Dropped event for ${meta.url} (retry cap of ${meta.maxConcurrentRetries} hit)`);
-});
-```
+**When to use:** Edge runtime webhook verification with no immediate need for parsed event data.
 
 ## Delivery contract
 
@@ -288,32 +307,62 @@ CREATE INDEX dlq_url_timestamp_idx ON dead_letter_store(url, timestamp);
 
 **Note:** `limit` does not require an index; it just truncates the result set after filtering.
 
-## Security guarantees
+## Health Aggregation
 
-Orbital provides a hardened delivery pipeline for high-stakes financial events. This package enforces several tiers of defense-in-depth:
+Monitor delivery health for a webhook URL using per-URL failure metrics and success tracking.
 
-| Guarantee | Mechanism | Threat Mitigated |
-| :--- | :--- | :--- |
-| **Authenticity** | HMAC-SHA256 signature (`x-orbital-signature`) | Payload tampering |
-| **Integrity** | `timestamp . payload` signing bubble | Replay attacks (when window-checked) |
-| **Side-channel defense** | `crypto.timingSafeEqual` comparison | Timing attacks on signatures |
-| **SSRF Protection** | RFC 1918 & loopback block-list | Internal network exfiltration |
-| **DNS Rebinding defense** | Pre-delivery IP validation | Validation-time vs Request-time IP swaps |
-| **Resource bounding** | `maxConcurrentRetries` + body-size caps | Memory exhaustion / DoS |
+### `deliveryHealth(url)` → `DeadLetterHealth`
 
-### Threat Model
-
-For a full breakdown of adversaries, assets, and mitigations (including secret rotation runbooks and detection signals), see the [core repository SECURITY.md](../../SECURITY.md).
-
-#### Replay window
-While `pulse-webhooks` includes a timestamp in every signature, consumers **must** verify that the `x-orbital-timestamp` is within a reasonable window (e.g., 5 minutes) to prevent replay of old valid payloads.
+Returns health metrics for a specific webhook URL.
 
 ```ts
-if (Date.now() - Number(timestamp) > 5 * 60 * 1000) {
-  return res.sendStatus(401);
-}
+import { deliveryHealth } from "@orbital/pulse-webhooks";
+
+const health = deliveryHealth("https://example.com/webhooks");
+console.log(health);
+// {
+//   healthy: true,
+//   lastSuccess: 1714176000000,
+//   lastFailure: 1714172800000,
+//   failureRate: 0.02  // 2% failure rate
+// }
 ```
 
+**Health rule:** A URL is considered `healthy = true` when:
+
+- Failure rate < 5% in the **last hour**, AND
+- At least one successful delivery in the **last 15 minutes**
+
+If no failures exist in the last hour, `failureRate` is 0 (all successes).
+
+**Return fields:**
+| Field | Type | Description |
+|-------|------|-------------|
+| `healthy` | `boolean` | Overall health status per the rule above |
+| `lastSuccess` | `number \| undefined` | Unix ms timestamp of most recent successful delivery, if any |
+| `lastFailure` | `number \| undefined` | Unix ms timestamp of most recent failed delivery in the last hour, if any |
+| `failureRate` | `number` | Ratio of failures to total attempts in the last hour (0–1, e.g., 0.05 = 5%) |
+
+**Use cases:**
+
+- Health dashboards and status pages
+- Alert routing (route alerts if `healthy = false`)
+- Capacity planning (track which webhooks fail most often)
+
+## Security
+
+- **Verify every signature.** `verifyWebhook` uses constant-time comparison.
+- **Treat the secret like a password.** Store it in a secrets manager, not a config file.
+- **Enforce HTTPS.** `WebhookDelivery` rejects non-HTTPS URLs unless `allowPrivateNetworks` is set; enforce the same at any layer where users supply target URLs.
+- **Bound the payload.** On the receiver side, cap body size with `express.raw({ type: "application/json", limit: "100kb" })` or equivalent.
+
+## Network safety
+
+`pulse-webhooks` protects against SSRF (Server-Side Request Forgery) by validating every delivery target.
+
+- **Rejected ranges:** By default, deliveries to loopback (`127.0.0.0/8`, `::1`), private (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`), and link-local (`169.254.0.0/16`) addresses are blocked.
+- **Rebinding defense:** DNS resolution is verified against the blocklist before delivery to prevent DNS rebinding attacks.
+- **Configuration:** To allow deliveries to private or local networks (e.g. for development), set `allowPrivateNetworks: true` in the `WebhookDelivery` config.
 
 ## Current limitations
 

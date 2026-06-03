@@ -1,12 +1,15 @@
 import { Horizon } from "@stellar/stellar-sdk";
 import { Watcher } from "./Watcher.js";
 import { EngineAlreadyStartedError, HorizonStreamError } from "./errors.js";
+import { toAccountAddress, toContractAddress } from "./address.js";
+import type { ContractAddress } from "./address.js";
 import type {
   AccountCreatedEvent,
   AccountEventType,
   AccountMergeEvent,
   AccountOptionsChanges,
   AccountOptionsEvent,
+  AbiRegistryClientLike,
   BumpSequenceEvent,
   BumpSequenceEventType,
   ClaimableBalanceClaimant,
@@ -21,6 +24,7 @@ import type {
   DataEventType,
   EngineStatus,
   HealthCheckResult,
+  Logger,
   LiquidityPoolDepositEvent,
   LiquidityPoolReserve,
   LiquidityPoolWithdrawEvent,
@@ -38,7 +42,6 @@ import type {
   TrustlineEventType,
   WatcherNotification,
   WatcherNotificationType,
-  Logger,
   CursorStore,
 } from "./index.js";
 import { UnknownNetworkError } from "./index.js";
@@ -96,16 +99,27 @@ export class EventEngine {
   private pendingReconnectSuccessAttempt: number | null = null;
   private readonly reconnectConfig: Required<ReconnectConfig>;
   private isRunning = false;
-  private lastEventAt: string | null = null;
-  private horizonCursor?: string;
   private filters: Map<string, (event: NormalizedEvent) => boolean> = new Map();
-  private log: Logger;
+  // Waiters for contract subscription activation: map contractId -> array of waiters
+  private contractPollWaiters: Map<
+    string,
+    Array<{
+      topics?: string[] | undefined;
+      resolve: () => void;
+      reject: (err: unknown) => void;
+      timeout?: ReturnType<typeof setTimeout> | null;
+    }>
+  > = new Map();
+  private log: Required<NonNullable<CoreConfig["logger"]>>;
+  private lastEventAt: string | null = null;
   private cursorStore?: CursorStore;
   private streamKey: string;
   private cursorFailureThreshold: number;
   private consecutiveCursorFailures = 0;
   private isCursorStoreUnhealthy = false;
   private pausedSources = new Set<"horizon" | "soroban">();
+  private horizonCursor?: string;
+  private abiRegistry?: AbiRegistryClientLike;
 
   /**
    * Creates a new EventEngine instance.
@@ -139,6 +153,98 @@ export class EventEngine {
     this.cursorStore = config.cursorStore;
     this.streamKey = config.streamKey ?? "pulse-core-cursor";
     this.cursorFailureThreshold = config.cursorFailureThreshold ?? 5;
+    this.abiRegistry = config.abiRegistry;
+  }
+
+  /**
+   * Wait until a contract subscription has been observed in a poll/getEvents call.
+   * Resolves when a poll covering the supplied filter (contractId + topics)
+   * has been observed via `notifyContractPolled`.
+   * Rejects on timeout.
+   */
+  awaitContractSubscriptionActive(
+    config: { contractId: string; topics?: string[] },
+    opts?: { timeoutMs?: number },
+  ): Promise<void> {
+    const timeoutMs = opts?.timeoutMs ?? 5000;
+    const { contractId, topics } = config;
+
+    return new Promise<void>((resolve, reject) => {
+      const waiter = {
+        topics: topics ?? undefined,
+        resolve: () => {
+          this.clearContractWaiter(contractId, waiter);
+          resolve();
+        },
+        reject: (err: unknown) => {
+          this.clearContractWaiter(contractId, waiter);
+          reject(err);
+        },
+        timeout: null as ReturnType<typeof setTimeout> | null,
+      };
+
+      // start timeout
+      const t = setTimeout(() => {
+        waiter.timeout = null;
+        waiter.reject(new Error("awaitContractSubscriptionActive: timeout"));
+      }, timeoutMs);
+      waiter.timeout = t;
+
+      const arr = this.contractPollWaiters.get(contractId) ?? [];
+      arr.push(waiter);
+      this.contractPollWaiters.set(contractId, arr);
+    });
+  }
+
+  private clearContractWaiter(
+    contractId: string,
+    waiter: { timeout?: ReturnType<typeof setTimeout> | null },
+  ) {
+    const arr = this.contractPollWaiters.get(contractId);
+    if (!arr) return;
+    const idx = arr.indexOf(waiter as any);
+    if (idx !== -1) arr.splice(idx, 1);
+    if (arr.length === 0) this.contractPollWaiters.delete(contractId);
+    if (waiter.timeout) {
+      clearTimeout(waiter.timeout);
+      waiter.timeout = null;
+    }
+  }
+
+  /**
+   * Notify the engine that a polling/getEvents call for `contractId` occurred.
+   * `polledTopics` is the topics array used in that call (may be undefined/null to mean "all topics").
+   * This will resolve any pending `awaitContractSubscriptionActive` promises whose
+   * requested topics are covered by the polled topics.
+   */
+  notifyContractPolled(
+    contractId: string,
+    polledTopics?: string[] | null,
+  ): void {
+    const waiters = this.contractPollWaiters.get(contractId);
+    if (!waiters || waiters.length === 0) return;
+
+    for (const waiter of [...waiters]) {
+      const want = waiter.topics;
+      // If the waiter didn't request specific topics, any poll for the contract satisfies it.
+      if (!want || want.length === 0) {
+        waiter.resolve();
+        continue;
+      }
+
+      // If the poll had no topic restriction (polledTopics null/undefined), it covers everything.
+      if (!polledTopics || polledTopics.length === 0) {
+        waiter.resolve();
+        continue;
+      }
+
+      // Otherwise ensure all requested topics are included in the polled topics.
+      const polledSet = new Set(polledTopics);
+      const allIncluded = want.every((t) => polledSet.has(t));
+      if (allIncluded) {
+        waiter.resolve();
+      }
+    }
   }
 
   /**
@@ -153,7 +259,8 @@ export class EventEngine {
     if (existingWatcher) {
       if (options?.filter) {
         this.log.warn(
-          `[pulse-core] subscribe() called for ${this.describeSubscription(address)} which already has an active watcher — filter option ignored.`
+          `[pulse-core] subscribe() called for ${this.describeSubscription(address)} which already has an active watcher — filter option ignored.`,
+          { address, hasFilter: true }
         );
       }
       return existingWatcher;
@@ -261,7 +368,13 @@ export class EventEngine {
       if (options?.strict) {
         throw new EngineAlreadyStartedError();
       }
-      this.log.warn("[pulse-core] EventEngine.start() called while the SSE stream is already active.", { isRunning: this.isRunning, reconnectTimerActive: this.reconnectTimer !== null });
+      this.log.warn(
+        "[pulse-core] EventEngine.start() called while the SSE stream is already active.",
+        {
+          isRunning: this.isRunning,
+          reconnectTimerActive: this.reconnectTimer !== null,
+        }
+      );
       return false;
     }
 
@@ -270,7 +383,7 @@ export class EventEngine {
   }
 
 
-  healthCheck(thresholdMs = 5 * 60 * 1000): HealthCheckResult {
+  async healthCheck(thresholdMs = 5 * 60 * 1000): Promise<HealthCheckResult> {
     const reasons: string[] = [];
     if (!this.isRunning) {
       reasons.push("engine is not running");
@@ -281,6 +394,13 @@ export class EventEngine {
       const age = Date.now() - new Date(this.lastEventAt).getTime();
       if (age > thresholdMs) {
         reasons.push(`last event was ${Math.floor(age / 1000)}s ago (threshold ${Math.floor(thresholdMs / 1000)}s)`);
+      }
+    }
+    if (this.cursorStore?.ping) {
+      try {
+        await this.cursorStore.ping();
+      } catch (err) {
+        reasons.push(`cursorStore: ${err instanceof Error ? err.message : String(err)}`);
       }
     }
     return { ok: reasons.length === 0, reasons };
@@ -389,7 +509,10 @@ export class EventEngine {
           const attempt = this.pendingReconnectSuccessAttempt;
           this.pendingReconnectSuccessAttempt = null;
           this.reconnectAttempt = 0;
-          this.log.info("[pulse-core] SSE reconnect succeeded.", { attempt });
+          this.log.info(
+            "[pulse-core] SSE reconnect succeeded.",
+            { attempt }
+          );
           this.notifyWatchers("engine.reconnected", {
             type: "engine.reconnected",
             attempt,
@@ -406,16 +529,12 @@ export class EventEngine {
         this.route(event);
       },
       onerror: (error) => {
-        const wrappedError = error instanceof HorizonStreamError ? error : new HorizonStreamError(error);
-        this.log.error("[pulse-core] SSE error.", { error: wrappedError });
-        this.handleStreamError(wrappedError);
+        this.log.error("[pulse-core] SSE error.", { error });
+        this.handleStreamError(error);
       },
     };
 
-    this.stopStream = this.server
-      .operations()
-      .cursor("now")
-      .stream(callbacks);
+    this.stopStream = this.server.operations().cursor("now").stream(callbacks);
   }
 
   private handleStreamError(error?: unknown): void {
@@ -442,7 +561,10 @@ export class EventEngine {
       const retryAfterMs = this.parseRetryAfterMs(error);
       delayMs = retryAfterMs ?? 60000;
 
-      this.log.warn("[pulse-core] SSE rate limited by Horizon, reconnect scheduled.", { attempt: nextAttempt, delayMs });
+      this.log.warn(
+        "[pulse-core] SSE rate limited by Horizon, reconnect scheduled.",
+        { attempt: nextAttempt, delayMs },
+      );
       this.notifyWatchers("engine.rate_limited", {
         type: "engine.rate_limited",
         attempt: nextAttempt,
@@ -452,11 +574,14 @@ export class EventEngine {
     } else {
       const exponentialDelay = Math.min(
         this.reconnectConfig.initialDelayMs * 2 ** (nextAttempt - 1),
-        this.reconnectConfig.maxDelayMs
+        this.reconnectConfig.maxDelayMs,
       );
       delayMs = Math.floor(Math.random() * exponentialDelay);
 
-      this.log.warn("[pulse-core] SSE reconnect attempt scheduled.", { attempt: nextAttempt, delayMs });
+      this.log.warn(
+        "[pulse-core] SSE reconnect attempt scheduled.",
+        { attempt: nextAttempt, delayMs },
+      );
       this.notifyWatchers("engine.reconnecting", {
         type: "engine.reconnecting",
         attempt: nextAttempt,
@@ -574,6 +699,7 @@ export class EventEngine {
     return Number.isNaN(date) ? null : Math.max(date - Date.now(), 0);
   }
 
+
   private closeStream(): void {
     if (!this.stopStream) {
       return;
@@ -595,7 +721,7 @@ export class EventEngine {
 
   private notifyWatchers(
     eventType: WatcherNotificationType,
-    event: WatcherNotification
+    event: WatcherNotification,
   ): void {
     for (const [address, watcher] of this.registry.entries()) {
       const name = this.subscriptionNames.get(address);
@@ -643,21 +769,19 @@ export class EventEngine {
       const requiredFields = ["to", "from", "amount", "created_at"] as const;
       for (const field of requiredFields) {
         if (typeof r[field] !== "string" || r[field] === "") {
-          this.log.warn("[pulse-core] normalize() dropping payment record.", { field, record });
+          this.log.warn("[pulse-core] normalize() dropping payment record.", { field, record: record });
           return null;
         }
       }
 
       const asset =
-        r.asset_type === "native"
-          ? "XLM"
-          : `${r.asset_code}:${r.asset_issuer}`;
+        r.asset_type === "native" ? "XLM" : `${r.asset_code}:${r.asset_issuer}`;
 
       return {
         // Route resolution assigns the payment direction after normalization.
         type: "unknown",
-        to: r.to as string,
-        from: r.from as string,
+        to: toAccountAddress(r.to as string),
+        from: toAccountAddress(r.from as string),
         amount: r.amount as string,
         asset,
         timestamp: r.created_at as string,
@@ -692,8 +816,8 @@ export class EventEngine {
     if (r.type === "account_merge") {
       return {
         type: "account.merged",
-        source: r.account as string,
-        destination: r.into as string,
+        source: toAccountAddress(r.account as string),
+        destination: toAccountAddress(r.into as string),
         timestamp: r.created_at as string,
         raw: record,
       };
@@ -736,9 +860,12 @@ export class EventEngine {
 
   private normalizeOffer(
     r: Record<string, unknown>,
-    raw: unknown
+    raw: unknown,
   ): OfferEvent | null {
-    if (typeof r.source_account !== "string" || typeof r.created_at !== "string") {
+    if (
+      typeof r.source_account !== "string" ||
+      typeof r.created_at !== "string"
+    ) {
       return null;
     }
 
@@ -767,7 +894,7 @@ export class EventEngine {
     return {
       type,
       offer_id,
-      source: r.source_account,
+      source: toAccountAddress(r.source_account),
       buying_asset,
       selling_asset,
       amount,
@@ -779,7 +906,7 @@ export class EventEngine {
 
   private normalizeCreateAccount(
     r: Record<string, unknown>,
-    raw: unknown
+    raw: unknown,
   ): AccountCreatedEvent | null {
     if (
       typeof r.funder !== "string" ||
@@ -791,8 +918,8 @@ export class EventEngine {
     }
     return {
       type: "account.created",
-      funder: r.funder,
-      account: r.account,
+      funder: toAccountAddress(r.funder),
+      account: toAccountAddress(r.account),
       starting_balance: r.starting_balance,
       timestamp: r.created_at,
       raw,
@@ -801,14 +928,17 @@ export class EventEngine {
 
   private normalizeBumpSequence(
     r: Record<string, unknown>,
-    raw: unknown
+    raw: unknown,
   ): BumpSequenceEvent | null {
-    if (typeof r.source_account !== "string" || typeof r.created_at !== "string") {
+    if (
+      typeof r.source_account !== "string" ||
+      typeof r.created_at !== "string"
+    ) {
       return null;
     }
     return {
       type: "account.bump_sequence",
-      source: r.source_account,
+      source: toAccountAddress(r.source_account),
       bump_to: r.bump_to as string,
       timestamp: r.created_at,
       raw,
@@ -817,26 +947,43 @@ export class EventEngine {
 
   private normalizeManageData(
     r: Record<string, unknown>,
-    raw: unknown
+    raw: unknown,
   ): DataEvent | null {
     if (typeof r.source_account !== "string" || r.source_account === "") {
-      this.log.warn("[pulse-core] normalize() dropping manage_data record.", { field: "source_account", record: raw });
+      this.log.warn("[pulse-core] normalize() dropping manage_data record.", {
+        field: "source_account",
+        record: raw,
+      });
       return null;
     }
 
     if (typeof r.data_name !== "string" || r.data_name === "") {
-      this.log.warn("[pulse-core] normalize() dropping manage_data record.", { field: "data_name", record: raw });
+      this.log.warn("[pulse-core] normalize() dropping manage_data record.", {
+        field: "data_name",
+        record: raw,
+        source: r.source_account,
+      });
       return null;
     }
 
     const value = r.data_value == null ? null : String(r.data_value);
     const type: DataEventType = value !== null ? "data.set" : "data.cleared";
 
+    let decoded: Uint8Array | null = null;
+    if (value !== null) {
+      try {
+        decoded = Buffer.from(value, "base64");
+      } catch (err) {
+        decoded = null;
+      }
+    }
+
     return {
       type,
-      source: r.source_account,
+      source: toAccountAddress(r.source_account),
       name: r.data_name,
       value,
+      decoded,
       timestamp: typeof r.created_at === "string" ? r.created_at : "",
       raw,
     };
@@ -844,7 +991,7 @@ export class EventEngine {
 
   private normalizeChangeTrust(
     r: Record<string, unknown>,
-    raw: unknown
+    raw: unknown,
   ): TrustlineEvent | null {
     if (typeof r.source_account !== "string") {
       return null;
@@ -866,7 +1013,7 @@ export class EventEngine {
 
     return {
       type: this.resolveTrustlineEventType(limit),
-      account: r.source_account,
+      account: toAccountAddress(r.source_account),
       asset,
       limit,
       timestamp: r.created_at,
@@ -892,16 +1039,16 @@ export class EventEngine {
 
   private normalizeSetOptions(
     r: Record<string, unknown>,
-    raw: unknown
+    raw: unknown,
   ): AccountOptionsEvent | null {
     const changes: AccountOptionsChanges = {};
 
     if (typeof r.signer_key === "string") {
       const weight = typeof r.signer_weight === "number" ? r.signer_weight : 0;
       if (weight === 0) {
-        changes.signer_removed = { key: r.signer_key, weight: 0 };
+        changes.signer_removed = { key: toAccountAddress(r.signer_key), weight: 0 };
       } else {
-        changes.signer_added = { key: r.signer_key, weight };
+        changes.signer_added = { key: toAccountAddress(r.signer_key), weight };
       }
     }
 
@@ -926,7 +1073,7 @@ export class EventEngine {
 
     return {
       type: "account.options_changed",
-      source: r.source_account as string,
+      source: toAccountAddress(r.source_account as string),
       changes,
       timestamp: r.created_at as string,
       raw,
@@ -935,7 +1082,7 @@ export class EventEngine {
 
   private normalizeCreateClaimableBalance(
     r: Record<string, unknown>,
-    raw: unknown
+    raw: unknown,
   ): ClaimableCreatedEvent | null {
     const requiredStringFields = [
       "source_account",
@@ -947,8 +1094,8 @@ export class EventEngine {
     for (const field of requiredStringFields) {
       if (typeof r[field] !== "string" || r[field] === "") {
         this.log.warn(
-          `[pulse-core] normalize() dropping create_claimable_balance record: field "${field}" is missing or not a non-empty string.`,
-          { record: raw }
+          "[pulse-core] normalize() dropping create_claimable_balance record.",
+          { field, record: raw, source: r.source_account }
         );
         return null;
       }
@@ -962,27 +1109,25 @@ export class EventEngine {
           typeof c === "object" &&
           c !== null &&
           typeof (c as Record<string, unknown>).destination === "string" &&
-          (c as Record<string, unknown>).destination !== ""
+          (c as Record<string, unknown>).destination !== "",
       )
     ) {
       this.log.warn(
-        '[pulse-core] normalize() dropping create_claimable_balance record: field "claimants" is missing or invalid.',
-        { record: raw }
+        "[pulse-core] normalize() dropping create_claimable_balance record.",
+        { field: "claimants", record: raw, source: r.source_account }
       );
       return null;
     }
 
     const asset =
-      r.asset_type === "native"
-        ? "XLM"
-        : `${r.asset_code}:${r.asset_issuer}`;
+      r.asset_type === "native" ? "XLM" : `${r.asset_code}:${r.asset_issuer}`;
 
     return {
       type: "claimable.created",
-      sponsor: r.source_account as string,
+      sponsor: toAccountAddress(r.source_account as string),
       balanceId: r.balance_id as string,
       claimants: (r.claimants as Array<Record<string, unknown>>).map((c) => ({
-        destination: c.destination as string,
+        destination: toAccountAddress(c.destination as string),
         predicate: c.predicate,
       })),
       asset,
@@ -994,7 +1139,7 @@ export class EventEngine {
 
   private normalizeClaimClaimableBalance(
     r: Record<string, unknown>,
-    raw: unknown
+    raw: unknown,
   ): ClaimableClaimedEvent | null {
     const requiredStringFields = [
       "source_account",
@@ -1005,8 +1150,8 @@ export class EventEngine {
     for (const field of requiredStringFields) {
       if (typeof r[field] !== "string" || r[field] === "") {
         this.log.warn(
-          `[pulse-core] normalize() dropping claim_claimable_balance record: field "${field}" is missing or not a non-empty string.`,
-          { record: raw }
+          "[pulse-core] normalize() dropping claim_claimable_balance record.",
+          { field, record: raw, source: r.source_account }
         );
         return null;
       }
@@ -1014,7 +1159,7 @@ export class EventEngine {
 
     return {
       type: "claimable.claimed",
-      claimant: r.source_account as string,
+      claimant: toAccountAddress(r.source_account as string),
       balanceId: r.balance_id as string,
       timestamp: r.created_at as string,
       raw,
@@ -1023,7 +1168,7 @@ export class EventEngine {
 
   private normalizeLiquidityPoolDeposit(
     r: Record<string, unknown>,
-    raw: unknown
+    raw: unknown,
   ): LiquidityPoolDepositEvent | null {
     const requiredFields = [
       "source_account",
@@ -1035,8 +1180,8 @@ export class EventEngine {
     for (const field of requiredFields) {
       if (typeof r[field] !== "string" || r[field] === "") {
         this.log.warn(
-          `[pulse-core] normalize() dropping liquidity_pool_deposit record: field "${field}" is missing.`,
-          { record: raw }
+          "[pulse-core] normalize() dropping liquidity_pool_deposit record.",
+          { field, record: raw, source: r.source_account }
         );
         return null;
       }
@@ -1044,15 +1189,15 @@ export class EventEngine {
 
     if (!Array.isArray(r.reserves_deposited)) {
       this.log.warn(
-        "[pulse-core] normalize() dropping liquidity_pool_deposit record: reserves_deposited is not an array.",
-        { record: raw }
+        "[pulse-core] normalize() dropping liquidity_pool_deposit record.",
+        { field: "reserves_deposited", record: raw, source: r.source_account }
       );
       return null;
     }
 
     return {
       type: "lp.deposited",
-      source: r.source_account as string,
+      source: toAccountAddress(r.source_account as string),
       pool_id: r.liquidity_pool_id as string,
       reserves_deposited: r.reserves_deposited as LiquidityPoolReserve[],
       shares_received: r.shares_received as string,
@@ -1063,7 +1208,7 @@ export class EventEngine {
 
   private normalizeLiquidityPoolWithdraw(
     r: Record<string, unknown>,
-    raw: unknown
+    raw: unknown,
   ): LiquidityPoolWithdrawEvent | null {
     const requiredFields = [
       "source_account",
@@ -1075,8 +1220,8 @@ export class EventEngine {
     for (const field of requiredFields) {
       if (typeof r[field] !== "string" || r[field] === "") {
         this.log.warn(
-          `[pulse-core] normalize() dropping liquidity_pool_withdraw record: field "${field}" is missing.`,
-          { record: raw }
+          "[pulse-core] normalize() dropping liquidity_pool_withdraw record.",
+          { field, record: raw, source: r.source_account }
         );
         return null;
       }
@@ -1084,15 +1229,15 @@ export class EventEngine {
 
     if (!Array.isArray(r.reserves_received)) {
       this.log.warn(
-        "[pulse-core] normalize() dropping liquidity_pool_withdraw record: reserves_received is not an array.",
-        { record: raw }
+        "[pulse-core] normalize() dropping liquidity_pool_withdraw record.",
+        { field: "reserves_received", record: raw, source: r.source_account }
       );
       return null;
     }
 
     return {
       type: "lp.withdrawn",
-      source: r.source_account as string,
+      source: toAccountAddress(r.source_account as string),
       pool_id: r.liquidity_pool_id as string,
       reserves_received: r.reserves_received as LiquidityPoolReserve[],
       shares_redeemed: r.shares as string,
@@ -1103,7 +1248,7 @@ export class EventEngine {
 
   private normalizeAllowTrust(
     r: Record<string, unknown>,
-    raw: unknown
+    raw: unknown,
   ): TrustAuthEvent | null {
     const trustor = r.trustor;
     const issuer = r.trustee ?? r.source_account;
@@ -1115,16 +1260,16 @@ export class EventEngine {
     if (typeof r.created_at !== "string") return null;
 
     const asset =
-      r.asset_type === "native"
-        ? "XLM"
-        : `${r.asset_code}:${r.asset_issuer}`;
+      r.asset_type === "native" ? "XLM" : `${r.asset_code}:${r.asset_issuer}`;
 
-    const type: TrustAuthEventType = authorize ? "trustline.authorized" : "trustline.deauthorized";
+    const type: TrustAuthEventType = authorize
+      ? "trustline.authorized"
+      : "trustline.deauthorized";
 
     return {
       type,
-      trustor,
-      issuer,
+      trustor: toAccountAddress(trustor),
+      issuer: toAccountAddress(issuer),
       asset,
       timestamp: r.created_at,
       operation: "allow_trust",
@@ -1134,7 +1279,7 @@ export class EventEngine {
 
   private normalizeSetTrustLineFlags(
     r: Record<string, unknown>,
-    raw: unknown
+    raw: unknown,
   ): TrustAuthEvent | null {
     const trustor = r.trustor;
     const issuer = r.source_account;
@@ -1151,17 +1296,17 @@ export class EventEngine {
 
     if (isSettingAuth === isClearingAuth) return null;
 
-    const type: TrustAuthEventType = isSettingAuth ? "trustline.authorized" : "trustline.deauthorized";
+    const type: TrustAuthEventType = isSettingAuth
+      ? "trustline.authorized"
+      : "trustline.deauthorized";
 
     const asset =
-      r.asset_type === "native"
-        ? "XLM"
-        : `${r.asset_code}:${r.asset_issuer}`;
+      r.asset_type === "native" ? "XLM" : `${r.asset_code}:${r.asset_issuer}`;
 
     return {
       type,
-      trustor,
-      issuer,
+      trustor: toAccountAddress(trustor),
+      issuer: toAccountAddress(issuer),
       asset,
       timestamp: r.created_at,
       operation: "set_trust_line_flags",
@@ -1177,7 +1322,7 @@ export class EventEngine {
     if (typeof r.function !== "string") return null;
     return {
       type: "contract.invoked",
-      contractId: r.contract_id,
+      contractId: toContractAddress(r.contract_id),
       function: r.function,
       topics: Array.isArray(r.topics) ? (r.topics as string[]) : [],
       data: r.data ?? null,
@@ -1193,7 +1338,7 @@ export class EventEngine {
     if (typeof r.contract_id !== "string" || r.contract_id === "") return null;
     return {
       type: "contract.emitted",
-      contractId: r.contract_id,
+      contractId: toContractAddress(r.contract_id),
       topics: Array.isArray(r.topics) ? (r.topics as string[]) : [],
       data: r.data ?? null,
       timestamp: typeof r.created_at === "string" ? r.created_at : "",
@@ -1217,7 +1362,7 @@ export class EventEngine {
   }
 
   private matchesContractFilters(
-    event: { type: string; contractId: string; topics: string[] },
+    event: { type: string; contractId: ContractAddress; topics: string[] },
     filters: ContractSubscriptionFilter[]
   ): boolean {
     // No filters = match everything
@@ -1235,6 +1380,16 @@ export class EventEngine {
       }
       return true;
     });
+  }
+
+  /** Dispatch a contract event (invoked or emitted) to all matching contract watchers. */
+  private dispatchContractEvent(event: ContractInvokedEvent | ContractEmittedEvent): void {
+    for (const { watcher, filters } of this.contractRegistry.values()) {
+      if (this.matchesContractFilters(event, filters)) {
+        watcher.emit(event.type, event);
+        watcher.emit("*", event);
+      }
+    }
   }
 
   private route(event: NormalizedEventOrPending): void {
@@ -1256,7 +1411,11 @@ export class EventEngine {
       }
 
       const accountWatcher = this.registry.get(event.account);
-      if (accountWatcher && event.account !== event.funder && this.passesFilter(event.account, event)) {
+      if (
+        accountWatcher &&
+        event.account !== event.funder &&
+        this.passesFilter(event.account, event)
+      ) {
         accountWatcher.emit("account.created", event);
         accountWatcher.emit("*", event);
       }
@@ -1336,7 +1495,11 @@ export class EventEngine {
 
       for (const claimant of event.claimants) {
         const watcher = this.registry.get(claimant.destination);
-        if (watcher && !notified.has(claimant.destination) && this.passesFilter(claimant.destination, event)) {
+        if (
+          watcher &&
+          !notified.has(claimant.destination) &&
+          this.passesFilter(claimant.destination, event)
+        ) {
           notified.add(claimant.destination);
           watcher.emit("claimable.created", event);
           watcher.emit("*", event);
@@ -1371,7 +1534,10 @@ export class EventEngine {
       return;
     }
 
-    if (event.type === "trustline.authorized" || event.type === "trustline.deauthorized") {
+    if (
+      event.type === "trustline.authorized" ||
+      event.type === "trustline.deauthorized"
+    ) {
       const issuerWatcher = this.registry.get(event.issuer);
       if (issuerWatcher && this.passesFilter(event.issuer, event)) {
         issuerWatcher.emit(event.type, event);
@@ -1379,7 +1545,11 @@ export class EventEngine {
       }
 
       const trustorWatcher = this.registry.get(event.trustor);
-      if (trustorWatcher && event.trustor !== event.issuer && this.passesFilter(event.trustor, event)) {
+      if (
+        trustorWatcher &&
+        event.trustor !== event.issuer &&
+        this.passesFilter(event.trustor, event)
+      ) {
         trustorWatcher.emit(event.type, event);
         trustorWatcher.emit("*", event);
       }
@@ -1387,12 +1557,31 @@ export class EventEngine {
     }
 
     if (event.type === "contract.invoked" || event.type === "contract.emitted") {
-      for (const { watcher, filters } of this.contractRegistry.values()) {
-        if (this.matchesContractFilters(event, filters)) {
-          watcher.emit(event.type, event);
-          watcher.emit("*", event);
-        }
+      if (event.type === "contract.emitted" && this.abiRegistry) {
+        // Async enrichment: look up the ABI spec and populate decodedData,
+        // then route. The event is held until the lookup settles so that
+        // subscribers always receive a fully-enriched (or gracefully degraded)
+        // event rather than a partially-populated one.
+        const contractId = event.contractId;
+        this.abiRegistry.getSpec(contractId).then(
+          (spec) => {
+            if (spec !== null && spec !== undefined) {
+              (event as ContractEmittedEvent).decodedData = (spec as { entries?: unknown }).entries ?? spec;
+            }
+            this.dispatchContractEvent(event);
+          },
+          (err: unknown) => {
+            this.log.warn("ABI registry lookup failed for contract.emitted event", {
+              contractId,
+              error: err instanceof Error ? err.message : String(err),
+            });
+            this.dispatchContractEvent(event);
+          }
+        );
+        return;
       }
+
+      this.dispatchContractEvent(event);
       return;
     }
 
@@ -1433,7 +1622,7 @@ export class EventEngine {
 
   private withResolvedType(
     event: PendingPaymentEvent,
-    type: PaymentEventType
+    type: PaymentEventType,
   ): PaymentEvent {
     return {
       ...event,
@@ -1442,7 +1631,17 @@ export class EventEngine {
   }
 }
 
-export interface SorobanRpcInvokedEvent {
+// ---------------------------------------------------------------------------
+// Legacy Soroban RPC normalizer
+//
+// Normalizes a raw Soroban RPC event object (as returned by the RPC
+// `getEvents` endpoint) into a typed result.  This is a lower-level utility
+// that operates on the raw RPC shape rather than the Horizon-derived
+// NormalizedEvent union used by EventEngine internally.
+// ---------------------------------------------------------------------------
+
+/** @internal */
+export interface RpcContractInvokedEvent {
   type: "contract_invoked";
   id: string;
   pagingToken: string;
@@ -1451,10 +1650,11 @@ export interface SorobanRpcInvokedEvent {
   ledger: number;
   ledgerClosedAt: string;
   inSuccessfulContractCall: boolean;
-  raw: any;
+  raw: unknown;
 }
 
-export interface SorobanRpcEmittedEvent {
+/** @internal */
+export interface RpcContractEmittedEvent {
   type: "contract_emitted";
   id: string;
   pagingToken: string;
@@ -1465,25 +1665,41 @@ export interface SorobanRpcEmittedEvent {
   topics: string[];
   value: string;
   inSuccessfulContractCall: boolean;
-  raw: any;
+  raw: unknown;
 }
 
 /**
  * Normalizes a raw Soroban RPC event into a typed domain event structure.
- * Handles malformed fields safely by writing warnings and returning null.
+ * Handles malformed fields safely by logging warnings and returning null.
  */
-export function normalizeContractEvent(rawRpcEvent: any): SorobanRpcInvokedEvent | SorobanRpcEmittedEvent | null {
-  // 1. Structural check patterns
+export function normalizeContractEvent(
+  rawRpcEvent: unknown
+): RpcContractInvokedEvent | RpcContractEmittedEvent | null {
   if (!rawRpcEvent || typeof rawRpcEvent !== "object") {
-    console.warn("[pulse-core] Dropping malformed Soroban event: payload is not a valid object.", rawRpcEvent);
+    console.warn(
+      "[pulse-core] Dropping malformed Soroban event: payload is not a valid object.",
+      rawRpcEvent
+    );
     return null;
   }
 
-  // 2. Validate mandatory base identification parameters
-  const requiredFields = ["id", "pagingToken", "contractId", "txHash", "ledger", "ledgerClosedAt", "type"];
+  const e = rawRpcEvent as Record<string, unknown>;
+
+  const requiredFields = [
+    "id",
+    "pagingToken",
+    "contractId",
+    "txHash",
+    "ledger",
+    "ledgerClosedAt",
+    "type",
+  ];
   for (const field of requiredFields) {
-    if (rawRpcEvent[field] === undefined || rawRpcEvent[field] === null) {
-      console.warn(`[pulse-core] Dropping malformed Soroban event: missing required field "${field}".`, rawRpcEvent);
+    if (e[field] === undefined || e[field] === null) {
+      console.warn(
+        `[pulse-core] Dropping malformed Soroban event: missing required field "${field}".`,
+        rawRpcEvent
+      );
       return null;
     }
   }
@@ -1498,10 +1714,9 @@ export function normalizeContractEvent(rawRpcEvent: any): SorobanRpcInvokedEvent
     type,
     inSuccessfulContractCall,
     topic,
-    value
-  } = rawRpcEvent;
+    value,
+  } = e;
 
-  // 3. Conditional evaluation mappings based on the event subtype
   if (type === "system" || type === "diagnostic") {
     return {
       type: "contract_invoked",
@@ -1514,9 +1729,14 @@ export function normalizeContractEvent(rawRpcEvent: any): SorobanRpcInvokedEvent
       inSuccessfulContractCall: Boolean(inSuccessfulContractCall),
       raw: rawRpcEvent,
     };
-  } else if (type === "contract") {
+  }
+
+  if (type === "contract") {
     if (!Array.isArray(topic) || value === undefined || value === null) {
-      console.warn("[pulse-core] Dropping malformed contract emitted event: missing topics array or data payload.", rawRpcEvent);
+      console.warn(
+        "[pulse-core] Dropping malformed contract emitted event: missing topics array or data payload.",
+        rawRpcEvent
+      );
       return null;
     }
 
@@ -1528,13 +1748,16 @@ export function normalizeContractEvent(rawRpcEvent: any): SorobanRpcInvokedEvent
       txHash: String(txHash),
       ledger: Number(ledger),
       ledgerClosedAt: String(ledgerClosedAt),
-      topics: topic.map((t: any) => String(t)),
+      topics: (topic as unknown[]).map((t) => String(t)),
       value: String(value),
       inSuccessfulContractCall: Boolean(inSuccessfulContractCall),
       raw: rawRpcEvent,
     };
   }
 
-  console.warn(`[pulse-core] Dropping malformed Soroban event: unknown event type category "${type}".`, rawRpcEvent);
+  console.warn(
+    `[pulse-core] Dropping malformed Soroban event: unknown event type category "${type}".`,
+    rawRpcEvent
+  );
   return null;
 }

@@ -179,7 +179,7 @@ describe("pulse-core EventEngine", () => {
     expect(result).toBeNull();
     expect(log.warn).toHaveBeenCalledWith(
       "[pulse-core] normalize() dropping payment record.",
-      expect.objectContaining({ field: "to" })
+      expect.objectContaining({ field: "to", record: expect.any(Object) })
     );
   });
 
@@ -203,7 +203,7 @@ describe("pulse-core EventEngine", () => {
       expect(result).toBeNull();
       expect(log.warn).toHaveBeenCalledWith(
         "[pulse-core] normalize() dropping payment record.",
-        expect.objectContaining({ field })
+        expect.objectContaining({ field, record: expect.any(Object) })
       );
     }
   });
@@ -301,7 +301,10 @@ describe("pulse-core EventEngine", () => {
     expect(streamInstances).toHaveLength(1);
     expect(log.warn).toHaveBeenCalledWith(
       "[pulse-core] EventEngine.start() called while the SSE stream is already active.",
-      expect.objectContaining({ isRunning: true })
+      expect.objectContaining({
+        isRunning: true,
+        reconnectTimerActive: false,
+      })
     );
   });
 
@@ -370,7 +373,10 @@ describe("pulse-core EventEngine", () => {
     expect(reconnecting).toHaveBeenCalledWith(
       expect.objectContaining({ type: "engine.reconnecting", attempt: 1, delayMs: expect.any(Number), emittedAt: expect.any(String) })
     );
-    expect(log.warn).toHaveBeenCalledWith("[pulse-core] SSE reconnect attempt scheduled.", expect.objectContaining({ attempt: 1, delayMs: 1000 }));
+    expect(log.warn).toHaveBeenCalledWith(
+      "[pulse-core] SSE reconnect attempt scheduled.",
+      expect.objectContaining({ attempt: 1, delayMs: 1000 })
+    );
     expect(streamInstances).toHaveLength(1);
 
     vi.advanceTimersByTime(1000);
@@ -378,7 +384,10 @@ describe("pulse-core EventEngine", () => {
 
     latestStream().handlers.onerror(new Error("stream dropped again"));
     expect(streamInstances[1]?.close).toHaveBeenCalledTimes(1);
-    expect(log.warn).toHaveBeenLastCalledWith("[pulse-core] SSE reconnect attempt scheduled.", expect.objectContaining({ attempt: 2, delayMs: 2000 }));
+    expect(log.warn).toHaveBeenLastCalledWith(
+      "[pulse-core] SSE reconnect attempt scheduled.",
+      expect.objectContaining({ attempt: 2, delayMs: 2000 })
+    );
 
     vi.advanceTimersByTime(2000);
     expect(streamInstances).toHaveLength(3);
@@ -537,19 +546,31 @@ describe("pulse-core EventEngine", () => {
       vi.spyOn(Math, "random").mockReturnValue(0.999999);
 
       latestStream().handlers.onerror(new Error("err"));
-      expect(log.warn).toHaveBeenLastCalledWith("[pulse-core] SSE reconnect attempt scheduled.", expect.objectContaining({ attempt: 1, delayMs: 999 }));
+      expect(log.warn).toHaveBeenLastCalledWith(
+        "[pulse-core] SSE reconnect attempt scheduled.",
+        expect.objectContaining({ attempt: 1, delayMs: 999 })
+      );
       vi.advanceTimersByTime(1000);
 
       latestStream().handlers.onerror(new Error("err"));
-      expect(log.warn).toHaveBeenLastCalledWith("[pulse-core] SSE reconnect attempt scheduled.", expect.objectContaining({ attempt: 2, delayMs: 1999 }));
+      expect(log.warn).toHaveBeenLastCalledWith(
+        "[pulse-core] SSE reconnect attempt scheduled.",
+        expect.objectContaining({ attempt: 2, delayMs: 1999 })
+      );
       vi.advanceTimersByTime(2000);
 
       latestStream().handlers.onerror(new Error("err"));
-      expect(log.warn).toHaveBeenLastCalledWith("[pulse-core] SSE reconnect attempt scheduled.", expect.objectContaining({ attempt: 3, delayMs: 3999 }));
+      expect(log.warn).toHaveBeenLastCalledWith(
+        "[pulse-core] SSE reconnect attempt scheduled.",
+        expect.objectContaining({ attempt: 3, delayMs: 3999 })
+      );
       vi.advanceTimersByTime(4000);
 
       latestStream().handlers.onerror(new Error("err"));
-      expect(log.warn).toHaveBeenLastCalledWith("[pulse-core] SSE reconnect attempt scheduled.", expect.objectContaining({ attempt: 4, delayMs: 4999 }));
+      expect(log.warn).toHaveBeenLastCalledWith(
+        "[pulse-core] SSE reconnect attempt scheduled.",
+        expect.objectContaining({ attempt: 4, delayMs: 4999 })
+      );
     });
 
     it("max-retries terminates the loop", () => {
@@ -562,11 +583,17 @@ describe("pulse-core EventEngine", () => {
       engine.start();
 
       latestStream().handlers.onerror(new Error("err"));
-      expect(log.warn).toHaveBeenCalledWith("[pulse-core] SSE reconnect attempt scheduled.", expect.objectContaining({ attempt: 1 }));
+      expect(log.warn).toHaveBeenCalledWith(
+        "[pulse-core] SSE reconnect attempt scheduled.",
+        expect.objectContaining({ attempt: 1 })
+      );
       vi.advanceTimersByTime(1000);
 
       latestStream().handlers.onerror(new Error("err"));
-      expect(log.warn).toHaveBeenCalledWith("[pulse-core] SSE reconnect attempt scheduled.", expect.objectContaining({ attempt: 2 }));
+      expect(log.warn).toHaveBeenCalledWith(
+        "[pulse-core] SSE reconnect attempt scheduled.",
+        expect.objectContaining({ attempt: 2 })
+      );
       vi.advanceTimersByTime(1000);
 
       latestStream().handlers.onerror(new Error("err"));
@@ -588,11 +615,17 @@ describe("pulse-core EventEngine", () => {
       vi.spyOn(Math, "random").mockReturnValue(0.999999);
 
       latestStream().handlers.onerror(new Error("err"));
-      expect(log.warn).toHaveBeenLastCalledWith("[pulse-core] SSE reconnect attempt scheduled.", expect.objectContaining({ attempt: 1, delayMs: 999 }));
+      expect(log.warn).toHaveBeenLastCalledWith(
+        "[pulse-core] SSE reconnect attempt scheduled.",
+        expect.objectContaining({ attempt: 1, delayMs: 999 })
+      );
       vi.advanceTimersByTime(1000);
 
       latestStream().handlers.onerror(new Error("err"));
-      expect(log.warn).toHaveBeenLastCalledWith("[pulse-core] SSE reconnect attempt scheduled.", expect.objectContaining({ attempt: 2, delayMs: 1999 }));
+      expect(log.warn).toHaveBeenLastCalledWith(
+        "[pulse-core] SSE reconnect attempt scheduled.",
+        expect.objectContaining({ attempt: 2, delayMs: 1999 })
+      );
       vi.advanceTimersByTime(2000);
 
       latestStream().handlers.onmessage({ type: "payment", to: "GABC", from: "X", amount: "1", created_at: "now" });
@@ -602,7 +635,10 @@ describe("pulse-core EventEngine", () => {
       );
 
       latestStream().handlers.onerror(new Error("err"));
-      expect(log.warn).toHaveBeenLastCalledWith("[pulse-core] SSE reconnect attempt scheduled.", expect.objectContaining({ attempt: 1, delayMs: 999 }));
+      expect(log.warn).toHaveBeenLastCalledWith(
+        "[pulse-core] SSE reconnect attempt scheduled.",
+        expect.objectContaining({ attempt: 1, delayMs: 999 })
+      );
     });
 
     it("jitter test using a seeded-like mock", () => {
@@ -616,12 +652,18 @@ describe("pulse-core EventEngine", () => {
 
       vi.spyOn(Math, "random").mockReturnValue(0.5);
       latestStream().handlers.onerror(new Error("err"));
-      expect(log.warn).toHaveBeenLastCalledWith("[pulse-core] SSE reconnect attempt scheduled.", expect.objectContaining({ attempt: 1, delayMs: 500 }));
+      expect(log.warn).toHaveBeenLastCalledWith(
+        "[pulse-core] SSE reconnect attempt scheduled.",
+        expect.objectContaining({ attempt: 1, delayMs: 500 })
+      );
 
       vi.advanceTimersByTime(500);
       vi.spyOn(Math, "random").mockReturnValue(0.1);
       latestStream().handlers.onerror(new Error("err"));
-      expect(log.warn).toHaveBeenLastCalledWith("[pulse-core] SSE reconnect attempt scheduled.", expect.objectContaining({ attempt: 2, delayMs: 200 }));
+      expect(log.warn).toHaveBeenLastCalledWith(
+        "[pulse-core] SSE reconnect attempt scheduled.",
+        expect.objectContaining({ attempt: 2, delayMs: 200 })
+      );
     });
   });
 
@@ -818,7 +860,8 @@ describe("pulse-core EventEngine", () => {
 
       expect(second).toBe(first);
       expect(log.warn).toHaveBeenCalledWith(
-        "[pulse-core] subscribe() called for GDEST which already has an active watcher — filter option ignored."
+        "[pulse-core] subscribe() called for GDEST which already has an active watcher — filter option ignored.",
+        expect.objectContaining({ address: "GDEST", hasFilter: true })
       );
     });
 
@@ -846,7 +889,8 @@ describe("pulse-core EventEngine", () => {
 
       expect(duplicate).toBe(watcher);
       expect(log.warn).toHaveBeenCalledWith(
-        "[pulse-core] subscribe() called for treasury-feed (GDEST) which already has an active watcher — filter option ignored."
+        "[pulse-core] subscribe() called for treasury-feed (GDEST) which already has an active watcher — filter option ignored.",
+        expect.objectContaining({ address: "GDEST", hasFilter: true })
       );
     });
   });
@@ -1512,8 +1556,8 @@ describe("pulse-core EventEngine", () => {
 
       expect(result).toBeNull();
       expect(log.warn).toHaveBeenCalledWith(
-        '[pulse-core] normalize() dropping create_claimable_balance record: field "balance_id" is missing or not a non-empty string.',
-        expect.objectContaining({ record: expect.any(Object) })
+        "[pulse-core] normalize() dropping create_claimable_balance record.",
+        expect.objectContaining({ field: "balance_id", record: expect.any(Object) })
       );
     });
 
@@ -1527,8 +1571,8 @@ describe("pulse-core EventEngine", () => {
 
       expect(result).toBeNull();
       expect(log.warn).toHaveBeenCalledWith(
-        '[pulse-core] normalize() dropping create_claimable_balance record: field "claimants" is missing or invalid.',
-        expect.objectContaining({ record: expect.any(Object) })
+        "[pulse-core] normalize() dropping create_claimable_balance record.",
+        expect.objectContaining({ field: "claimants", record: expect.any(Object) })
       );
     });
 
@@ -1640,8 +1684,8 @@ describe("pulse-core EventEngine", () => {
         const result = normalize(record);
         expect(result).toBeNull();
         expect(log.warn).toHaveBeenCalledWith(
-          `[pulse-core] normalize() dropping claim_claimable_balance record: field "${field}" is missing or not a non-empty string.`,
-          expect.objectContaining({ record: expect.any(Object) })
+          "[pulse-core] normalize() dropping claim_claimable_balance record.",
+          expect.objectContaining({ field, record: expect.any(Object) })
         );
       }
     });
@@ -1745,8 +1789,8 @@ describe("pulse-core EventEngine", () => {
 
       expect(result).toBeNull();
       expect(log.warn).toHaveBeenCalledWith(
-        '[pulse-core] normalize() dropping liquidity_pool_deposit record: field "liquidity_pool_id" is missing.',
-        expect.objectContaining({ record: expect.any(Object) })
+        "[pulse-core] normalize() dropping liquidity_pool_deposit record.",
+        expect.objectContaining({ field: "liquidity_pool_id", record: expect.any(Object) })
       );
     });
 
@@ -1760,8 +1804,8 @@ describe("pulse-core EventEngine", () => {
 
       expect(result).toBeNull();
       expect(log.warn).toHaveBeenCalledWith(
-        "[pulse-core] normalize() dropping liquidity_pool_deposit record: reserves_deposited is not an array.",
-        expect.objectContaining({ record: expect.any(Object) })
+        "[pulse-core] normalize() dropping liquidity_pool_deposit record.",
+        expect.objectContaining({ field: "reserves_deposited", record: expect.any(Object) })
       );
     });
   });
@@ -1831,8 +1875,8 @@ describe("pulse-core EventEngine", () => {
 
       expect(result).toBeNull();
       expect(log.warn).toHaveBeenCalledWith(
-        '[pulse-core] normalize() dropping liquidity_pool_withdraw record: field "shares" is missing.',
-        expect.objectContaining({ record: expect.any(Object) })
+        "[pulse-core] normalize() dropping liquidity_pool_withdraw record.",
+        expect.objectContaining({ field: "shares", record: expect.any(Object) })
       );
     });
   });

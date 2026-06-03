@@ -1,8 +1,8 @@
 import type { NormalizedEvent, Watcher, WatcherNotification } from "@orbital/pulse-core";
 import { createHmac, timingSafeEqual } from "crypto";
 
-import { DeadLetterStore } from "./MemoryDeadLetterStore.js";
-import type { Tracer, VerifyWebhookOptions, WebhookConfig } from "./types.js";
+import { DeadLetterStore, type DeadLetterHealth } from "./MemoryDeadLetterStore.js";
+import type { Tracer, VerifyWebhookOptions, WebhookConfig, WebhookMetrics } from "./types.js";
 import { DEFAULT_MAX_AGE_MS, DEFAULT_CLOCK_SKEW_MS } from "./types.js";
 export { DeadLetterStore } from "./MemoryDeadLetterStore.js";
 export { NOOP_WEBHOOK_METRICS, CountingWebhookMetrics } from "./metrics.js";
@@ -10,7 +10,7 @@ export type { WebhookMetrics } from "./types.js";
 export { PostgresDeadLetterStore } from "./PostgresDeadLetterStore.js";
 export { RedisRetryQueue } from "./RedisRetryQueue.js";
 export { verifyWebhookEdge, verifyWebhookEdgeRaw } from "./edge.js";
-export type { DeadLetterEntry, DeadLetterFilter as MemoryDeadLetterFilter } from "./MemoryDeadLetterStore.js";
+export type { DeadLetterEntry, DeadLetterFilter as MemoryDeadLetterFilter, DeadLetterHealth } from "./MemoryDeadLetterStore.js";
 export type { DeadLetterFilter, DeadLetterInput, DeadLetterRecord, PgLike } from "./PostgresDeadLetterStore.js";
 export type { RedisLike, RedisRetryQueueOptions } from "./RedisRetryQueue.js";
 export type { RetryQueue, RetryRecord } from "./RetryQueue.js";
@@ -20,6 +20,8 @@ export type { Span, Tracer, VerifierSignatureVersion, VerifyWebhookOptions, Webh
  * Payload for the `raw` field of a `webhook.failed` event.
  */
 export type WebhookFailureRaw = {
+  /** The unique ID of the dead-letter queue entry. */
+  dlqId: string;
   /** Summary of the error that caused delivery to fail. */
   error: string;
   /** The target URL that failed delivery. */
@@ -34,6 +36,8 @@ export type WebhookFailureRaw = {
  * Payload for the `raw` field of a `webhook.dropped` event.
  */
 export type WebhookDroppedRaw = {
+  /** The unique ID of the dead-letter queue entry. */
+  dlqId: string;
   /** The reason the webhook was dropped. Currently only `retry_cap_exceeded`. */
   reason: "retry_cap_exceeded";
   /** The target URL that was dropped. */
@@ -44,10 +48,17 @@ export type WebhookDroppedRaw = {
   originalEvent: NormalizedEvent;
 };
 
-type ResolvedWebhookConfig = Omit<Required<WebhookConfig>, "url" | "tracer" | "urlValidator"> & {
+const globalDLQ = new DeadLetterStore();
+
+export function deliveryHealth(url: string): DeadLetterHealth {
+  return globalDLQ.getHealth(url);
+}
+
+type ResolvedWebhookConfig = Omit<Required<Omit<WebhookConfig, "tracer" | "urlValidator" | "metrics">>, "url"> & {
   urls: string[];
   tracer?: Tracer;
   urlValidator?: WebhookConfig["urlValidator"];
+  metrics?: WebhookMetrics;
 };
 
 export class WebhookDelivery {
@@ -59,7 +70,7 @@ export class WebhookDelivery {
 
   constructor(watcher: Watcher, config: WebhookConfig, dlq?: DeadLetterStore) {
     this.watcher = watcher;
-    this.dlq = dlq ?? new DeadLetterStore();
+    this.dlq = dlq ?? globalDLQ;
     this.config = {
       retries: 3,
       deliveryTimeoutMs: 10000,
@@ -149,6 +160,8 @@ export class WebhookDelivery {
 
       span?.setAttribute("webhook.status", res.status);
       span?.setAttribute("webhook.latency_ms", Date.now() - startMs);
+
+      this.dlq.recordSuccess(url);
     } catch (err) {
       span?.setAttribute("webhook.latency_ms", Date.now() - startMs);
       span?.setAttribute("webhook.error", this.getErrorMessage(err));
@@ -165,9 +178,18 @@ export class WebhookDelivery {
           const newest = this.retryTimers.get(newestTimer)!;
           clearTimeout(newestTimer);
           this.retryTimers.delete(newestTimer);
+
+          const dlqId = this.dlq.add(
+            newest.url,
+            newest.event,
+            "Retry capacity exceeded, dropped from queue",
+            attempt,
+          );
+
           this.watcher.emit("webhook.dropped", {
             ...newest.event,
             raw: {
+              dlqId,
               reason: "retry_cap_exceeded",
               url: newest.url,
               maxConcurrentRetries: this.config.maxConcurrentRetries,
@@ -206,9 +228,12 @@ export class WebhookDelivery {
     errorMessage: string,
     attempt: number,
   ): void {
+    const dlqId = this.dlq.add(url, event, errorMessage, attempt);
+
     this.watcher.emit("webhook.failed", {
       ...event,
       raw: {
+        dlqId,
         error: errorMessage,
         url,
         attempts: attempt,
