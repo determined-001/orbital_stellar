@@ -53,3 +53,24 @@ If you run multiple instances of `EventEngine` for the same set of addresses (e.
 ### Failover (Active-Passive)
 
 If you run a primary and a standby instance, where the standby only starts once the primary is confirmed dead, an eventually consistent store like **S3** is acceptable. The failover delay usually exceeds the consistency window of the storage provider.
+
+## Live Migration Between Stores
+
+When moving from one cursor store to another (e.g., in-memory → Postgres at scale-up), use the built-in `migrateCursors` utility to copy all existing cursors with zero downtime.
+
+### Recommended sequence
+
+1. **Deploy the new store** alongside the existing one (both must be reachable).
+2. **Run the migration** before switching the engine config:
+   ```ts
+   import { migrateCursors } from "@pulse-core";
+
+   const result = await migrateCursors(oldStore, newStore);
+   console.log(`Migrated ${result.migrated} cursor(s)`);
+   ```
+3. **Switch the `EventEngine` config** to point `cursorStore` at the new store.
+4. **Remove the old store** once the engine has confirmed healthy operation on the new store.
+
+### Idempotency
+
+The migration is **idempotent** — running it multiple times overwrites the target entries with the same source values. This lets you retry the migration safely if it is interrupted.
