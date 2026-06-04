@@ -1,3 +1,5 @@
+import type { ContractSubscriptionFilter, ContractAddress } from "./index.js";
+
 /**
  * SorobanSubscriber — polls a Soroban RPC for contract events and forwards
  * them to a caller-supplied handler.
@@ -24,6 +26,8 @@ export interface SorobanEvent {
   pagingToken: string;
   topic: string[];
   value: unknown;
+  contractId?: string;
+  type?: string;
 }
 
 /** Minimal interface for a Soroban RPC client. */
@@ -31,8 +35,22 @@ export interface SorobanRpc {
   getEvents(
     startCursor: string | undefined,
     limit: number,
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    filters?: ContractSubscriptionFilter[]
   ): Promise<{ events: SorobanEvent[] }>;
+}
+
+export interface SorobanSubscription {
+  id: string;
+  filters: ContractSubscriptionFilter[];
+  onEvent?: (event: SorobanEvent) => Promise<void>;
+}
+
+export interface ReconnectingPayload {
+  attempt: number;
+  delayMs: number;
+  cursor?: string;
+  source: "soroban";
 }
 
 export interface SorobanSubscriberOptions {
@@ -49,6 +67,13 @@ export interface SorobanSubscriberOptions {
   /** Called once when a bounded replay run has delivered all events up to endLedger. */
   onDone?: () => void;
   pageSize?: number;
+  /** Maximum number of recently-seen event IDs kept in the dedup window. Defaults to 1024. */
+  dedupCacheSize?: number;
+  /** Pagination limit for RPC `getEvents` calls. Must be 1–10,000. Defaults to 100. */
+  pageLimit?: number;
+  subscriptions?: SorobanSubscription[];
+  /** Called when a poll fails and a reconnect is scheduled. */
+  onReconnecting?: (payload: ReconnectingPayload) => void;
 }
 
 export class SorobanSubscriber {
@@ -56,7 +81,11 @@ export class SorobanSubscriber {
   private readonly cursorStore: CursorStore;
   private readonly onEvent: (event: SorobanEvent) => Promise<void>;
   private readonly pageSize: number;
-private readonly seen: LruSet; main
+  private readonly pageLimit: number;
+  private readonly seen: LruSet;
+  private readonly onReconnecting?: (payload: ReconnectingPayload) => void;
+
+  public subscriptions: SorobanSubscription[] = [];
 
   private isStopped = false;
 
@@ -78,7 +107,19 @@ private readonly seen: LruSet; main
     this.cursorStore = options.cursorStore;
     this.onEvent = options.onEvent;
     this.pageSize = options.pageSize ?? 100;
-this.seen = new LruSet(options.dedupCacheSize ?? 1024); main
+    this.pageLimit = options.pageLimit ?? 100;
+
+    if (this.pageLimit < 1 || this.pageLimit > 10000) {
+      throw new RangeError(
+        `pageLimit must be between 1 and 10,000, got ${this.pageLimit}`
+      );
+    }
+
+    this.seen = new LruSet(options.dedupCacheSize ?? 1024);
+    if (options.subscriptions) {
+      this.subscriptions = [...options.subscriptions];
+    }
+    this.onReconnecting = options.onReconnecting;
   }
 
   /**
@@ -114,6 +155,35 @@ this.seen = new LruSet(options.dedupCacheSize ?? 1024); main
   }
 
   /**
+   * Runs a continuous poll loop with exponential-backoff reconnection.
+   * Calls `onReconnecting` (if provided) before each retry, passing the
+   * cursor captured at the time of failure and `source: 'soroban'`.
+   */
+  async start(
+    reconnect: { initialDelayMs?: number; maxDelayMs?: number } = {}
+  ): Promise<void> {
+    const initialDelayMs = reconnect.initialDelayMs ?? 1000;
+    const maxDelayMs = reconnect.maxDelayMs ?? 30000;
+    let attempt = 0;
+
+    while (!this.isStopped) {
+      try {
+        await this.pollOnce();
+      } catch (err) {
+        if (this.isStopped) return;
+
+        attempt++;
+        const cursor = await this.cursorStore.getCursor().catch(() => undefined);
+        const delayMs = Math.min(initialDelayMs * 2 ** (attempt - 1), maxDelayMs);
+
+        this.onReconnecting?.({ attempt, delayMs, cursor, source: "soroban" });
+
+        await new Promise<void>((resolve) => setTimeout(resolve, delayMs));
+      }
+    }
+  }
+
+  /**
    * Gracefully stops the subscriber.
    *
    * - Marks the subscriber as stopped so no new polls begin.
@@ -144,35 +214,120 @@ this.seen = new LruSet(options.dedupCacheSize ?? 1024); main
     return this.endLedger !== undefined;
   }
 
+  private matchesFilters(
+    event: SorobanEvent,
+    filters: ContractSubscriptionFilter[]
+  ): boolean {
+    if (filters.length === 0) return true;
+
+    return filters.some((f) => {
+      if (f.type !== undefined && event.type !== undefined && f.type !== event.type) return false;
+      if (f.contractIds !== undefined && event.contractId !== undefined && !f.contractIds.includes(event.contractId as ContractAddress)) return false;
+      if (f.topicFilters !== undefined) {
+        for (let i = 0; i < f.topicFilters.length; i++) {
+          const pattern = f.topicFilters[i];
+          if (pattern !== null && pattern !== event.topic[i]) return false;
+        }
+      }
+      return true;
+    });
+  }
+
   private async _doPoll(signal: AbortSignal): Promise<void> {
     // In replay mode, bail immediately if we've already reached endLedger.
     if (this.isReplayMode && this.replayDone) return;
+
+    let activeSubs = [...this.subscriptions];
+    if (activeSubs.length === 0 && this.onEvent) {
+      activeSubs = [{ id: "__legacy__", filters: [] }];
+    }
+
+    if (activeSubs.length === 0) {
+      return;
+    }
+
+    let rpcCalls: ContractSubscriptionFilter[][] = [];
+    const hasMatchAll = activeSubs.some((sub) => sub.filters.length === 0);
+
+    if (hasMatchAll) {
+      rpcCalls = [[]];
+    } else {
+      const flatFilters: ContractSubscriptionFilter[] = [];
+      for (const sub of activeSubs) {
+        flatFilters.push(...sub.filters);
+      }
+
+      if (flatFilters.length === 0) {
+        rpcCalls = [[]];
+      } else {
+        for (let i = 0; i < flatFilters.length; i += 5) {
+          rpcCalls.push(flatFilters.slice(i, i + 5));
+        }
+      }
+    }
 
     // In replay mode use the ephemeral replayCursor; otherwise read from store.
     const currentCursor = this.isReplayMode
       ? this.replayCursor
       : await this.cursorStore.getCursor();
 
-    let result: { events: SorobanEvent[] };
+    const promises = rpcCalls.map((filters) =>
+      this.rpc.getEvents(
+        currentCursor,
+        this.pageSize,
+        signal,
+        filters.length > 0 ? filters : undefined
+      )
+    );
+
+    let results: { events: SorobanEvent[] }[];
     try {
-      result = await this.rpc.getEvents(currentCursor, this.pageSize, signal);
+      results = await Promise.all(promises);
     } catch (err) {
       // An aborted request is expected during shutdown — swallow it silently.
       if (this.isAbortError(err)) return;
       throw err;
     }
 
+    const allEventsMap = new Map<string, SorobanEvent>();
+    for (const res of results) {
+      if (res && res.events) {
+        for (const event of res.events) {
+          allEventsMap.set(event.id, event);
+        }
+      }
+    }
+
+    const uniqueEvents = Array.from(allEventsMap.values());
+
+    if (rpcCalls.length > 1) {
+      uniqueEvents.sort((a, b) => a.pagingToken.localeCompare(b.pagingToken));
+    }
+
     this.isPolling = true;
     try {
-      for (const event of result.events) {
-        // Re-check after every event delivery in case stop() was called
-        // concurrently (e.g. from within the onEvent handler).
+      for (const event of uniqueEvents) {
         if (this.isStopped) return;
+        if (this.seen.has(event.id)) continue;
 
-if (this.seen.has(event.id)) continue;
-        await this.onEvent(event);
-        this.seen.add(event.id);
-        await this.cursorStore.saveCursor(event.pagingToken); main
+        const matchedSubs: SorobanSubscription[] = [];
+        for (const sub of activeSubs) {
+          if (this.matchesFilters(event, sub.filters)) {
+            matchedSubs.push(sub);
+          }
+        }
+
+        if (matchedSubs.length > 0) {
+          for (const sub of matchedSubs) {
+            if (sub.onEvent) {
+              await sub.onEvent(event);
+            }
+          }
+
+          await this.onEvent(event);
+          this.seen.add(event.id);
+          await this.cursorStore.saveCursor(event.pagingToken);
+        }
       }
     } finally {
       this.isPolling = false;

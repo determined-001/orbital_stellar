@@ -1,32 +1,22 @@
+import type { ContractSubscriptionFilter } from "./index.js";
+
 export type SorobanNetworkInfo = {
   friendbotUrl?: string;
   passphrase: string;
   protocolVersion?: number;
 };
 
-/**
- * Simple process-global cache for Soroban RPC /network result.
- * The real implementation may fetch from the RPC endpoint; for now the
- * cache is sufficient for the EventEngine network-drift detection test.
- */
 export class SorobanRpcClient {
   private static cachedNetwork: SorobanNetworkInfo | null = null;
 
-  /** Set the process-cached network information (used in tests or initialization). */
   static setCachedNetwork(info: SorobanNetworkInfo | null): void {
     SorobanRpcClient.cachedNetwork = info;
   }
 
-  /** Returns the cached network info or null if none is cached. */
   static getCachedNetwork(): SorobanNetworkInfo | null {
     return SorobanRpcClient.cachedNetwork;
   }
 
-  /**
-   * Synchronous getter used by EventEngine.start() to detect network drift.
-   * Returns the cached value or throws if no cached value is available.
-   * Tests set the cache directly via setCachedNetwork().
-   */
   static getNetwork(): SorobanNetworkInfo {
     if (!SorobanRpcClient.cachedNetwork) {
       throw new Error("SorobanRpcClient.getNetwork() called before network info was cached.");
@@ -34,12 +24,7 @@ export class SorobanRpcClient {
     return SorobanRpcClient.cachedNetwork;
   }
 
-  /**
-   * Placeholder async fetcher (not used in these tests). In production this
-   * would call the RPC /network endpoint and cache the result.
-   */
   static async fetchAndCacheNetwork(_url: string): Promise<SorobanNetworkInfo> {
-    // Not implemented here; callers may stub this in tests or call setCachedNetwork.
     throw new Error("fetchAndCacheNetwork not implemented");
   }
 }
@@ -110,9 +95,10 @@ export class SorobanRpcClient {
    *
    * @param method - The JSON-RPC method name.
    * @param params - Optional JSON-RPC parameters.
+   * @param signal - Optional AbortSignal.
    * @returns The JSON-RPC response body.
    */
-  async request(method: string, params?: unknown): Promise<unknown> {
+  async request(method: string, params?: unknown, signal?: AbortSignal): Promise<unknown> {
     const body = JSON.stringify({
       jsonrpc: "2.0",
       id: 1,
@@ -134,6 +120,7 @@ export class SorobanRpcClient {
         ...this.headers,
       },
       body,
+      signal,
     });
 
     if (!response.ok) {
@@ -146,21 +133,26 @@ export class SorobanRpcClient {
   }
 
   /**
-   * Fetches Soroban events with optional cursor-based pagination.
+   * Fetches Soroban events with optional cursor-based pagination and filters.
    *
    * @param startCursor - Optional cursor to start fetching from.
    * @param limit - Optional maximum number of events to return.
+   * @param signal - Optional AbortSignal.
+   * @param filters - Optional array of filters (up to 5 filters).
    * @returns An object containing the events array.
    */
   async getEvents(
     startCursor?: string,
-    limit?: number
+    limit?: number,
+    signal?: AbortSignal,
+    filters?: ContractSubscriptionFilter[]
   ): Promise<{ events: unknown[] }> {
     const params: Record<string, unknown> = {};
     if (startCursor !== undefined) params.startCursor = startCursor;
     if (limit !== undefined) params.limit = limit;
+    if (filters !== undefined && filters.length > 0) params.filters = filters;
 
-    const result = (await this.request("getEvents", params)) as {
+    const result = (await this.request("getEvents", params, signal)) as {
       result?: { events?: unknown[] };
     };
     return { events: result?.result?.events ?? [] };

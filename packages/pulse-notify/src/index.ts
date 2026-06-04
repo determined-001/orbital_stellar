@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import type { NormalizedEvent } from "@orbital/pulse-core";
 import { acquireEventConnection } from "./connectionPool.js";
+import { acquireWsConnection } from "./wsTransport.js";
 export { useStellarEventSuspense } from "./useStellarEventSuspense.js";
 
 export type UseEventConfig<T extends NormalizedEvent = NormalizedEvent> = {
@@ -17,6 +18,8 @@ export type UseEventConfig<T extends NormalizedEvent = NormalizedEvent> = {
   withCredentials?: boolean;
   /** Side-effect callback fired for every incoming event, before filter is applied */
   onEvent?: (event: NormalizedEvent) => void;
+  /** Transport to use. Defaults to 'sse'. */
+  transport?: 'sse' | 'websocket';
 };
 
 export type EventState<T extends NormalizedEvent = NormalizedEvent> = {
@@ -69,6 +72,8 @@ export function useStellarEvent<T extends NormalizedEvent = NormalizedEvent>(
       : configOrUrl.withCredentials;
   const onEvent =
     typeof configOrUrl === "string" ? options?.onEvent : configOrUrl.onEvent;
+  const transport =
+    typeof configOrUrl === "string" ? "sse" : (configOrUrl.transport ?? "sse");
 
   const eventKey = Array.isArray(eventType)
     ? [...eventType].sort().join(",")
@@ -92,8 +97,9 @@ export function useStellarEvent<T extends NormalizedEvent = NormalizedEvent>(
   });
 
   useEffect(() => {
-    const connection = acquireEventConnection(
-      { serverUrl, address: addr, token, withCredentials },
+    const acquire = transport === "websocket" ? acquireWsConnection : acquireEventConnection;
+    const connection = acquire(
+      { serverUrl, address: addr, token, ...(transport === "sse" ? { withCredentials } : {}) },
       {
         onOpen: () => {
           setState((prev) => ({ ...prev, connected: true, error: null }));
@@ -134,7 +140,7 @@ export function useStellarEvent<T extends NormalizedEvent = NormalizedEvent>(
     };
     // ✅ eventKey is a serialised string — stable even when the caller passes
     // an array literal, which would otherwise be a new reference every render.
-  }, [serverUrl, addr, eventKey, token, withCredentials]);
+  }, [serverUrl, addr, eventKey, token, withCredentials, transport]);
 
   return state;
 }

@@ -18,8 +18,10 @@ import type {
   ClaimableClaimedEvent,
   ClaimableCreatedEvent,
   ContractEmittedEvent,
+  ContractFilter,
   ContractInvokedEvent,
   ContractSubscribeOptions,
+  ContractSubscriptionConfig,
   ContractSubscriptionFilter,
   CoreConfig,
   DataEvent,
@@ -90,17 +92,30 @@ const STELLAR_MAX_TRUSTLINE_LIMIT = "922337203685.4775807";
 
 const noop: Logger = { info: () => { }, warn: () => { }, error: () => { } };
 
+/**
+ * Produces a stable, order-independent string key for a ContractFilter array.
+ * Used to deduplicate subscribeContract(config) calls.
+ */
+function stableFilterKey(filters: ContractFilter[]): string {
+  const normalized = filters.map((f) => ({
+    type: f.type,
+    contractIds: f.contractIds ? [...f.contractIds].sort() : undefined,
+    topics: f.topics,
+  }));
+  return JSON.stringify(normalized);
+}
+
 export class EventEngine {
   private server: Horizon.Server;
   private registry: Map<string, Watcher> = new Map();
   private contractRegistry: Map<string, { watcher: Watcher; filters: ContractSubscriptionFilter[] }> = new Map();
+  private contractConfigRegistry: Map<string, Watcher> = new Map();
   private subscriptionNames: Map<string, string> = new Map();
   private stopStream: HorizonStreamStopper | null = null;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private reconnectAttempt = 0;
   private pendingReconnectSuccessAttempt: number | null = null;
   private readonly reconnectConfig: Required<ReconnectConfig>;
-  private readonly network: Network;
   private isRunning = false;
   // Waiters for contract subscription activation: map contractId -> array of waiters
   private contractPollWaiters: Map<
@@ -123,11 +138,12 @@ export class EventEngine {
   private isCursorStoreUnhealthy = false;
   private pausedSources = new Set<"horizon" | "soroban">();
 
+
   /**
    * Creates a new EventEngine instance.
    * @param config - The core configuration for the engine.
    */
-  constructor(config: CoreConfig) {
+  constructor(config: CoreConfig & { soroban?: { rpcUrl: string; rpcHeaders?: Record<string, string>; pollIntervalMs?: number; startLedgerLookback?: number } }) {
     let horizonUrl: string;
     if (config.horizonUrl !== undefined) {
       try {
@@ -152,10 +168,6 @@ export class EventEngine {
       ...config.reconnect,
     };
     this.log = config.logger ?? noop;
-    this.network = config.network;
-    this.cursorStore = config.cursorStore;
-    this.streamKey = config.streamKey ?? "pulse-core-cursor";
-    this.cursorFailureThreshold = config.cursorFailureThreshold ?? 5;
   }
 
   /**
@@ -310,7 +322,48 @@ export class EventEngine {
    * @param id - A caller-chosen identifier for this subscription (used to unsubscribe).
    * @param options - Optional filters; omitting filters matches all contract events.
    */
-  subscribeContract(id: string, options?: ContractSubscribeOptions): Watcher {
+  subscribeContract(id: string, options?: ContractSubscribeOptions): Watcher;
+  /**
+   * Subscribes to Soroban contract events using an RPC-shaped filter config.
+   * Deduplicates by a stable key over the filter shape — repeated calls with
+   * semantically equal configs return the same Watcher instance.
+   * Throws synchronously when filters.length > 5 or any filter's contractIds.length > 5.
+   * @param config - Filter configuration mirroring the RPC getEvents filter shape.
+   */
+  subscribeContract(config: ContractSubscriptionConfig): Watcher;
+  subscribeContract(
+    idOrConfig: string | ContractSubscriptionConfig,
+    options?: ContractSubscribeOptions
+  ): Watcher {
+    // New config-object overload
+    if (typeof idOrConfig === "object") {
+      const config = idOrConfig;
+      if (config.filters.length > 5) {
+        throw new Error(
+          `ContractSubscriptionConfig.filters must have ≤ 5 entries, got ${config.filters.length}`
+        );
+      }
+      for (let i = 0; i < config.filters.length; i++) {
+        const f = config.filters[i]!;
+        if (f.contractIds !== undefined && f.contractIds.length > 5) {
+          throw new Error(
+            `ContractSubscriptionConfig.filters[${i}].contractIds must have ≤ 5 entries, got ${f.contractIds.length}`
+          );
+        }
+      }
+
+      const key = stableFilterKey(config.filters);
+      const existing = this.contractConfigRegistry.get(key);
+      if (existing) return existing;
+
+      const watcher = new Watcher(key);
+      watcher.addStopHandler(() => this.contractConfigRegistry.delete(key));
+      this.contractConfigRegistry.set(key, watcher);
+      return watcher;
+    }
+
+    // Legacy string-id overload
+    const id = idOrConfig;
     const existing = this.contractRegistry.get(id);
     if (existing) {
       if (options?.filter) {
@@ -333,8 +386,15 @@ export class EventEngine {
       this.contractRegistry.delete(id);
       this.subscriptionNames.delete(id);
       this.filters.delete(id);
+      if (this.contractRegistry.size === 0 && this.sorobanSubscriber) {
+        this.sorobanSubscriber.stop();
+      }
     });
     this.contractRegistry.set(id, { watcher, filters });
+    
+    if (this.isRunning && this.sorobanSubscriber) {
+      this.sorobanSubscriber.start();
+    }
     return watcher;
   }
 
@@ -434,31 +494,10 @@ export class EventEngine {
       return false;
     }
 
-    // Detect Soroban RPC / network drift if a cached network is available.
-    // This check is intentionally synchronous so any mismatch can be reported
-    // immediately before opening subscriptions. Tests populate the SorobanRpcClient cache.
-    try {
-      const { SorobanRpcClient } = require("./SorobanRpcClient.js");
-      const cached = SorobanRpcClient.getCachedNetwork();
-      if (cached) {
-        // eslint-disable-next-line @typescript-eslint/no-var-requires
-        const { NETWORK_PASSPHRASES } = require("./index.js");
-        const expected = NETWORK_PASSPHRASES[this.network];
-        const actual = cached.passphrase;
-        if (actual !== expected) {
-          // eslint-disable-next-line @typescript-eslint/no-var-requires
-          const { NetworkMismatchError } = require("./errors.js");
-          throw new NetworkMismatchError(expected, actual);
-        }
-      }
-    } catch (e) {
-      if (e instanceof Error && e.name === "NetworkMismatchError") {
-        throw e;
-      }
-      // Otherwise ignore missing cache or other non-fatal failures — no drift detection available.
-    }
-
     this.openStream(false);
+    if (this.contractRegistry.size > 0 && this.sorobanSubscriber) {
+      this.sorobanSubscriber.start();
+    }
     return true;
   }
 
@@ -528,6 +567,10 @@ export class EventEngine {
     this.horizonCursor = undefined;
     this.pausedSources.clear();
 
+    if (this.sorobanSubscriber) {
+      this.sorobanSubscriber.stop();
+    }
+
     this.notifyWatchers("engine.stopped", {
       type: "engine.stopped",
       attempt: 0,
@@ -548,8 +591,8 @@ export class EventEngine {
     };
 
     const soroban = {
-      running: false,
-      lastEventAt: null,
+      running: this.sorobanSubscriber?.isRunning ?? false,
+      lastEventAt: this.sorobanSubscriber?.lastEventAt ?? null,
       reconnectAttempt: 0,
     };
 
