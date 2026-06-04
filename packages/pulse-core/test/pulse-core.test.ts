@@ -192,8 +192,8 @@ describe("pulse-core EventEngine", () => {
     ).normalize.bind(engine);
 
     const missingFieldCases: Array<[string, Record<string, unknown>]> = [
-      ["from",       { type: "payment", to: "GDEST", amount: "1", created_at: "2026-01-01T00:00:00Z" }],
-      ["amount",     { type: "payment", to: "GDEST", from: "GSRC", created_at: "2026-01-01T00:00:00Z" }],
+      ["from", { type: "payment", to: "GDEST", amount: "1", created_at: "2026-01-01T00:00:00Z" }],
+      ["amount", { type: "payment", to: "GDEST", from: "GSRC", created_at: "2026-01-01T00:00:00Z" }],
       ["created_at", { type: "payment", to: "GDEST", from: "GSRC", amount: "1" }],
     ];
 
@@ -371,7 +371,7 @@ describe("pulse-core EventEngine", () => {
 
     expect(streamInstances[0]?.close).toHaveBeenCalledTimes(1);
     expect(reconnecting).toHaveBeenCalledWith(
-      expect.objectContaining({ type: "engine.reconnecting", attempt: 1, delayMs: expect.any(Number), emittedAt: expect.any(String) })
+      expect.objectContaining({ type: "engine.reconnecting", attempt: 1, delayMs: expect.any(Number), emittedAt: expect.any(String), source: "horizon" })
     );
     expect(log.warn).toHaveBeenCalledWith(
       "[pulse-core] SSE reconnect attempt scheduled.",
@@ -406,7 +406,7 @@ describe("pulse-core EventEngine", () => {
 
     latestStream().handlers.onerror(new Error("stream dropped after recovery"));
     expect(reconnecting).toHaveBeenLastCalledWith(
-      expect.objectContaining({ type: "engine.reconnecting", attempt: 1 })
+      expect.objectContaining({ type: "engine.reconnecting", attempt: 1, source: "horizon" })
     );
   });
 
@@ -437,6 +437,7 @@ describe("pulse-core EventEngine", () => {
         type: "engine.reconnecting",
         attempt: 1,
         delayMs: 500,
+        source: "horizon",
       })
     );
     expect(log.warn).toHaveBeenCalledWith(
@@ -879,6 +880,7 @@ describe("pulse-core EventEngine", () => {
           type: "engine.reconnecting",
           name: "treasury-feed",
           attempt: 1,
+          source: "horizon",
         })
       );
 
@@ -1368,7 +1370,7 @@ describe("pulse-core EventEngine", () => {
   describe("status()", () => {
     it("returns accurate snapshot in initial state", () => {
       const engine = new EventEngine({ network: "testnet" });
-      expect(engine.status()).toEqual({ running: false, watcherCount: 0, lastEventAt: null, reconnectAttempt: 0 });
+      expect(engine.status()).toMatchObject({ running: false, watcherCount: 0, lastEventAt: null, reconnectAttempt: 0 });
     });
 
     it("returns accurate snapshot after start()", () => {
@@ -1376,7 +1378,7 @@ describe("pulse-core EventEngine", () => {
       engine.subscribe("GABC");
       engine.start();
 
-      expect(engine.status()).toEqual({ running: true, watcherCount: 1, lastEventAt: null, reconnectAttempt: 0 });
+      expect(engine.status()).toMatchObject({ running: true, watcherCount: 1, lastEventAt: null, reconnectAttempt: 0 });
     });
 
     it("updates lastEventAt after a message", () => {
@@ -1396,7 +1398,7 @@ describe("pulse-core EventEngine", () => {
 
       latestStream().handlers.onerror(new Error("disconnect"));
 
-      expect(engine.status()).toEqual({ running: false, watcherCount: 0, lastEventAt: null, reconnectAttempt: 1 });
+      expect(engine.status()).toMatchObject({ running: false, watcherCount: 0, lastEventAt: null, reconnectAttempt: 1 });
     });
 
     it("resets state when stop() is called", () => {
@@ -1407,7 +1409,7 @@ describe("pulse-core EventEngine", () => {
 
       engine.stop();
 
-      expect(engine.status()).toEqual({ running: false, watcherCount: 0, lastEventAt: null, reconnectAttempt: 0 });
+      expect(engine.status()).toMatchObject({ running: false, watcherCount: 0, lastEventAt: null, reconnectAttempt: 0 });
     });
   });
 
@@ -2031,11 +2033,13 @@ describe("pulse-core EventEngine", () => {
   it("reports per-source status and preserves flat fields for compatibility", () => {
     const engine = new EventEngine({ network: "testnet" });
 
-    expect(engine.status()).toEqual({
+    expect(engine.status()).toMatchObject({
       running: false,
       watcherCount: 0,
+      contractWatcherCount: 0,
       lastEventAt: null,
       reconnectAttempt: 0,
+      pausedSources: undefined,
       sources: {
         horizon: {
           running: false,

@@ -243,6 +243,11 @@ Every watcher receives lifecycle notifications alongside operation events:
 | `engine.reconnected` | Reconnect succeeded on attempt `N` |
 | `engine.rate_limited` | 429 received; reconnect deferred by `delayMs` |
 | `engine.stopped` | `engine.stop()` was called explicitly |
+| `engine.cursor_expired` | Stream cursor expired (Horizon or Soroban) |
+
+For `engine.cursor_expired` notifications, the payload includes:
+- `lostCursor?: string` — The value of the expired or lost cursor.
+- `source?: "horizon" | "soroban"` — The subscription engine source where the expiry occurred.
 
 Consumers can subscribe to these via `watcher.on("engine.reconnecting", …)`
 to surface UI banners or write structured logs.

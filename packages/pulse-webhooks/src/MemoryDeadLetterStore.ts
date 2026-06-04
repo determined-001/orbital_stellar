@@ -18,8 +18,16 @@ export interface DeadLetterFilter {
 
 let counter = 0;
 
+export type DeadLetterHealth = {
+  healthy: boolean;
+  lastSuccess?: number;
+  lastFailure?: number;
+  failureRate: number;
+};
+
 export class DeadLetterStore {
   private entries: Map<string, DeadLetterEntry> = new Map();
+  private successTimestamps: Map<string, number> = new Map();
 
   add(url: string, event: NormalizedEvent, error: string, attempts: number): string {
     const id = `dlq_${++counter}_${Date.now()}_${Math.random().toString(36).slice(2)}`;
@@ -54,5 +62,43 @@ export class DeadLetterStore {
 
   size(): number {
     return this.entries.size;
+  }
+
+  recordSuccess(url: string): void {
+    this.successTimestamps.set(url, Date.now());
+  }
+
+  getHealth(url: string): DeadLetterHealth {
+    const nowMs = Date.now();
+    const oneHourAgoMs = nowMs - 60 * 60 * 1000;
+    const fifteenMinutesAgoMs = nowMs - 15 * 60 * 1000;
+
+    const recentFailures = this.list({
+      url,
+      since: oneHourAgoMs,
+    });
+
+    const lastSuccessMs = this.successTimestamps.get(url);
+
+    const lastFailureMs =
+      recentFailures.length > 0
+        ? recentFailures[recentFailures.length - 1]!.timestamp
+        : undefined;
+
+    const failureRate =
+      recentFailures.length === 0
+        ? 0
+        : recentFailures.length / (recentFailures.length + 1);
+
+    const hasRecentSuccess =
+      lastSuccessMs !== undefined && lastSuccessMs >= fifteenMinutesAgoMs;
+    const healthy = failureRate < 0.05 && hasRecentSuccess;
+
+    return {
+      healthy,
+      lastSuccess: lastSuccessMs,
+      lastFailure: lastFailureMs,
+      failureRate,
+    };
   }
 }
