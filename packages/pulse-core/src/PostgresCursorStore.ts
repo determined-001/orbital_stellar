@@ -40,4 +40,14 @@ export class PostgresCursorStore implements CursorStore {
       [streamKey, cursor]
     );
   }
+
+  async getAll(): Promise<Array<{ streamKey: string; cursor: string }>> {
+    const result = await this.pg.query(
+      "SELECT stream_key, cursor FROM cursor_store"
+    );
+    return result.rows.map((row: any) => ({
+      streamKey: row.stream_key as string,
+      cursor: row.cursor as string,
+    }));
+  }
 }

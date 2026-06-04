@@ -16,7 +16,7 @@ export function cacheCursorStore(
 ): CursorStore {
   const cache = new Map<string, Entry>();
 
-  return {
+  const store: CursorStore = {
     async get(streamKey: string): Promise<string | null> {
       const entry = cache.get(streamKey);
       if (entry && Date.now() < entry.expiresAt) return entry.value;
@@ -29,5 +29,17 @@ export function cacheCursorStore(
       cache.delete(streamKey);
       return inner.set(streamKey, cursor);
     },
+
+    async getAll(): Promise<Array<{ streamKey: string; cursor: string }>> {
+      return inner.getAll();
+    }
   };
+
+  if (inner.ping) {
+    store.ping = async function ping(): Promise<void> {
+      return inner.ping!();
+    };
+  }
+
+  return store;
 }

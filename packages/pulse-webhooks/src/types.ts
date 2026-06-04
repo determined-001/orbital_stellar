@@ -43,4 +43,8 @@ export type VerifyWebhookOptions = {
   nowMs?: number;
   /** Signature version selector. `v2` is a reserved placeholder for a future x-orbital-signature-v2 format. Defaults to `v1`. */
   version?: VerifierSignatureVersion;
+  /** Optional schema hook to validate the parsed `NormalizedEvent`. When provided, the verifier
+   *  will run this after signature verification and return `null` if it returns `false`.
+   */
+  schema?: (event: import("@orbital/pulse-core").NormalizedEvent) => boolean;
 };

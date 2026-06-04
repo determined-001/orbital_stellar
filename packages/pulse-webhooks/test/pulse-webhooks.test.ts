@@ -568,6 +568,45 @@ describe("pulse-webhooks verifyWebhook", () => {
       }),
     ).toBeNull();
   });
+
+  it("returns null when schema validation fails", () => {
+    const payload = JSON.stringify(deliveryEvent);
+    const timestamp = "1714176000000";
+    const signature = signWebhookPayload("top-secret", payload, timestamp);
+
+    const event = verifyWebhook(payload, signature, "top-secret", timestamp, {
+      nowMs: Number(timestamp),
+      schema: (evt) => evt.type === "payment.sent",
+    });
+
+    expect(event).toBeNull();
+  });
+
+  it("returns event when schema validation succeeds", () => {
+    const payload = JSON.stringify(deliveryEvent);
+    const timestamp = "1714176000000";
+    const signature = signWebhookPayload("top-secret", payload, timestamp);
+
+    const event = verifyWebhook(payload, signature, "top-secret", timestamp, {
+      nowMs: Number(timestamp),
+      schema: (evt) => evt.type === "payment.received",
+    });
+
+    expect(event).toEqual(deliveryEvent);
+  });
+
+  it("returns null when schema validator throws", () => {
+    const payload = JSON.stringify(deliveryEvent);
+    const timestamp = "1714176000000";
+    const signature = signWebhookPayload("top-secret", payload, timestamp);
+
+    const event = verifyWebhook(payload, signature, "top-secret", timestamp, {
+      nowMs: Number(timestamp),
+      schema: () => { throw new Error("validator error"); },
+    });
+
+    expect(event).toBeNull();
+  });
 });
 
 describe("pulse-webhooks verifyWebhookEdge", () => {
@@ -703,6 +742,45 @@ describe("pulse-webhooks verifyWebhookEdge", () => {
     expect(
       await verifyWebhookEdge(payload, signature, "top-secret", timestamp),
     ).toBeNull();
+  });
+
+  it("returns null when schema validation fails", async () => {
+    const payload = JSON.stringify(deliveryEvent);
+    const timestamp = "1714176000000";
+    const signature = signWebhookPayload("top-secret", payload, timestamp);
+
+    const event = await verifyWebhookEdge(payload, signature, "top-secret", timestamp, {
+      nowMs: Number(timestamp),
+      schema: (evt) => evt.type === "payment.sent",
+    });
+
+    expect(event).toBeNull();
+  });
+
+  it("returns event when schema validation succeeds", async () => {
+    const payload = JSON.stringify(deliveryEvent);
+    const timestamp = "1714176000000";
+    const signature = signWebhookPayload("top-secret", payload, timestamp);
+
+    const event = await verifyWebhookEdge(payload, signature, "top-secret", timestamp, {
+      nowMs: Number(timestamp),
+      schema: (evt) => evt.type === "payment.received",
+    });
+
+    expect(event).toEqual(deliveryEvent);
+  });
+
+  it("returns null when schema validator throws", async () => {
+    const payload = JSON.stringify(deliveryEvent);
+    const timestamp = "1714176000000";
+    const signature = signWebhookPayload("top-secret", payload, timestamp);
+
+    const event = await verifyWebhookEdge(payload, signature, "top-secret", timestamp, {
+      nowMs: Number(timestamp),
+      schema: () => { throw new Error("validator error"); },
+    });
+
+    expect(event).toBeNull();
   });
 });
 

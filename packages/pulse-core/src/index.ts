@@ -17,6 +17,8 @@ export { StrKey } from "@stellar/stellar-sdk";
 export { CursorStore } from "./CursorStore.js";
 export { PostgresCursorStore, PgLike } from "./PostgresCursorStore.js";
 export { cacheCursorStore } from "./cacheCursorStore.js";
+export { migrateCursors } from "./migrateCursors.js";
+export type { MigrateCursorsResult } from "./migrateCursors.js";
 export { evaluatePredicate, normalizeClaimPredicate, isClaimPredicateType } from "./claimPredicate.js";
 export type { ClaimPredicate } from "./claimPredicate.js";
 export { isEventType } from "./eventTypeGuard.js";
@@ -96,7 +98,8 @@ export type WatcherNotificationType =
   | "engine.reconnected"
   | "engine.rate_limited"
   | "engine.stopped"
-  | "engine.cursor_store_unhealthy";
+  | "engine.cursor_store_unhealthy"
+  | "engine.cursor_expired";
 
 export type OfferEventType =
   | "offer.created"
@@ -369,6 +372,10 @@ export type WatcherNotification = {
   delayMs?: number;
   /** ISO 8601 timestamp of when this notification was emitted. */
   emittedAt: string;
+  /** The cursor value that was expired or lost, if applicable. */
+  lostCursor?: string;
+  /** The source engine that encountered the expired cursor. */
+  source?: "horizon" | "soroban";
 };
 
 /**
@@ -420,6 +427,11 @@ export type CoreConfig = {
   cursorFailureThreshold?: number;
   /** Optional ABI registry client. */
   abiRegistry?: AbiRegistryClientLike;
+  /** Soroban RPC configuration. */
+  soroban?: {
+    /** Pagination limit for RPC `getEvents` calls. Must be 1–10,000. Defaults to 100. */
+    pageLimit?: number;
+  };
 };
 
 // Error class for invalid network validation
@@ -540,3 +552,17 @@ export type ContractSubscribeOptions = {
  * function handlePayment(e: events.PaymentEvent) { ... }
  */
 export * as events from "./events.js";
+
+// ---------------------------------------------------------------------------
+// Phase 1 — new RPC-shaped contract subscription API
+// ---------------------------------------------------------------------------
+
+export type ContractFilter = {
+  type?: "system" | "contract" | "diagnostic";
+  contractIds?: string[];
+  topics?: string[][];
+};
+
+export type ContractSubscriptionConfig = {
+  filters: ContractFilter[];
+};

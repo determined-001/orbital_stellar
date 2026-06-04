@@ -79,9 +79,12 @@ export interface SorobanSubscriberOptions {
   endLedger?: number;
   /** Called once when a bounded replay run has delivered all events up to endLedger. */
   onDone?: () => void;
+  /** @deprecated Use pageLimit */
   pageSize?: number;
   /** Maximum number of recently-seen event IDs kept in the dedup window. Defaults to 1024. */
   dedupCacheSize?: number;
+  /** Pagination limit for RPC `getEvents` calls. Must be 1–10,000. Defaults to 100. */
+  pageLimit?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -92,7 +95,7 @@ export class SorobanSubscriber {
   private readonly rpc: SorobanRpcLike;
   private readonly cursorStore: CursorStoreLike;
   private readonly onEvent: (event: SorobanEvent) => Promise<void>;
-  private readonly pageSize: number;
+  private readonly pageLimit: number;
   private readonly seen: LruSet;
   private readonly endLedger?: number;
   private readonly onDone?: () => void;
@@ -112,7 +115,14 @@ export class SorobanSubscriber {
     this.rpc = options.rpc;
     this.cursorStore = options.cursorStore;
     this.onEvent = options.onEvent;
-    this.pageSize = options.pageSize ?? 100;
+    this.pageLimit = options.pageLimit ?? options.pageSize ?? 100;
+
+    if (this.pageLimit < 1 || this.pageLimit > 10000) {
+      throw new RangeError(
+        `pageLimit must be between 1 and 10,000, got ${this.pageLimit}`
+      );
+    }
+
     this.seen = new LruSet(options.dedupCacheSize ?? 1024);
     this.endLedger = options.endLedger;
     this.onDone = options.onDone;
@@ -163,7 +173,7 @@ export class SorobanSubscriber {
 
     let result: { events: SorobanEvent[] };
     try {
-      result = await this.rpc.getEvents(currentCursor, this.pageSize, signal);
+      result = await this.rpc.getEvents(currentCursor, this.pageLimit, signal);
     } catch (err) {
       if (this.isAbortError(err)) return;
       throw err;

@@ -79,6 +79,27 @@ export class FileCursorStore implements CursorStore {
       // ignore
     }
   }
+
+  async getAll(): Promise<Array<{ streamKey: string; cursor: string }>> {
+    try {
+      await this.ensureDir();
+      const files = await fsPromises.readdir(this.dir);
+      const results: Array<{ streamKey: string; cursor: string }> = [];
+      for (const file of files) {
+        if (file.endsWith(".json")) {
+          const streamKey = decodeURIComponent(file.slice(0, -5));
+          const cursor = await this.get(streamKey);
+          if (cursor !== null) {
+            results.push({ streamKey, cursor });
+          }
+        }
+      }
+      return results;
+    } catch (err: any) {
+      if (err.code === "ENOENT") return [];
+      throw err;
+    }
+  }
 }
 
 export default FileCursorStore;
