@@ -7,10 +7,11 @@ function safeFilename(streamKey: string): string {
   return encodeURIComponent(streamKey) + ".json";
 }
 
-export class FileCursorStore implements CursorStore {
+export class FileCursorStore extends CursorStore {
   private readonly dir: string;
 
   constructor(dir: string) {
+    super();
     this.dir = dir;
   }
 

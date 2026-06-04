@@ -1,4 +1,4 @@
-import type { CursorStore } from "./CursorStore.js";
+import { CursorStore } from "./CursorStore.js";
 
 interface Entry {
   value: string | null;
@@ -16,30 +16,30 @@ export function cacheCursorStore(
 ): CursorStore {
   const cache = new Map<string, Entry>();
 
-  const store: CursorStore = {
+  class CachedCursorStore extends CursorStore {
     async get(streamKey: string): Promise<string | null> {
       const entry = cache.get(streamKey);
       if (entry && Date.now() < entry.expiresAt) return entry.value;
       const value = await inner.get(streamKey);
       cache.set(streamKey, { value, expiresAt: Date.now() + ttlMs });
       return value;
-    },
+    }
 
     async set(streamKey: string, cursor: string): Promise<void> {
       cache.delete(streamKey);
       return inner.set(streamKey, cursor);
-    },
-
-    async getAll(): Promise<Array<{ streamKey: string; cursor: string }>> {
-      return inner.getAll();
     }
-  };
 
-  if (inner.ping) {
-    store.ping = async function ping(): Promise<void> {
-      return inner.ping!();
-    };
+    override async getAll(): Promise<Array<{ streamKey: string; cursor: string }>> {
+      return inner.getAll ? inner.getAll() : [];
+    }
+
+    override async ping(): Promise<void> {
+      if (inner.ping) {
+        return inner.ping();
+      }
+    }
   }
 
-  return store;
+  return new CachedCursorStore();
 }

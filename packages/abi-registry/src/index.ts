@@ -12,3 +12,11 @@ export type {
 } from "./RegistryPublisher.js";
 
 export { LocalFilePublisher } from "./RegistryPublisher.js";
+
+export { decodeContractEvent } from "./decode.js";
+export type {
+  DecodedEvent,
+  DecodedValue,
+  DecodeError,
+  DecodeResult,
+} from "./decode.js";

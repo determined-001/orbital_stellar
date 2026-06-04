@@ -1,4 +1,6 @@
 import { expect, describe, it, beforeEach } from "vitest";
+import { SorobanRpcError } from "../src/errors.js";
+import { SorobanSubscriber } from "../src/SorobanSubscriber.js";
 import { FakeSorobanRpc } from "./fakes/FakeSorobanRpc.js";
 import { SorobanSubscriber } from "../src/SorobanSubscriber.js";
 
@@ -14,6 +16,13 @@ export class MemoryCursorStore {
     this.cursor = cursor;
   }
 }
+
+async function flushAsyncSubscriberWork(): Promise<void> {
+  for (let i = 0; i < 10; i += 1) {
+    await Promise.resolve();
+  }
+}
+
 
 // --- Complete 4 Scenario Invariant Handoff Test Suite ---
 describe("SorobanSubscriber Handoff & Restart Resiliency", () => {
@@ -71,7 +80,10 @@ describe("SorobanSubscriber Handoff & Restart Resiliency", () => {
     const subscriber = createSubscriber();
 
     fakeRpc.getEvents = async () => {
-      throw new Error("Soroban RPC Network Timeout");
+      throw new SorobanRpcError("Soroban RPC Network Timeout", {
+        code: "network",
+        retryable: true,
+      });
     };
 
     try {
@@ -110,5 +122,86 @@ describe("SorobanSubscriber Handoff & Restart Resiliency", () => {
     await restartedSubscriber.pollOnce();
 
     expect(processedEvents.length).toBe(101);
+  });
+
+  it("schedules a retry for retryable SorobanRpcError without parsing messages", async () => {
+    const retryableError = new SorobanRpcError("any message is fine", {
+      code: "server",
+      retryable: true,
+      status: 503,
+    });
+    const retryableErrors: SorobanRpcError[] = [];
+    const terminalErrors: unknown[] = [];
+    const scheduledCallbacks: Array<() => void> = [];
+
+    fakeRpc.getEvents = async () => {
+      throw retryableError;
+    };
+
+    const subscriber = new SorobanSubscriber({
+      rpc: fakeRpc,
+      cursorStore,
+      onEvent: async (evt: any) => {
+        processedEvents.push(evt);
+      },
+      pageSize: 100,
+      retryDelayMs: 25,
+      setTimeoutFn: ((callback: () => void) => {
+        scheduledCallbacks.push(callback);
+        return 1 as unknown as ReturnType<typeof setTimeout>;
+      }) as typeof setTimeout,
+      clearTimeoutFn: (() => {}) as typeof clearTimeout,
+      onRetryableError: (error) => retryableErrors.push(error),
+      onTerminalError: (error) => terminalErrors.push(error),
+    });
+
+    subscriber.start();
+    await flushAsyncSubscriberWork();
+
+    expect(retryableErrors).toEqual([retryableError]);
+    expect(terminalErrors).toEqual([]);
+    expect(scheduledCallbacks).toHaveLength(1);
+
+    await subscriber.shutdown();
+  });
+
+  it("does not retry terminal SorobanRpcError", async () => {
+    const terminalError = new SorobanRpcError("bad request", {
+      code: "invalid_request",
+      retryable: false,
+      status: 400,
+    });
+    const retryableErrors: SorobanRpcError[] = [];
+    const terminalErrors: unknown[] = [];
+    const scheduledCallbacks: Array<() => void> = [];
+
+    fakeRpc.getEvents = async () => {
+      throw terminalError;
+    };
+
+    const subscriber = new SorobanSubscriber({
+      rpc: fakeRpc,
+      cursorStore,
+      onEvent: async (evt: any) => {
+        processedEvents.push(evt);
+      },
+      pageSize: 100,
+      setTimeoutFn: ((callback: () => void) => {
+        scheduledCallbacks.push(callback);
+        return 1 as unknown as ReturnType<typeof setTimeout>;
+      }) as typeof setTimeout,
+      clearTimeoutFn: (() => {}) as typeof clearTimeout,
+      onRetryableError: (error) => retryableErrors.push(error),
+      onTerminalError: (error) => terminalErrors.push(error),
+    });
+
+    subscriber.start();
+    await flushAsyncSubscriberWork();
+
+    expect(retryableErrors).toEqual([]);
+    expect(terminalErrors).toEqual([terminalError]);
+    expect(scheduledCallbacks).toHaveLength(0);
+
+    await subscriber.shutdown();
   });
 });

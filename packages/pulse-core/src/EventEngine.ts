@@ -118,7 +118,6 @@ export class EventEngine {
   private reconnectAttempt = 0;
   private pendingReconnectSuccessAttempt: number | null = null;
   private readonly reconnectConfig: Required<ReconnectConfig>;
-  private readonly network: Network;
   private isRunning = false;
   // Waiters for contract subscription activation: map contractId -> array of waiters
   private contractPollWaiters: Map<
@@ -141,6 +140,7 @@ export class EventEngine {
   private isCursorStoreUnhealthy = false;
   private pausedSources = new Set<"horizon" | "soroban">();
   private abiRegistry?: AbiRegistryClientLike;
+  private network: Network;
 
 
   /**
@@ -663,6 +663,7 @@ export class EventEngine {
             type: "engine.reconnected",
             attempt,
             emittedAt: new Date().toISOString(),
+            source: "horizon",
           });
         }
 
@@ -716,6 +717,7 @@ export class EventEngine {
         attempt: nextAttempt,
         delayMs,
         emittedAt: new Date().toISOString(),
+        source: "horizon",
       });
     } else {
       const exponentialDelay = Math.min(
@@ -733,6 +735,7 @@ export class EventEngine {
         attempt: nextAttempt,
         delayMs,
         emittedAt: new Date().toISOString(),
+        source: "horizon",
       });
     }
 

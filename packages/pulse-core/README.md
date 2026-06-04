@@ -197,9 +197,31 @@ The harness subscribes `N` watchers and replays `M` synthetic payment records th
 
 Results vary by CPU, Node version, and runtime load; rerun locally to compare changes over time.
 
+### Soroban Benchmark
+
+Soroban contract event subscription has a matching replay benchmark at `bench/soroban-throughput.ts`.
+
+Run it with:
+
+```bash
+pnpm --filter @orbital/pulse-core exec node --expose-gc --import tsx bench/soroban-throughput.ts
+```
+
+The harness subscribes `N` contract watchers with exact `contractIds` filters, synthesizes `getEvents` responses, and replays each RPC event through the engine's normalize + route + emit path. Use `--responses=100 --events-per-response=100` to scale the replay size.
+
+#### Baseline numbers (Node v24.12.0, 10 responses x 100 events)
+
+| Contract subscriptions (`N`) | RPC events | Routed events | Duration (ms) | Events/sec | Subscribed heap (MB) | Post-replay heap (MB) | Post-replay RSS (MB) |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| 1,000 | 1,000 | 2,000 | 473.32 | 4,225.49 | 18.80 | 18.79 | 122.21 |
+| 5,000 | 1,000 | 2,000 | 2,362.72 | 846.48 | 23.19 | 22.56 | 127.73 |
+| 10,000 | 1,000 | 2,000 | 5,290.83 | 378.01 | 28.56 | 27.30 | 130.18 |
+
+Each matching contract subscription receives both the typed event and the `*` wildcard event. Results vary by CPU, Node version, and runtime load; rerun locally to compare changes over time.
+
 ## Current limitations
 
-- **Soroban contract events are not yet covered.** The full classic operation taxonomy is shipped in `v0.1.0`; Soroban event subscription via Stellar RPC lands in Phase 1 (`v1.0`, Q2–Q3 2026). Open issues tracked under [`core-engine`](https://github.com/determined-001/orbital_stellar/labels/core-engine).
+- **Soroban subscription is still Phase 1 work.** Contract event normalization and in-process routing are present, with RPC handoff and restart resiliency covered by tests. Production cursor persistence and broader RPC integration continue under Phase 1 (`v1.0`, Q2–Q3 2026). Open issues tracked under [`core-engine`](https://github.com/determined-001/orbital_stellar/labels/core-engine).
 - **In-process only.** Horizontal scale and multi-region coordination belong in the deployment layer, not in the SDK. See [`docs/open-source-policy.md`](../../docs/open-source-policy.md) for the public/private boundary.
 - **Cursor starts at `now` on every run.** Resume-from-cursor with pluggable adapters ships in Phase 1 — see [`ROADMAP.md`](../../ROADMAP.md#wave-13--cursor-persistence-and-replay-primitives).
 
