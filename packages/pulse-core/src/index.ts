@@ -3,21 +3,21 @@ export { SorobanRpcClient } from "./SorobanRpcClient.js";
 export type { SorobanRpcClientOptions } from "./SorobanRpcClient.js";
 export { EventEngine } from "./EventEngine.js";
 export { SorobanSubscriber } from "./SorobanSubscriber.js";
+export type { SorobanSubscriberOptions, ReconnectingPayload } from "./SorobanSubscriber.js";
 export { validateContractFilters } from "./contractFilters.js";
 export { Watcher } from "./Watcher.js";
-export type {
-  SorobanSubscriberOptions,
-  SorobanRpc,
-  SorobanEvent,
-  CursorStore as SorobanCursorStore,
-} from "./SorobanSubscriber.js";
-export { EngineAlreadyStartedError, HorizonStreamError } from "./errors.js";
+export { EngineAlreadyStartedError, HorizonStreamError, SorobanRpcError, isSorobanRpcError } from "./errors.js";
+export type { SorobanRpcErrorCode, SorobanRpcErrorOptions } from "./errors.js";
+export type { SorobanGetEventsResponse, SorobanRpcClientOptions, SorobanRpcEvent } from "./SorobanRpcClient.js";
 export { StrKey } from "@stellar/stellar-sdk";
 export { CursorStore } from "./CursorStore.js";
 export { PostgresCursorStore, PgLike } from "./PostgresCursorStore.js";
 export { cacheCursorStore } from "./cacheCursorStore.js";
 export { migrateCursors } from "./migrateCursors.js";
 export type { MigrateCursorsResult } from "./migrateCursors.js";
+export { RedisCursorStore, RedisLike } from "./RedisCursorStore.js";
+export { coalesceCursorStore, CoalescingStore } from "./coalesceCursorStore.js";
+export type { CoalescingStoreOptions } from "./coalesceCursorStore.js";
 export { evaluatePredicate, normalizeClaimPredicate, isClaimPredicateType } from "./claimPredicate.js";
 export type { ClaimPredicate } from "./claimPredicate.js";
 export type { StellarAmount } from "./amount.js";
@@ -62,6 +62,7 @@ export type EngineStatus = {
     soroban: SourceStatus;
   };
 };
+
 
 /** Passphrase strings for each supported Stellar network. */
 export const NETWORK_PASSPHRASES = {
@@ -369,6 +370,10 @@ export type WatcherNotification = {
   attempt: number;
   /** The delay in milliseconds before the next reconnection attempt (for "engine.reconnecting" events). */
   delayMs?: number;
+  /** The cursor position at the time of failure (for "engine.reconnecting" events). */
+  cursor?: string;
+  /** The source that triggered this notification. */
+  source?: "horizon" | "soroban";
   /** ISO 8601 timestamp of when this notification was emitted. */
   emittedAt: string;
   /** The cursor value that was expired or lost, if applicable. */

@@ -65,13 +65,16 @@ export function useStellarEvent<T extends NormalizedEvent = NormalizedEvent>(
 ): EventState<T> {
   const serverUrl =
     typeof configOrUrl === "string" ? configOrUrl : configOrUrl.serverUrl;
-  const addr = typeof configOrUrl === "string" ? address! : configOrUrl.address;
+  const addr =
+    typeof configOrUrl === "string" ? address! : configOrUrl.address;
   const eventType: string | string[] =
     typeof configOrUrl === "string"
-      ? (options?.event ?? "*")
-      : (configOrUrl.event ?? "*");
+      ? options?.event ?? "*"
+      : configOrUrl.event ?? "*";
   const token =
-    typeof configOrUrl === "string" ? options?.token : configOrUrl.token;
+    typeof configOrUrl === "string"
+      ? options?.token
+      : configOrUrl.token;
   const initialEvent: T | null =
     (typeof configOrUrl === "string"
       ? options?.initialEvent
@@ -189,28 +192,7 @@ export function useStellarEvent<T extends NormalizedEvent = NormalizedEvent>(
   return state;
 }
 
-export type PaymentEvent = Extract<
-  NormalizedEvent,
-  { type: "payment.received" }
->;
-
-/**
- * Converts a Stellar decimal amount string (e.g. "12.3456789") to stroops
- * (1 XLM = 10,000,000 stroops) as a bigint.
- *
- * Uses integer arithmetic only — no parseFloat, no floating-point rounding.
- * Returns null if the string is not a valid non-negative decimal number.
- */
-function amountToStroop(amount: string): bigint | null {
-  if (!/^\d+(\.\d+)?$/.test(amount)) return null;
-  const [whole, frac = ""] = amount.split(".");
-  const fracPadded = frac.slice(0, 7).padEnd(7, "0");
-  try {
-    return BigInt(whole) * 10_000_000n + BigInt(fracPadded);
-  } catch {
-    return null;
-  }
-}
+export type PaymentEvent = Extract<NormalizedEvent, { type: "payment.received" }>;
 
 export function useStellarPayment(
   serverUrl: string,
@@ -230,7 +212,9 @@ export function useStellarPayment(
     hideAfterMs: options?.hideAfterMs,
   });
   const amountStroop: bigint | null =
-    base.event?.amount != null ? amountToStroop(base.event.amount) : null;
+    base.event?.amount != null
+      ? BigInt(Math.round(parseFloat(base.event.amount) * 10_000_000))
+      : null;
   return { ...base, amountStroop };
 }
 
@@ -260,19 +244,15 @@ export {
   type StellarConnectionStatusState,
 } from "./StellarConnectionStatus.js";
 
-export { pulseNotifyVitePlugin } from "./vitePlugin.js";
-export type { PulseNotifyVitePlugin } from "./vitePlugin.js";
-
 export type UseHistoryOptions = {
   token?: string;
   /** Maximum number of events to retain in FIFO order. Defaults to 100. */
   capacity?: number;
 };
 
-export type HistoryState<T extends NormalizedEvent = NormalizedEvent> =
-  EventState<T> & {
-    history: T[];
-  };
+export type HistoryState<T extends NormalizedEvent = NormalizedEvent> = EventState<T> & {
+  history: T[];
+};
 
 export function useStellarHistory<T extends NormalizedEvent = NormalizedEvent>(
   serverUrl: string,
@@ -281,17 +261,13 @@ export function useStellarHistory<T extends NormalizedEvent = NormalizedEvent>(
 ): HistoryState<T> {
   const [history, setHistory] = useState<T[]>([]);
   const capacity = options?.capacity ?? 100;
-  const base = useStellarActivity<T>(serverUrl, address, {
-    initialEvent: null,
-  });
+  const base = useStellarActivity<T>(serverUrl, address, { initialEvent: null });
 
   useEffect(() => {
     if (base.event) {
       setHistory((prev) => {
         const next = [...prev, base.event as T];
-        return next.length > capacity
-          ? next.slice(next.length - capacity)
-          : next;
+        return next.length > capacity ? next.slice(next.length - capacity) : next;
       });
     }
   }, [base.event, capacity]);

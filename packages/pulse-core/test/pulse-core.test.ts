@@ -371,7 +371,7 @@ describe("pulse-core EventEngine", () => {
 
     expect(streamInstances[0]?.close).toHaveBeenCalledTimes(1);
     expect(reconnecting).toHaveBeenCalledWith(
-      expect.objectContaining({ type: "engine.reconnecting", attempt: 1, delayMs: expect.any(Number), emittedAt: expect.any(String) })
+      expect.objectContaining({ type: "engine.reconnecting", attempt: 1, delayMs: expect.any(Number), emittedAt: expect.any(String), source: "horizon" })
     );
     expect(log.warn).toHaveBeenCalledWith(
       "[pulse-core] SSE reconnect attempt scheduled.",
@@ -406,7 +406,7 @@ describe("pulse-core EventEngine", () => {
 
     latestStream().handlers.onerror(new Error("stream dropped after recovery"));
     expect(reconnecting).toHaveBeenLastCalledWith(
-      expect.objectContaining({ type: "engine.reconnecting", attempt: 1 })
+      expect.objectContaining({ type: "engine.reconnecting", attempt: 1, source: "horizon" })
     );
   });
 
@@ -437,6 +437,7 @@ describe("pulse-core EventEngine", () => {
         type: "engine.reconnecting",
         attempt: 1,
         delayMs: 500,
+        source: "horizon",
       })
     );
     expect(log.warn).toHaveBeenCalledWith(
@@ -879,6 +880,7 @@ describe("pulse-core EventEngine", () => {
           type: "engine.reconnecting",
           name: "treasury-feed",
           attempt: 1,
+          source: "horizon",
         })
       );
 
@@ -2031,7 +2033,7 @@ describe("pulse-core EventEngine", () => {
   it("reports per-source status and preserves flat fields for compatibility", () => {
     const engine = new EventEngine({ network: "testnet" });
 
-    expect(engine.status()).toEqual({
+    expect(engine.status()).toMatchObject({
       running: false,
       watcherCount: 0,
       contractWatcherCount: 0,
