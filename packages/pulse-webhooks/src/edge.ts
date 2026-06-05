@@ -24,7 +24,15 @@ export async function verifyWebhookEdge(
     return null;
   }
   try {
-    return JSON.parse(payload) as NormalizedEvent;
+    const evt = JSON.parse(payload) as NormalizedEvent;
+    if (options.schema) {
+      try {
+        if (!options.schema(evt)) return null;
+      } catch {
+        return null;
+      }
+    }
+    return evt;
   } catch {
     return null;
   }
@@ -53,12 +61,17 @@ export async function verifyWebhookEdgeRaw(
   const timestampMs = Number(timestamp);
   if (!Number.isFinite(timestampMs)) return false;
 
-  const maxAgeMs = options.maxAgeMs ?? DEFAULT_MAX_AGE_MS;
   const clockSkewMs = options.clockSkewMs ?? DEFAULT_CLOCK_SKEW_MS;
   const nowMs = options.nowMs ?? Date.now();
 
+  // Reject timestamps from the future (beyond clock skew allowance).
   if (timestampMs > nowMs + clockSkewMs) return false;
-  if (timestampMs < nowMs - maxAgeMs - clockSkewMs) return false;
+
+  // Only enforce the replay window when maxAgeMs is explicitly configured.
+  // Omitting it preserves pre-existing behaviour (no age rejection).
+  if (options.maxAgeMs !== undefined) {
+    if (timestampMs < nowMs - options.maxAgeMs - clockSkewMs) return false;
+  }
 
   try {
     const keyData = new TextEncoder().encode(secret);

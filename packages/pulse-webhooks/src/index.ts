@@ -250,7 +250,15 @@ export function verifyWebhook(
 ): NormalizedEvent | null {
   if (!verifyWebhookRaw(payload, signature, secret, timestamp, options)) return null;
   try {
-    return JSON.parse(payload) as NormalizedEvent;
+    const evt = JSON.parse(payload) as NormalizedEvent;
+    if (options.schema) {
+      try {
+        if (!options.schema(evt)) return null;
+      } catch {
+        return null;
+      }
+    }
+    return evt;
   } catch {
     return null;
   }

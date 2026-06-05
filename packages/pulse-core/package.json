@@ -14,7 +14,8 @@
     "test:coverage": "vitest run --coverage",
     "test:integration": "INTEGRATION_TESTS=true vitest run test/integration",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "bench:throughput": "tsx bench/throughput.ts"
+    "bench:throughput": "tsx bench/throughput.ts",
+    "bench:soroban-throughput": "tsx bench/soroban-throughput.ts"
   },
   "dependencies": {
     "@stellar/stellar-sdk": "^15.0.1",
@@ -24,6 +25,7 @@
     "@types/node": "^25.6.0",
     "@types/pg": "^8.11.11",
     "@vitest/coverage-v8": "^4.1.7",
+    "fast-check": "^3.22.0",
     "pg": "^8.11.5",
     "tsx": "^4.21.0",
     "vite": "^7.3.3",

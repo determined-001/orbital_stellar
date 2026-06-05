@@ -55,6 +55,7 @@ app.post(
       signature,
       process.env.WEBHOOK_SECRET!,
       timestamp,
+      { maxAgeMs: 5 * 60 * 1000 }, // reject signatures older than 5 minutes
     );
     if (!event) return res.sendStatus(401);
 
@@ -91,6 +92,7 @@ export default {
       signature,
       env.WEBHOOK_SECRET,
       timestamp,
+      { maxAgeMs: 5 * 60 * 1000 }, // reject signatures older than 5 minutes
     );
 
     if (!event) {
@@ -128,17 +130,23 @@ Attaches a delivery driver to a `Watcher`. Every event the watcher emits is deli
 | `config.allowPrivateNetworks` | `boolean`            | `false`  | If true, bypass SSRF checks for local/private IP ranges                               |
 | `config.random`               | `() => number`       | `random` | Optional RNG for testing jitter. Defaults to `Math.random`.                           |
 
-### `verifyWebhook(payload, signature, secret, timestamp)` → `NormalizedEvent | null`
+### `verifyWebhook(payload, signature, secret, timestamp, options?)` → `NormalizedEvent | null`
 
-Verifies that `payload` was signed with `secret` using `timestamp + "." + payload`. Returns the parsed event on success, `null` on any failure (bad signature, malformed JSON, invalid timestamp, length mismatch).
+Verifies that `payload` was signed with `secret` using `timestamp + "." + payload`. Returns the parsed event on success, `null` on any failure (bad signature, malformed JSON, invalid timestamp, length mismatch, or signature outside the replay window).
 
 Uses `crypto.timingSafeEqual` under the hood — do not roll your own comparison.
 
-### `verifyWebhookEdge(payload, signature, secret, timestamp)` → `Promise<NormalizedEvent | null>`
+| Option        | Type     | Default   | Description                                                    |
+| ------------- | -------- | --------- | -------------------------------------------------------------- |
+| `maxAgeMs`    | `number` | `300_000` | Reject signatures older than this many milliseconds            |
+| `clockSkewMs` | `number` | `30_000`  | Clock-skew allowance for sender/receiver time differences      |
+| `nowMs`       | `number` | `Date.now()` | Override current time (useful in tests)                     |
 
-Edge-compatible version of `verifyWebhook` using Web Crypto API. Works in Cloudflare Workers, Deno, and browsers. Returns a Promise that resolves to the parsed event on success, `null` on any failure.
+### `verifyWebhookEdge(payload, signature, secret, timestamp, options?)` → `Promise<NormalizedEvent | null>`
 
-Uses constant-time comparison and Web Crypto for HMAC-SHA256 verification.
+Edge-compatible version of `verifyWebhook` using Web Crypto API. Works in Cloudflare Workers, Deno, and browsers. Returns a Promise that resolves to the parsed event on success, `null` on any failure (including signatures outside the replay window).
+
+Uses constant-time comparison and Web Crypto for HMAC-SHA256 verification. Accepts the same `options` as `verifyWebhook` (`maxAgeMs`, `clockSkewMs`, `nowMs`).
 
 ### Failure events
 
@@ -306,14 +314,15 @@ Orbital provides a hardened delivery pipeline for high-stakes financial events. 
 For a full breakdown of adversaries, assets, and mitigations (including secret rotation runbooks and detection signals), see the [core repository SECURITY.md](../../SECURITY.md).
 
 #### Replay window
-While `pulse-webhooks` includes a timestamp in every signature, consumers **must** verify that the `x-orbital-timestamp` is within a reasonable window (e.g., 5 minutes) to prevent replay of old valid payloads.
+`pulse-webhooks` includes a timestamp in every signature and enforces a configurable replay window in both `verifyWebhook` and `verifyWebhookEdge`. Pass `maxAgeMs` in the options argument to bound how old a signature can be before it is rejected. The default is `300_000` (5 minutes), matching the recommendation in `SECURITY.md`.
 
 ```ts
-if (Date.now() - Number(timestamp) > 5 * 60 * 1000) {
-  return res.sendStatus(401);
-}
+const event = verifyWebhook(payload, signature, secret, timestamp, {
+  maxAgeMs: 5 * 60 * 1000, // 5 minutes — reject replayed signatures
+});
 ```
 
+Always pass `maxAgeMs` explicitly. A consumer that omits the option still receives the safe 5-minute default, but being explicit makes the intent clear and guards against future default changes.
 
 ## Current limitations
 
