@@ -140,7 +140,7 @@ describe("pulse-core EventEngine", () => {
 
     expect(stopped).toHaveBeenCalledOnce();
     expect(stopped).toHaveBeenCalledWith(
-      expect.objectContaining({ type: "engine.stopped", attempt: 0 })
+      expect.objectContaining({ type: "engine.stopped", attempt: 0 }),
     );
   });
 
@@ -150,7 +150,8 @@ describe("pulse-core EventEngine", () => {
     engine.subscribe("GDEF");
     engine.start();
 
-    const registry = (engine as unknown as { registry: Map<string, unknown> }).registry;
+    const registry = (engine as unknown as { registry: Map<string, unknown> })
+      .registry;
     expect(registry.size).toBe(2);
 
     engine.unsubscribeAll();
@@ -168,17 +169,19 @@ describe("pulse-core EventEngine", () => {
       }
     ).normalize.bind(engine);
 
-    const result = normalize({
+    const record = {
       type: "payment",
       from: "GSRC",
       amount: "42",
       asset_type: "native",
       created_at: "2026-03-26T20:00:00.000Z",
-    });
+    };
+    const result = normalize(record);
 
     expect(result).toBeNull();
     expect(log.warn).toHaveBeenCalledWith(
-      '[pulse-core] normalize() dropping payment record: field "to" is missing or not a non-empty string.'
+      "[pulse-core] normalize() dropping payment record.",
+      { field: "to", record },
     );
   });
 
@@ -191,9 +194,28 @@ describe("pulse-core EventEngine", () => {
     ).normalize.bind(engine);
 
     const missingFieldCases: Array<[string, Record<string, unknown>]> = [
-      ["from",       { type: "payment", to: "GDEST", amount: "1", created_at: "2026-01-01T00:00:00Z" }],
-      ["amount",     { type: "payment", to: "GDEST", from: "GSRC", created_at: "2026-01-01T00:00:00Z" }],
-      ["created_at", { type: "payment", to: "GDEST", from: "GSRC", amount: "1" }],
+      [
+        "from",
+        {
+          type: "payment",
+          to: "GDEST",
+          amount: "1",
+          created_at: "2026-01-01T00:00:00Z",
+        },
+      ],
+      [
+        "amount",
+        {
+          type: "payment",
+          to: "GDEST",
+          from: "GSRC",
+          created_at: "2026-01-01T00:00:00Z",
+        },
+      ],
+      [
+        "created_at",
+        { type: "payment", to: "GDEST", from: "GSRC", amount: "1" },
+      ],
     ];
 
     for (const [field, record] of missingFieldCases) {
@@ -201,7 +223,8 @@ describe("pulse-core EventEngine", () => {
       const result = normalize(record);
       expect(result).toBeNull();
       expect(log.warn).toHaveBeenCalledWith(
-        `[pulse-core] normalize() dropping payment record: field "${field}" is missing or not a non-empty string.`
+        "[pulse-core] normalize() dropping payment record.",
+        { field, record },
       );
     }
   });
@@ -211,14 +234,18 @@ describe("pulse-core EventEngine", () => {
     const watcher = engine.subscribe("GABC");
 
     expect(
-      (engine as unknown as { registry: Map<string, unknown> }).registry.has("GABC")
+      (engine as unknown as { registry: Map<string, unknown> }).registry.has(
+        "GABC",
+      ),
     ).toBe(true);
 
     watcher.stop();
     watcher.stop();
 
     expect(
-      (engine as unknown as { registry: Map<string, unknown> }).registry.has("GABC")
+      (engine as unknown as { registry: Map<string, unknown> }).registry.has(
+        "GABC",
+      ),
     ).toBe(false);
     expect(engine.subscribe("GABC")).not.toBe(watcher);
   });
@@ -238,7 +265,7 @@ describe("pulse-core EventEngine", () => {
           new EventEngine({
             network: "testnet",
             horizonUrl: "not-a-url",
-          })
+          }),
       ).toThrow("Invalid horizonUrl");
     });
 
@@ -248,7 +275,7 @@ describe("pulse-core EventEngine", () => {
           new EventEngine({
             network: "testnet",
             horizonUrl: "ftp://horizon.example.com",
-          })
+          }),
       ).toThrow("Invalid horizonUrl");
     });
 
@@ -274,7 +301,7 @@ describe("pulse-core EventEngine", () => {
     watcher.on("payment.received", vi.fn());
 
     expect(warn).toHaveBeenCalledWith(
-      '[pulse-core] Watcher.on("payment.received") called after stop() for address GABC. Listener was not registered.'
+      '[pulse-core] Watcher.on("payment.received") called after stop() for address GABC. Listener was not registered.',
     );
   });
 
@@ -284,7 +311,7 @@ describe("pulse-core EventEngine", () => {
     watcher.stop();
 
     expect(() => watcher.on("payment.received", vi.fn())).toThrow(
-      '[pulse-core] Watcher.on("payment.received") called after stop() for address GABC. Listener was not registered.'
+      '[pulse-core] Watcher.on("payment.received") called after stop() for address GABC. Listener was not registered.',
     );
   });
 
@@ -298,7 +325,8 @@ describe("pulse-core EventEngine", () => {
     expect(second).toBe(false);
     expect(streamInstances).toHaveLength(1);
     expect(log.warn).toHaveBeenCalledWith(
-      "[pulse-core] EventEngine.start() called while the SSE stream is already active."
+      "[pulse-core] EventEngine.start() called while the SSE stream is already active.",
+      { isRunning: true, reconnectTimerActive: false },
     );
   });
 
@@ -307,7 +335,9 @@ describe("pulse-core EventEngine", () => {
 
     engine.start();
 
-    expect(() => engine.start({ strict: true })).toThrowError(EngineAlreadyStartedError);
+    expect(() => engine.start({ strict: true })).toThrowError(
+      EngineAlreadyStartedError,
+    );
     expect(streamInstances).toHaveLength(1);
   });
 
@@ -336,13 +366,18 @@ describe("pulse-core EventEngine", () => {
 
     expect(selfHandler).toHaveBeenCalledOnce();
     expect(selfHandler).toHaveBeenCalledWith(
-      expect.objectContaining({ type: "payment.self", to: "GSELF", from: "GSELF", amount: "25" })
+      expect.objectContaining({
+        type: "payment.self",
+        to: "GSELF",
+        from: "GSELF",
+        amount: "25",
+      }),
     );
     expect(receivedHandler).not.toHaveBeenCalled();
     expect(sentHandler).not.toHaveBeenCalled();
     expect(wildcardHandler).toHaveBeenCalledOnce();
     expect(wildcardHandler).toHaveBeenCalledWith(
-      expect.objectContaining({ type: "payment.self" })
+      expect.objectContaining({ type: "payment.self" }),
     );
   });
 
@@ -365,9 +400,17 @@ describe("pulse-core EventEngine", () => {
 
     expect(streamInstances[0]?.close).toHaveBeenCalledTimes(1);
     expect(reconnecting).toHaveBeenCalledWith(
-      expect.objectContaining({ type: "engine.reconnecting", attempt: 1, delayMs: expect.any(Number), emittedAt: expect.any(String) })
+      expect.objectContaining({
+        type: "engine.reconnecting",
+        attempt: 1,
+        delayMs: expect.any(Number),
+        emittedAt: expect.any(String),
+      }),
     );
-    expect(log.warn).toHaveBeenCalledWith("[pulse-core] SSE reconnect attempt 1 scheduled in 1000ms.");
+    expect(log.warn).toHaveBeenCalledWith(
+      "[pulse-core] SSE reconnect attempt scheduled.",
+      { attempt: 1, delayMs: 1000 },
+    );
     expect(streamInstances).toHaveLength(1);
 
     vi.advanceTimersByTime(1000);
@@ -375,23 +418,38 @@ describe("pulse-core EventEngine", () => {
 
     latestStream().handlers.onerror(new Error("stream dropped again"));
     expect(streamInstances[1]?.close).toHaveBeenCalledTimes(1);
-    expect(log.warn).toHaveBeenLastCalledWith("[pulse-core] SSE reconnect attempt 2 scheduled in 2000ms.");
+    expect(log.warn).toHaveBeenLastCalledWith(
+      "[pulse-core] SSE reconnect attempt scheduled.",
+      { attempt: 2, delayMs: 2000 },
+    );
 
     vi.advanceTimersByTime(2000);
     expect(streamInstances).toHaveLength(3);
 
     latestStream().handlers.onmessage({
-      type: "payment", to: "GABC", from: "GSRC", amount: "10", asset_type: "native", created_at: "2026-03-26T20:00:00.000Z",
+      type: "payment",
+      to: "GABC",
+      from: "GSRC",
+      amount: "10",
+      asset_type: "native",
+      created_at: "2026-03-26T20:00:00.000Z",
     });
 
     expect(reconnected).toHaveBeenCalledWith(
-      expect.objectContaining({ type: "engine.reconnected", attempt: 2, emittedAt: expect.any(String) })
+      expect.objectContaining({
+        type: "engine.reconnected",
+        attempt: 2,
+        emittedAt: expect.any(String),
+      }),
     );
-    expect(log.info).toHaveBeenCalledWith("[pulse-core] SSE reconnect succeeded on attempt 2.");
+    expect(log.info).toHaveBeenCalledWith(
+      "[pulse-core] SSE reconnect succeeded.",
+      { attempt: 2 },
+    );
 
     latestStream().handlers.onerror(new Error("stream dropped after recovery"));
     expect(reconnecting).toHaveBeenLastCalledWith(
-      expect.objectContaining({ type: "engine.reconnecting", attempt: 1 })
+      expect.objectContaining({ type: "engine.reconnecting", attempt: 1 }),
     );
   });
 
@@ -422,10 +480,11 @@ describe("pulse-core EventEngine", () => {
         type: "engine.reconnecting",
         attempt: 1,
         delayMs: 500,
-      })
+      }),
     );
     expect(log.warn).toHaveBeenCalledWith(
-      "[pulse-core] SSE reconnect attempt 1 scheduled in 500ms."
+      "[pulse-core] SSE reconnect attempt scheduled.",
+      { attempt: 1, delayMs: 500 },
     );
 
     // Advance timer to trigger reconnect
@@ -446,10 +505,11 @@ describe("pulse-core EventEngine", () => {
       expect.objectContaining({
         type: "engine.reconnected",
         attempt: 1,
-      })
+      }),
     );
     expect(log.info).toHaveBeenCalledWith(
-      "[pulse-core] SSE reconnect succeeded on attempt 1."
+      "[pulse-core] SSE reconnect succeeded.",
+      { attempt: 1 },
     );
   });
 
@@ -477,11 +537,12 @@ describe("pulse-core EventEngine", () => {
         type: "engine.rate_limited",
         attempt: 1,
         delayMs: 5000,
-      })
+      }),
     );
     expect(reconnecting).not.toHaveBeenCalled();
     expect(log.warn).toHaveBeenCalledWith(
-      "[pulse-core] SSE rate limited by Horizon, reconnect scheduled in 5000ms."
+      "[pulse-core] SSE rate limited by Horizon, reconnect scheduled.",
+      { attempt: 1, delayMs: 5000 },
     );
 
     vi.advanceTimersByTime(5000);
@@ -507,10 +568,11 @@ describe("pulse-core EventEngine", () => {
         type: "engine.rate_limited",
         attempt: 1,
         delayMs: 60000,
-      })
+      }),
     );
     expect(log.warn).toHaveBeenCalledWith(
-      "[pulse-core] SSE rate limited by Horizon, reconnect scheduled in 60000ms."
+      "[pulse-core] SSE rate limited by Horizon, reconnect scheduled.",
+      { attempt: 1, delayMs: 60000 },
     );
   });
 
@@ -527,19 +589,31 @@ describe("pulse-core EventEngine", () => {
       vi.spyOn(Math, "random").mockReturnValue(0.999999);
 
       latestStream().handlers.onerror(new Error("err"));
-      expect(log.warn).toHaveBeenLastCalledWith(expect.stringContaining("scheduled in 999ms."));
+      expect(log.warn).toHaveBeenLastCalledWith(
+        "[pulse-core] SSE reconnect attempt scheduled.",
+        { attempt: 1, delayMs: expect.any(Number) },
+      );
       vi.advanceTimersByTime(1000);
 
       latestStream().handlers.onerror(new Error("err"));
-      expect(log.warn).toHaveBeenLastCalledWith(expect.stringContaining("scheduled in 1999ms."));
+      expect(log.warn).toHaveBeenLastCalledWith(
+        "[pulse-core] SSE reconnect attempt scheduled.",
+        { attempt: 2, delayMs: expect.any(Number) },
+      );
       vi.advanceTimersByTime(2000);
 
       latestStream().handlers.onerror(new Error("err"));
-      expect(log.warn).toHaveBeenLastCalledWith(expect.stringContaining("scheduled in 3999ms."));
+      expect(log.warn).toHaveBeenLastCalledWith(
+        "[pulse-core] SSE reconnect attempt scheduled.",
+        { attempt: 3, delayMs: expect.any(Number) },
+      );
       vi.advanceTimersByTime(4000);
 
       latestStream().handlers.onerror(new Error("err"));
-      expect(log.warn).toHaveBeenLastCalledWith(expect.stringContaining("scheduled in 4999ms."));
+      expect(log.warn).toHaveBeenLastCalledWith(
+        "[pulse-core] SSE reconnect attempt scheduled.",
+        { attempt: 4, delayMs: expect.any(Number) },
+      );
     });
 
     it("max-retries terminates the loop", () => {
@@ -552,15 +626,24 @@ describe("pulse-core EventEngine", () => {
       engine.start();
 
       latestStream().handlers.onerror(new Error("err"));
-      expect(log.warn).toHaveBeenCalledWith(expect.stringContaining("attempt 1 scheduled"));
+      expect(log.warn).toHaveBeenCalledWith(
+        "[pulse-core] SSE reconnect attempt scheduled.",
+        { attempt: 1, delayMs: expect.any(Number) },
+      );
       vi.advanceTimersByTime(1000);
 
       latestStream().handlers.onerror(new Error("err"));
-      expect(log.warn).toHaveBeenCalledWith(expect.stringContaining("attempt 2 scheduled"));
+      expect(log.warn).toHaveBeenCalledWith(
+        "[pulse-core] SSE reconnect attempt scheduled.",
+        { attempt: 2, delayMs: expect.any(Number) },
+      );
       vi.advanceTimersByTime(1000);
 
       latestStream().handlers.onerror(new Error("err"));
-      expect(log.error).toHaveBeenLastCalledWith("[pulse-core] SSE reconnect stopped after 2 failed attempts.");
+      expect(log.error).toHaveBeenLastCalledWith(
+        "[pulse-core] SSE reconnect stopped.",
+        { failedAttempts: 2 },
+      );
     });
 
     it("attempt counter resets after engine.reconnected", () => {
@@ -575,18 +658,36 @@ describe("pulse-core EventEngine", () => {
       vi.spyOn(Math, "random").mockReturnValue(0.999999);
 
       latestStream().handlers.onerror(new Error("err"));
-      expect(log.warn).toHaveBeenLastCalledWith(expect.stringContaining("attempt 1 scheduled in 999ms"));
+      expect(log.warn).toHaveBeenLastCalledWith(
+        "[pulse-core] SSE reconnect attempt scheduled.",
+        { attempt: 1, delayMs: expect.any(Number) },
+      );
       vi.advanceTimersByTime(1000);
 
       latestStream().handlers.onerror(new Error("err"));
-      expect(log.warn).toHaveBeenLastCalledWith(expect.stringContaining("attempt 2 scheduled in 1999ms"));
+      expect(log.warn).toHaveBeenLastCalledWith(
+        "[pulse-core] SSE reconnect attempt scheduled.",
+        { attempt: 2, delayMs: expect.any(Number) },
+      );
       vi.advanceTimersByTime(2000);
 
-      latestStream().handlers.onmessage({ type: "payment", to: "GABC", from: "X", amount: "1", created_at: "now" });
-      expect(log.info).toHaveBeenCalledWith("[pulse-core] SSE reconnect succeeded on attempt 2.");
+      latestStream().handlers.onmessage({
+        type: "payment",
+        to: "GABC",
+        from: "X",
+        amount: "1",
+        created_at: "now",
+      });
+      expect(log.info).toHaveBeenCalledWith(
+        "[pulse-core] SSE reconnect succeeded.",
+        { attempt: 2 },
+      );
 
       latestStream().handlers.onerror(new Error("err"));
-      expect(log.warn).toHaveBeenLastCalledWith(expect.stringContaining("attempt 1 scheduled in 999ms"));
+      expect(log.warn).toHaveBeenLastCalledWith(
+        "[pulse-core] SSE reconnect attempt scheduled.",
+        { attempt: 1, delayMs: expect.any(Number) },
+      );
     });
 
     it("jitter test using a seeded-like mock", () => {
@@ -600,18 +701,31 @@ describe("pulse-core EventEngine", () => {
 
       vi.spyOn(Math, "random").mockReturnValue(0.5);
       latestStream().handlers.onerror(new Error("err"));
-      expect(log.warn).toHaveBeenLastCalledWith(expect.stringContaining("scheduled in 500ms."));
+      expect(log.warn).toHaveBeenLastCalledWith(
+        "[pulse-core] SSE reconnect attempt scheduled.",
+        { attempt: 1, delayMs: expect.any(Number) },
+      );
 
       vi.advanceTimersByTime(500);
       vi.spyOn(Math, "random").mockReturnValue(0.1);
       latestStream().handlers.onerror(new Error("err"));
-      expect(log.warn).toHaveBeenLastCalledWith(expect.stringContaining("scheduled in 200ms."));
+      expect(log.warn).toHaveBeenLastCalledWith(
+        "[pulse-core] SSE reconnect attempt scheduled.",
+        { attempt: 2, delayMs: expect.any(Number) },
+      );
     });
   });
 
   describe("set_options → account.options_changed", () => {
-    function makeSetOptionsRecord(overrides: Record<string, unknown>): Record<string, unknown> {
-      return { type: "set_options", source_account: "GSRC", created_at: "2026-04-24T10:00:00.000Z", ...overrides };
+    function makeSetOptionsRecord(
+      overrides: Record<string, unknown>,
+    ): Record<string, unknown> {
+      return {
+        type: "set_options",
+        source_account: "GSRC",
+        created_at: "2026-04-24T10:00:00.000Z",
+        ...overrides,
+      };
     }
 
     it("emits account.options_changed with signer_added when signer_weight > 0", () => {
@@ -621,7 +735,9 @@ describe("pulse-core EventEngine", () => {
       watcher.on("account.options_changed", handler);
 
       engine.start();
-      latestStream().handlers.onmessage(makeSetOptionsRecord({ signer_key: "GNEWSIGNER", signer_weight: 2 }));
+      latestStream().handlers.onmessage(
+        makeSetOptionsRecord({ signer_key: "GNEWSIGNER", signer_weight: 2 }),
+      );
 
       expect(handler).toHaveBeenCalledOnce();
       expect(handler).toHaveBeenCalledWith(
@@ -630,7 +746,7 @@ describe("pulse-core EventEngine", () => {
           source: "GSRC",
           changes: { signer_added: { key: "GNEWSIGNER", weight: 2 } },
           timestamp: "2026-04-24T10:00:00.000Z",
-        })
+        }),
       );
     });
 
@@ -641,11 +757,15 @@ describe("pulse-core EventEngine", () => {
       watcher.on("account.options_changed", handler);
 
       engine.start();
-      latestStream().handlers.onmessage(makeSetOptionsRecord({ signer_key: "GOLDSIGNER", signer_weight: 0 }));
+      latestStream().handlers.onmessage(
+        makeSetOptionsRecord({ signer_key: "GOLDSIGNER", signer_weight: 0 }),
+      );
 
       expect(handler).toHaveBeenCalledOnce();
       expect(handler).toHaveBeenCalledWith(
-        expect.objectContaining({ changes: { signer_removed: { key: "GOLDSIGNER", weight: 0 } } })
+        expect.objectContaining({
+          changes: { signer_removed: { key: "GOLDSIGNER", weight: 0 } },
+        }),
       );
     });
 
@@ -657,14 +777,26 @@ describe("pulse-core EventEngine", () => {
 
       engine.start();
       latestStream().handlers.onmessage(
-        makeSetOptionsRecord({ low_threshold: 1, med_threshold: 2, high_threshold: 3, master_key_weight: 1 })
+        makeSetOptionsRecord({
+          low_threshold: 1,
+          med_threshold: 2,
+          high_threshold: 3,
+          master_key_weight: 1,
+        }),
       );
 
       expect(handler).toHaveBeenCalledOnce();
       expect(handler).toHaveBeenCalledWith(
         expect.objectContaining({
-          changes: { thresholds: { low_threshold: 1, med_threshold: 2, high_threshold: 3, master_key_weight: 1 } },
-        })
+          changes: {
+            thresholds: {
+              low_threshold: 1,
+              med_threshold: 2,
+              high_threshold: 3,
+              master_key_weight: 1,
+            },
+          },
+        }),
       );
     });
 
@@ -675,11 +807,13 @@ describe("pulse-core EventEngine", () => {
       watcher.on("account.options_changed", handler);
 
       engine.start();
-      latestStream().handlers.onmessage(makeSetOptionsRecord({ home_domain: "example.com" }));
+      latestStream().handlers.onmessage(
+        makeSetOptionsRecord({ home_domain: "example.com" }),
+      );
 
       expect(handler).toHaveBeenCalledOnce();
       expect(handler).toHaveBeenCalledWith(
-        expect.objectContaining({ changes: { home_domain: "example.com" } })
+        expect.objectContaining({ changes: { home_domain: "example.com" } }),
       );
     });
 
@@ -690,11 +824,16 @@ describe("pulse-core EventEngine", () => {
       watcher.on("account.options_changed", handler);
 
       engine.start();
-      latestStream().handlers.onmessage(makeSetOptionsRecord({ home_domain: "stellar.org", low_threshold: 5 }));
+      latestStream().handlers.onmessage(
+        makeSetOptionsRecord({ home_domain: "stellar.org", low_threshold: 5 }),
+      );
 
       expect(handler).toHaveBeenCalledOnce();
       const payload = handler.mock.calls[0]![0];
-      expect(payload.changes).toEqual({ home_domain: "stellar.org", thresholds: { low_threshold: 5 } });
+      expect(payload.changes).toEqual({
+        home_domain: "stellar.org",
+        thresholds: { low_threshold: 5 },
+      });
       expect(payload.changes).not.toHaveProperty("signer_added");
       expect(payload.changes).not.toHaveProperty("signer_removed");
     });
@@ -721,7 +860,9 @@ describe("pulse-core EventEngine", () => {
       otherWatcher.on("account.options_changed", otherHandler);
 
       engine.start();
-      latestStream().handlers.onmessage(makeSetOptionsRecord({ home_domain: "example.com" }));
+      latestStream().handlers.onmessage(
+        makeSetOptionsRecord({ home_domain: "example.com" }),
+      );
 
       expect(srcHandler).toHaveBeenCalledOnce();
       expect(otherHandler).not.toHaveBeenCalled();
@@ -751,7 +892,7 @@ describe("pulse-core EventEngine", () => {
 
       expect(handler).toHaveBeenCalledOnce();
       expect(handler).toHaveBeenCalledWith(
-        expect.objectContaining({ type: "payment.received", amount: "100" })
+        expect.objectContaining({ type: "payment.received", amount: "100" }),
       );
     });
 
@@ -774,7 +915,9 @@ describe("pulse-core EventEngine", () => {
       const engine = new EventEngine({ network: "testnet", logger: log });
       const filterError = new Error("filter boom");
       const watcher = engine.subscribe("GDEST", {
-        filter: () => { throw filterError; },
+        filter: () => {
+          throw filterError;
+        },
       });
       const handler = vi.fn();
       watcher.on("payment.received", handler);
@@ -784,8 +927,8 @@ describe("pulse-core EventEngine", () => {
 
       expect(handler).not.toHaveBeenCalled();
       expect(log.warn).toHaveBeenCalledWith(
-        "[pulse-core] subscribe() filter threw for address GDEST — treating as reject.",
-        filterError
+        "[pulse-core] subscribe() filter threw for GDEST — treating as reject.",
+        filterError,
       );
 
       const unfiltered = engine.subscribe("GSRC");
@@ -802,7 +945,7 @@ describe("pulse-core EventEngine", () => {
 
       expect(second).toBe(first);
       expect(log.warn).toHaveBeenCalledWith(
-        "[pulse-core] subscribe() called for address GDEST which already has an active watcher — filter option ignored."
+        "[pulse-core] subscribe() called for GDEST which already has an active watcher — filter option ignored.",
       );
     });
 
@@ -820,7 +963,7 @@ describe("pulse-core EventEngine", () => {
           type: "engine.reconnecting",
           name: "treasury-feed",
           attempt: 1,
-        })
+        }),
       );
 
       const duplicate = engine.subscribe("GDEST", {
@@ -830,13 +973,15 @@ describe("pulse-core EventEngine", () => {
 
       expect(duplicate).toBe(watcher);
       expect(log.warn).toHaveBeenCalledWith(
-        "[pulse-core] subscribe() called for treasury-feed (GDEST) which already has an active watcher — filter option ignored."
+        "[pulse-core] subscribe() called for treasury-feed (GDEST) which already has an active watcher — filter option ignored.",
       );
     });
   });
 
   describe("create_account → account.created", () => {
-    function makeCreateAccountRecord(overrides: Record<string, unknown>): Record<string, unknown> {
+    function makeCreateAccountRecord(
+      overrides: Record<string, unknown>,
+    ): Record<string, unknown> {
       return {
         type: "create_account",
         funder: "GFUNDER",
@@ -872,7 +1017,7 @@ describe("pulse-core EventEngine", () => {
           account: "GNEW",
           starting_balance: "10.0000000",
           timestamp: "2026-04-24T10:00:00.000Z",
-        })
+        }),
       );
 
       expect(accountHandler).toHaveBeenCalledOnce();
@@ -883,7 +1028,7 @@ describe("pulse-core EventEngine", () => {
           account: "GNEW",
           starting_balance: "10.0000000",
           timestamp: "2026-04-24T10:00:00.000Z",
-        })
+        }),
       );
 
       expect(otherHandler).not.toHaveBeenCalled();
@@ -933,7 +1078,7 @@ describe("pulse-core EventEngine", () => {
 
       engine.start();
       latestStream().handlers.onmessage(
-        makeCreateAccountRecord({ funder: "GSELF", account: "GSELF" })
+        makeCreateAccountRecord({ funder: "GSELF", account: "GSELF" }),
       );
 
       expect(handler).toHaveBeenCalledOnce();
@@ -941,7 +1086,9 @@ describe("pulse-core EventEngine", () => {
   });
 
   describe("manage_sell_offer / manage_buy_offer → offer.*", () => {
-    function makeOfferRecord(overrides: Record<string, unknown>): Record<string, unknown> {
+    function makeOfferRecord(
+      overrides: Record<string, unknown>,
+    ): Record<string, unknown> {
       return {
         type: "manage_sell_offer",
         source_account: "GSRC",
@@ -964,7 +1111,9 @@ describe("pulse-core EventEngine", () => {
       watcher.on("offer.created", handler);
 
       engine.start();
-      latestStream().handlers.onmessage(makeOfferRecord({ offer_id: "0", amount: "100" }));
+      latestStream().handlers.onmessage(
+        makeOfferRecord({ offer_id: "0", amount: "100" }),
+      );
 
       expect(handler).toHaveBeenCalledOnce();
       expect(handler).toHaveBeenCalledWith(
@@ -975,7 +1124,7 @@ describe("pulse-core EventEngine", () => {
           buying_asset: "XLM",
           selling_asset: "USDC:GISSUER",
           amount: "100",
-        })
+        }),
       );
     });
 
@@ -986,11 +1135,17 @@ describe("pulse-core EventEngine", () => {
       watcher.on("offer.updated", handler);
 
       engine.start();
-      latestStream().handlers.onmessage(makeOfferRecord({ offer_id: "12345", amount: "200" }));
+      latestStream().handlers.onmessage(
+        makeOfferRecord({ offer_id: "12345", amount: "200" }),
+      );
 
       expect(handler).toHaveBeenCalledOnce();
       expect(handler).toHaveBeenCalledWith(
-        expect.objectContaining({ type: "offer.updated", offer_id: "12345", amount: "200" })
+        expect.objectContaining({
+          type: "offer.updated",
+          offer_id: "12345",
+          amount: "200",
+        }),
       );
     });
 
@@ -1001,11 +1156,17 @@ describe("pulse-core EventEngine", () => {
       watcher.on("offer.deleted", handler);
 
       engine.start();
-      latestStream().handlers.onmessage(makeOfferRecord({ offer_id: "12345", amount: "0" }));
+      latestStream().handlers.onmessage(
+        makeOfferRecord({ offer_id: "12345", amount: "0" }),
+      );
 
       expect(handler).toHaveBeenCalledOnce();
       expect(handler).toHaveBeenCalledWith(
-        expect.objectContaining({ type: "offer.deleted", offer_id: "12345", amount: "0" })
+        expect.objectContaining({
+          type: "offer.deleted",
+          offer_id: "12345",
+          amount: "0",
+        }),
       );
     });
 
@@ -1017,12 +1178,16 @@ describe("pulse-core EventEngine", () => {
 
       engine.start();
       latestStream().handlers.onmessage(
-        makeOfferRecord({ type: "manage_buy_offer", offer_id: "0", amount: "50" })
+        makeOfferRecord({
+          type: "manage_buy_offer",
+          offer_id: "0",
+          amount: "50",
+        }),
       );
 
       expect(handler).toHaveBeenCalledOnce();
       expect(handler).toHaveBeenCalledWith(
-        expect.objectContaining({ type: "offer.created", amount: "50" })
+        expect.objectContaining({ type: "offer.created", amount: "50" }),
       );
     });
   });
@@ -1049,7 +1214,7 @@ describe("pulse-core EventEngine", () => {
           source: "GSRC",
           bump_to: "123456789",
           timestamp: "2026-04-28T14:00:00.000Z",
-        })
+        }),
       );
     });
 
@@ -1072,7 +1237,9 @@ describe("pulse-core EventEngine", () => {
   });
 
   describe("manage_data → data.set / data.cleared", () => {
-    function makeManageDataRecord(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+    function makeManageDataRecord(
+      overrides: Record<string, unknown> = {},
+    ): Record<string, unknown> {
       return {
         type: "manage_data",
         source_account: "GSRC",
@@ -1100,7 +1267,7 @@ describe("pulse-core EventEngine", () => {
           name: "federation",
           value: "aGVsbG8=",
           timestamp: "2026-04-28T14:00:00.000Z",
-        })
+        }),
       );
     });
 
@@ -1111,11 +1278,17 @@ describe("pulse-core EventEngine", () => {
       watcher.on("data.cleared", handler);
 
       engine.start();
-      latestStream().handlers.onmessage(makeManageDataRecord({ data_value: null }));
+      latestStream().handlers.onmessage(
+        makeManageDataRecord({ data_value: null }),
+      );
 
       expect(handler).toHaveBeenCalledOnce();
       expect(handler).toHaveBeenCalledWith(
-        expect.objectContaining({ type: "data.cleared", source: "GSRC", value: null })
+        expect.objectContaining({
+          type: "data.cleared",
+          source: "GSRC",
+          value: null,
+        }),
       );
     });
 
@@ -1131,7 +1304,9 @@ describe("pulse-core EventEngine", () => {
       latestStream().handlers.onmessage(record);
 
       expect(handler).toHaveBeenCalledOnce();
-      expect(handler).toHaveBeenCalledWith(expect.objectContaining({ type: "data.cleared", value: null }));
+      expect(handler).toHaveBeenCalledWith(
+        expect.objectContaining({ type: "data.cleared", value: null }),
+      );
     });
 
     it("does not emit if source_account is missing", () => {
@@ -1141,7 +1316,9 @@ describe("pulse-core EventEngine", () => {
       watcher.on("*", handler);
 
       engine.start();
-      latestStream().handlers.onmessage(makeManageDataRecord({ source_account: "" }));
+      latestStream().handlers.onmessage(
+        makeManageDataRecord({ source_account: "" }),
+      );
 
       expect(handler).not.toHaveBeenCalled();
     });
@@ -1161,7 +1338,9 @@ describe("pulse-core EventEngine", () => {
   });
 
   describe("change_trust → trustline.*", () => {
-    function makeChangeTrustRecord(overrides: Record<string, unknown>): Record<string, unknown> {
+    function makeChangeTrustRecord(
+      overrides: Record<string, unknown>,
+    ): Record<string, unknown> {
       return {
         type: "change_trust",
         source_account: "GSRC",
@@ -1191,7 +1370,7 @@ describe("pulse-core EventEngine", () => {
           asset: "USDC:GISSUER",
           limit: "922337203685.4775807",
           timestamp: "2026-04-24T10:00:00.000Z",
-        })
+        }),
       );
     });
 
@@ -1202,11 +1381,17 @@ describe("pulse-core EventEngine", () => {
       watcher.on("trustline.removed", handler);
 
       engine.start();
-      latestStream().handlers.onmessage(makeChangeTrustRecord({ limit: "0.0000000" }));
+      latestStream().handlers.onmessage(
+        makeChangeTrustRecord({ limit: "0.0000000" }),
+      );
 
       expect(handler).toHaveBeenCalledOnce();
       expect(handler).toHaveBeenCalledWith(
-        expect.objectContaining({ type: "trustline.removed", account: "GSRC", limit: "0.0000000" })
+        expect.objectContaining({
+          type: "trustline.removed",
+          account: "GSRC",
+          limit: "0.0000000",
+        }),
       );
     });
 
@@ -1217,11 +1402,17 @@ describe("pulse-core EventEngine", () => {
       watcher.on("trustline.updated", handler);
 
       engine.start();
-      latestStream().handlers.onmessage(makeChangeTrustRecord({ limit: "2500.0000000" }));
+      latestStream().handlers.onmessage(
+        makeChangeTrustRecord({ limit: "2500.0000000" }),
+      );
 
       expect(handler).toHaveBeenCalledOnce();
       expect(handler).toHaveBeenCalledWith(
-        expect.objectContaining({ type: "trustline.updated", account: "GSRC", limit: "2500.0000000" })
+        expect.objectContaining({
+          type: "trustline.updated",
+          account: "GSRC",
+          limit: "2500.0000000",
+        }),
       );
     });
 
@@ -1235,7 +1426,9 @@ describe("pulse-core EventEngine", () => {
       otherWatcher.on("trustline.updated", otherHandler);
 
       engine.start();
-      latestStream().handlers.onmessage(makeChangeTrustRecord({ limit: "3000.0000000" }));
+      latestStream().handlers.onmessage(
+        makeChangeTrustRecord({ limit: "3000.0000000" }),
+      );
 
       expect(sourceHandler).toHaveBeenCalledOnce();
       expect(otherHandler).not.toHaveBeenCalled();
@@ -1244,8 +1437,11 @@ describe("pulse-core EventEngine", () => {
 
   describe("EventEngine constructor network validation", () => {
     it("throws error with helpful message when network is invalid", () => {
-      expect(() => new EventEngine({ network: "invalid_network" as any }))
-        .toThrow('Unknown network: "invalid_network". Valid networks: mainnet, testnet');
+      expect(
+        () => new EventEngine({ network: "invalid_network" as any }),
+      ).toThrow(
+        'Unknown network: "invalid_network". Valid networks: mainnet, testnet',
+      );
     });
 
     it("does not throw when network is mainnet", () => {
@@ -1258,13 +1454,23 @@ describe("pulse-core EventEngine", () => {
   });
 
   describe("account_merge → account.merged", () => {
-    function makeAccountMergeRecord(overrides: Record<string, unknown>): Record<string, unknown> {
-      return { type: "account_merge", account: "GSRC", into: "GDEST", created_at: "2026-04-26T12:00:00.000Z", ...overrides };
+    function makeAccountMergeRecord(
+      overrides: Record<string, unknown>,
+    ): Record<string, unknown> {
+      return {
+        type: "account_merge",
+        account: "GSRC",
+        into: "GDEST",
+        created_at: "2026-04-26T12:00:00.000Z",
+        ...overrides,
+      };
     }
 
     it("normalizes account_merge into account.merged", () => {
       const engine = new EventEngine({ network: "testnet" });
-      const normalize = (engine as unknown as { normalize(record: unknown): unknown }).normalize.bind(engine);
+      const normalize = (
+        engine as unknown as { normalize(record: unknown): unknown }
+      ).normalize.bind(engine);
 
       const normalized = normalize(makeAccountMergeRecord({}));
 
@@ -1296,11 +1502,19 @@ describe("pulse-core EventEngine", () => {
 
       expect(srcHandler).toHaveBeenCalledOnce();
       expect(srcHandler).toHaveBeenCalledWith(
-        expect.objectContaining({ type: "account.merged", source: "GSRC", destination: "GDEST" })
+        expect.objectContaining({
+          type: "account.merged",
+          source: "GSRC",
+          destination: "GDEST",
+        }),
       );
       expect(destHandler).toHaveBeenCalledOnce();
       expect(destHandler).toHaveBeenCalledWith(
-        expect.objectContaining({ type: "account.merged", source: "GSRC", destination: "GDEST" })
+        expect.objectContaining({
+          type: "account.merged",
+          source: "GSRC",
+          destination: "GDEST",
+        }),
       );
       expect(otherHandler).not.toHaveBeenCalled();
     });
@@ -1309,7 +1523,27 @@ describe("pulse-core EventEngine", () => {
   describe("status()", () => {
     it("returns accurate snapshot in initial state", () => {
       const engine = new EventEngine({ network: "testnet" });
-      expect(engine.status()).toEqual({ running: false, watcherCount: 0, lastEventAt: null, reconnectAttempt: 0 });
+      expect(engine.status()).toEqual({
+        running: false,
+        watcherCount: 0,
+        contractWatcherCount: 0,
+        lastEventAt: null,
+        reconnectAttempt: 0,
+        pausedSources: undefined,
+        sources: {
+          horizon: {
+            running: false,
+            lastEventAt: null,
+            reconnectAttempt: 0,
+            cursor: undefined,
+          },
+          soroban: {
+            running: false,
+            lastEventAt: null,
+            reconnectAttempt: 0,
+          },
+        },
+      });
     });
 
     it("returns accurate snapshot after start()", () => {
@@ -1317,7 +1551,27 @@ describe("pulse-core EventEngine", () => {
       engine.subscribe("GABC");
       engine.start();
 
-      expect(engine.status()).toEqual({ running: true, watcherCount: 1, lastEventAt: null, reconnectAttempt: 0 });
+      expect(engine.status()).toEqual({
+        running: true,
+        watcherCount: 1,
+        contractWatcherCount: 0,
+        lastEventAt: null,
+        reconnectAttempt: 0,
+        pausedSources: undefined,
+        sources: {
+          horizon: {
+            running: true,
+            lastEventAt: null,
+            reconnectAttempt: 0,
+            cursor: "now",
+          },
+          soroban: {
+            running: false,
+            lastEventAt: null,
+            reconnectAttempt: 0,
+          },
+        },
+      });
     });
 
     it("updates lastEventAt after a message", () => {
@@ -1332,12 +1586,35 @@ describe("pulse-core EventEngine", () => {
     });
 
     it("reflects reconnect attempts and running: false during backoff", () => {
-      const engine = new EventEngine({ network: "testnet", reconnect: { initialDelayMs: 1000 } });
+      const engine = new EventEngine({
+        network: "testnet",
+        reconnect: { initialDelayMs: 1000 },
+      });
       engine.start();
 
       latestStream().handlers.onerror(new Error("disconnect"));
 
-      expect(engine.status()).toEqual({ running: false, watcherCount: 0, lastEventAt: null, reconnectAttempt: 1 });
+      expect(engine.status()).toEqual({
+        running: false,
+        watcherCount: 0,
+        contractWatcherCount: 0,
+        lastEventAt: null,
+        reconnectAttempt: 1,
+        pausedSources: undefined,
+        sources: {
+          horizon: {
+            running: false,
+            lastEventAt: null,
+            reconnectAttempt: 1,
+            cursor: "now",
+          },
+          soroban: {
+            running: false,
+            lastEventAt: null,
+            reconnectAttempt: 0,
+          },
+        },
+      });
     });
 
     it("resets state when stop() is called", () => {
@@ -1348,13 +1625,33 @@ describe("pulse-core EventEngine", () => {
 
       engine.stop();
 
-      expect(engine.status()).toEqual({ running: false, watcherCount: 0, lastEventAt: null, reconnectAttempt: 0 });
+      expect(engine.status()).toEqual({
+        running: false,
+        watcherCount: 0,
+        contractWatcherCount: 0,
+        lastEventAt: null,
+        reconnectAttempt: 0,
+        pausedSources: undefined,
+        sources: {
+          horizon: {
+            running: false,
+            lastEventAt: null,
+            reconnectAttempt: 0,
+            cursor: undefined,
+          },
+          soroban: {
+            running: false,
+            lastEventAt: null,
+            reconnectAttempt: 0,
+          },
+        },
+      });
     });
   });
 
   describe("create_claimable_balance → claimable.created", () => {
     function makeCreateClaimableRecord(
-      overrides: Record<string, unknown> = {}
+      overrides: Record<string, unknown> = {},
     ): Record<string, unknown> {
       return {
         type: "create_claimable_balance",
@@ -1403,14 +1700,14 @@ describe("pulse-core EventEngine", () => {
           asset_type: "credit_alphanum4",
           asset_code: "USDC",
           asset_issuer: "GISSUER",
-        })
+        }),
       );
 
       expect(result).toEqual(
         expect.objectContaining({
           type: "claimable.created",
           asset: "USDC:GISSUER",
-        })
+        }),
       );
     });
 
@@ -1433,7 +1730,7 @@ describe("pulse-core EventEngine", () => {
             { destination: "GCLAIMANT1", predicate: { unconditional: true } },
             { destination: "GCLAIMANT2", predicate: { unconditional: true } },
           ],
-        })
+        }),
       );
 
       expect(h1).toHaveBeenCalledOnce();
@@ -1452,7 +1749,10 @@ describe("pulse-core EventEngine", () => {
 
       expect(handler).toHaveBeenCalledOnce();
       expect(handler).toHaveBeenCalledWith(
-        expect.objectContaining({ type: "claimable.created", sponsor: "GSPONSOR" })
+        expect.objectContaining({
+          type: "claimable.created",
+          sponsor: "GSPONSOR",
+        }),
       );
     });
 
@@ -1468,7 +1768,7 @@ describe("pulse-core EventEngine", () => {
           claimants: [
             { destination: "GSPONSOR", predicate: { unconditional: true } },
           ],
-        })
+        }),
       );
 
       expect(handler).toHaveBeenCalledOnce();
@@ -1492,12 +1792,14 @@ describe("pulse-core EventEngine", () => {
         engine as unknown as { normalize(record: unknown): unknown }
       ).normalize.bind(engine);
 
-      const result = normalize(makeCreateClaimableRecord({ balance_id: undefined }));
+      const result = normalize(
+        makeCreateClaimableRecord({ balance_id: undefined }),
+      );
 
       expect(result).toBeNull();
       expect(log.warn).toHaveBeenCalledWith(
         '[pulse-core] normalize() dropping create_claimable_balance record: field "balance_id" is missing or not a non-empty string.',
-        expect.objectContaining({ record: expect.any(Object) })
+        expect.objectContaining({ record: expect.any(Object) }),
       );
     });
 
@@ -1507,12 +1809,14 @@ describe("pulse-core EventEngine", () => {
         engine as unknown as { normalize(record: unknown): unknown }
       ).normalize.bind(engine);
 
-      const result = normalize(makeCreateClaimableRecord({ claimants: undefined }));
+      const result = normalize(
+        makeCreateClaimableRecord({ claimants: undefined }),
+      );
 
       expect(result).toBeNull();
       expect(log.warn).toHaveBeenCalledWith(
         '[pulse-core] normalize() dropping create_claimable_balance record: field "claimants" is missing or invalid.',
-        expect.objectContaining({ record: expect.any(Object) })
+        expect.objectContaining({ record: expect.any(Object) }),
       );
     });
 
@@ -1541,14 +1845,14 @@ describe("pulse-core EventEngine", () => {
       expect(specific).toHaveBeenCalledOnce();
       expect(wildcard).toHaveBeenCalledOnce();
       expect(wildcard).toHaveBeenCalledWith(
-        expect.objectContaining({ type: "claimable.created" })
+        expect.objectContaining({ type: "claimable.created" }),
       );
     });
   });
 
   describe("claim_claimable_balance → claimable.claimed", () => {
     function makeClaimClaimableRecord(
-      overrides: Record<string, unknown> = {}
+      overrides: Record<string, unknown> = {},
     ): Record<string, unknown> {
       return {
         type: "claim_claimable_balance",
@@ -1591,7 +1895,7 @@ describe("pulse-core EventEngine", () => {
           type: "claimable.claimed",
           claimant: "GCLAIMANT",
           balanceId: "00000000abc123",
-        })
+        }),
       );
     });
 
@@ -1614,7 +1918,10 @@ describe("pulse-core EventEngine", () => {
       ).normalize.bind(engine);
 
       const missingFieldCases: Array<[string, Record<string, unknown>]> = [
-        ["source_account", makeClaimClaimableRecord({ source_account: undefined })],
+        [
+          "source_account",
+          makeClaimClaimableRecord({ source_account: undefined }),
+        ],
         ["created_at", makeClaimClaimableRecord({ created_at: undefined })],
         ["balance_id", makeClaimClaimableRecord({ balance_id: undefined })],
       ];
@@ -1625,7 +1932,7 @@ describe("pulse-core EventEngine", () => {
         expect(result).toBeNull();
         expect(log.warn).toHaveBeenCalledWith(
           `[pulse-core] normalize() dropping claim_claimable_balance record: field "${field}" is missing or not a non-empty string.`,
-          expect.objectContaining({ record: expect.any(Object) })
+          expect.objectContaining({ record: expect.any(Object) }),
         );
       }
     });
@@ -1644,14 +1951,14 @@ describe("pulse-core EventEngine", () => {
       expect(specific).toHaveBeenCalledOnce();
       expect(wildcard).toHaveBeenCalledOnce();
       expect(wildcard).toHaveBeenCalledWith(
-        expect.objectContaining({ type: "claimable.claimed" })
+        expect.objectContaining({ type: "claimable.claimed" }),
       );
     });
   });
 
   describe("liquidity_pool_deposit → lp.deposited", () => {
     function makeLPDepositRecord(
-      overrides: Record<string, unknown> = {}
+      overrides: Record<string, unknown> = {},
     ): Record<string, unknown> {
       return {
         type: "liquidity_pool_deposit",
@@ -1702,7 +2009,11 @@ describe("pulse-core EventEngine", () => {
 
       expect(specific).toHaveBeenCalledOnce();
       expect(specific).toHaveBeenCalledWith(
-        expect.objectContaining({ type: "lp.deposited", source: "GSRC", pool_id: "pool123" })
+        expect.objectContaining({
+          type: "lp.deposited",
+          source: "GSRC",
+          pool_id: "pool123",
+        }),
       );
       expect(wildcard).toHaveBeenCalledOnce();
     });
@@ -1725,12 +2036,14 @@ describe("pulse-core EventEngine", () => {
         engine as unknown as { normalize(record: unknown): unknown }
       ).normalize.bind(engine);
 
-      const result = normalize(makeLPDepositRecord({ liquidity_pool_id: undefined }));
+      const result = normalize(
+        makeLPDepositRecord({ liquidity_pool_id: undefined }),
+      );
 
       expect(result).toBeNull();
       expect(log.warn).toHaveBeenCalledWith(
         '[pulse-core] normalize() dropping liquidity_pool_deposit record: field "liquidity_pool_id" is missing.',
-        expect.objectContaining({ record: expect.any(Object) })
+        expect.objectContaining({ record: expect.any(Object) }),
       );
     });
 
@@ -1740,19 +2053,21 @@ describe("pulse-core EventEngine", () => {
         engine as unknown as { normalize(record: unknown): unknown }
       ).normalize.bind(engine);
 
-      const result = normalize(makeLPDepositRecord({ reserves_deposited: "invalid" }));
+      const result = normalize(
+        makeLPDepositRecord({ reserves_deposited: "invalid" }),
+      );
 
       expect(result).toBeNull();
       expect(log.warn).toHaveBeenCalledWith(
         "[pulse-core] normalize() dropping liquidity_pool_deposit record: reserves_deposited is not an array.",
-        expect.objectContaining({ record: expect.any(Object) })
+        expect.objectContaining({ record: expect.any(Object) }),
       );
     });
   });
 
   describe("liquidity_pool_withdraw → lp.withdrawn", () => {
     function makeLPWithdrawRecord(
-      overrides: Record<string, unknown> = {}
+      overrides: Record<string, unknown> = {},
     ): Record<string, unknown> {
       return {
         type: "liquidity_pool_withdraw",
@@ -1816,14 +2131,14 @@ describe("pulse-core EventEngine", () => {
       expect(result).toBeNull();
       expect(log.warn).toHaveBeenCalledWith(
         '[pulse-core] normalize() dropping liquidity_pool_withdraw record: field "shares" is missing.',
-        expect.objectContaining({ record: expect.any(Object) })
+        expect.objectContaining({ record: expect.any(Object) }),
       );
     });
   });
 
   describe("allow_trust → trustline.authorized / trustline.deauthorized", () => {
     function makeAllowTrustRecord(
-      overrides: Record<string, unknown> = {}
+      overrides: Record<string, unknown> = {},
     ): Record<string, unknown> {
       return {
         type: "allow_trust",
@@ -1866,7 +2181,9 @@ describe("pulse-core EventEngine", () => {
 
       const result = normalize(makeAllowTrustRecord({ authorize: false }));
 
-      expect(result).toEqual(expect.objectContaining({ type: "trustline.deauthorized" }));
+      expect(result).toEqual(
+        expect.objectContaining({ type: "trustline.deauthorized" }),
+      );
     });
 
     it("routes trustline.authorized to both issuer and trustor watchers", () => {
@@ -1911,7 +2228,7 @@ describe("pulse-core EventEngine", () => {
 
   describe("set_trust_line_flags → trustline.authorized / trustline.deauthorized", () => {
     function makeSTLFRecord(
-      overrides: Record<string, unknown> = {}
+      overrides: Record<string, unknown> = {},
     ): Record<string, unknown> {
       return {
         type: "set_trust_line_flags",
@@ -1952,9 +2269,13 @@ describe("pulse-core EventEngine", () => {
         engine as unknown as { normalize(record: unknown): unknown }
       ).normalize.bind(engine);
 
-      const result = normalize(makeSTLFRecord({ set_flags_s: [], clear_flags_s: ["authorized"] }));
+      const result = normalize(
+        makeSTLFRecord({ set_flags_s: [], clear_flags_s: ["authorized"] }),
+      );
 
-      expect(result).toEqual(expect.objectContaining({ type: "trustline.deauthorized" }));
+      expect(result).toEqual(
+        expect.objectContaining({ type: "trustline.deauthorized" }),
+      );
     });
 
     it("returns null when both set and clear include authorized (ambiguous)", () => {
@@ -1963,7 +2284,12 @@ describe("pulse-core EventEngine", () => {
         engine as unknown as { normalize(record: unknown): unknown }
       ).normalize.bind(engine);
 
-      const result = normalize(makeSTLFRecord({ set_flags_s: ["authorized"], clear_flags_s: ["authorized"] }));
+      const result = normalize(
+        makeSTLFRecord({
+          set_flags_s: ["authorized"],
+          clear_flags_s: ["authorized"],
+        }),
+      );
 
       expect(result).toBeNull();
     });
@@ -1975,8 +2301,10 @@ describe("pulse-core EventEngine", () => {
     expect(engine.status()).toEqual({
       running: false,
       watcherCount: 0,
+      contractWatcherCount: 0,
       lastEventAt: null,
       reconnectAttempt: 0,
+      pausedSources: undefined,
       sources: {
         horizon: {
           running: false,

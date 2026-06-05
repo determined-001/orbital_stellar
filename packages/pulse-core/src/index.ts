@@ -6,9 +6,13 @@ export { validateContractFilters } from "./contractFilters.js";
 export { Watcher } from "./Watcher.js";
 export { EngineAlreadyStartedError, HorizonStreamError } from "./errors.js";
 export { StrKey } from "@stellar/stellar-sdk";
-export { CursorStore } from "./CursorStore.js";
+export { CursorStore, MemoryCursorStore } from "./CursorStore.js";
 export { PostgresCursorStore, PgLike } from "./PostgresCursorStore.js";
-export { evaluatePredicate, normalizeClaimPredicate, isClaimPredicateType } from "./claimPredicate.js";
+export {
+  evaluatePredicate,
+  normalizeClaimPredicate,
+  isClaimPredicateType,
+} from "./claimPredicate.js";
 export type { ClaimPredicate } from "./claimPredicate.js";
 export { isEventType } from "./eventTypeGuard.js";
 
@@ -25,8 +29,10 @@ export type SourceStatus = {
 export type EngineStatus = {
   running: boolean;
   watcherCount: number;
+  contractWatcherCount?: number;
   lastEventAt: string | null;
   reconnectAttempt: number;
+  pausedSources?: ("horizon" | "soroban")[];
   sources: {
     horizon: SourceStatus;
     soroban: SourceStatus;
@@ -378,15 +384,6 @@ export class UnknownNetworkError extends Error {
     this.name = "UnknownNetworkError";
   }
 }
-
-export type EngineStatus = {
-  running: boolean;
-  watcherCount: number;
-  contractWatcherCount?: number;
-  lastEventAt: string | null;
-  reconnectAttempt: number;
-  pausedSources?: ("horizon" | "soroban")[];
-};
 
 export type HealthCheckResult = {
   ok: boolean;
