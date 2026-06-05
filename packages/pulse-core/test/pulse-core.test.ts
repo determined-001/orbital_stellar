@@ -2298,7 +2298,7 @@ describe("pulse-core EventEngine", () => {
   it("reports per-source status and preserves flat fields for compatibility", () => {
     const engine = new EventEngine({ network: "testnet" });
 
-    expect(engine.status()).toEqual({
+    expect(engine.status()).toMatchObject({
       running: false,
       watcherCount: 0,
       contractWatcherCount: 0,

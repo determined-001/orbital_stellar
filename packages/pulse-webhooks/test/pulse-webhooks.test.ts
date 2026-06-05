@@ -6,7 +6,9 @@ import type { WebhookMetrics } from "../src/index.js";
 import {
   DeadLetterStore,
   verifyWebhook,
+  verifyWebhookRaw,
   verifyWebhookEdge,
+  verifyWebhookEdgeRaw,
   WebhookDelivery,
 } from "../src/index.js";
 
@@ -735,6 +737,45 @@ describe("pulse-webhooks verifyWebhook", () => {
       }),
     ).toBeNull();
   });
+
+  it("returns null when schema validation fails", () => {
+    const payload = JSON.stringify(deliveryEvent);
+    const timestamp = "1714176000000";
+    const signature = signWebhookPayload("top-secret", payload, timestamp);
+
+    const event = verifyWebhook(payload, signature, "top-secret", timestamp, {
+      nowMs: Number(timestamp),
+      schema: (evt) => evt.type === "payment.sent",
+    });
+
+    expect(event).toBeNull();
+  });
+
+  it("returns event when schema validation succeeds", () => {
+    const payload = JSON.stringify(deliveryEvent);
+    const timestamp = "1714176000000";
+    const signature = signWebhookPayload("top-secret", payload, timestamp);
+
+    const event = verifyWebhook(payload, signature, "top-secret", timestamp, {
+      nowMs: Number(timestamp),
+      schema: (evt) => evt.type === "payment.received",
+    });
+
+    expect(event).toEqual(deliveryEvent);
+  });
+
+  it("returns null when schema validator throws", () => {
+    const payload = JSON.stringify(deliveryEvent);
+    const timestamp = "1714176000000";
+    const signature = signWebhookPayload("top-secret", payload, timestamp);
+
+    const event = verifyWebhook(payload, signature, "top-secret", timestamp, {
+      nowMs: Number(timestamp),
+      schema: () => { throw new Error("validator error"); },
+    });
+
+    expect(event).toBeNull();
+  });
 });
 
 describe("pulse-webhooks verifyWebhookEdge", () => {
@@ -883,7 +924,190 @@ describe("pulse-webhooks verifyWebhookEdge", () => {
       await verifyWebhookEdge(payload, signature, "top-secret", timestamp),
     ).toBeNull();
   });
+
+  it("returns null when schema validation fails", async () => {
+    const payload = JSON.stringify(deliveryEvent);
+    const timestamp = "1714176000000";
+    const signature = signWebhookPayload("top-secret", payload, timestamp);
+
+    const event = await verifyWebhookEdge(payload, signature, "top-secret", timestamp, {
+      nowMs: Number(timestamp),
+      schema: (evt) => evt.type === "payment.sent",
+    });
+
+    expect(event).toBeNull();
+  });
+
+  it("returns event when schema validation succeeds", async () => {
+    const payload = JSON.stringify(deliveryEvent);
+    const timestamp = "1714176000000";
+    const signature = signWebhookPayload("top-secret", payload, timestamp);
+
+    const event = await verifyWebhookEdge(payload, signature, "top-secret", timestamp, {
+      nowMs: Number(timestamp),
+      schema: (evt) => evt.type === "payment.received",
+    });
+
+    expect(event).toEqual(deliveryEvent);
+  });
+
+  it("returns null when schema validator throws", async () => {
+    const payload = JSON.stringify(deliveryEvent);
+    const timestamp = "1714176000000";
+    const signature = signWebhookPayload("top-secret", payload, timestamp);
+
+    const event = await verifyWebhookEdge(payload, signature, "top-secret", timestamp, {
+      nowMs: Number(timestamp),
+      schema: () => { throw new Error("validator error"); },
+    });
+
+    expect(event).toBeNull();
+  });
 });
+
+describe("pulse-webhooks verifyWebhookRaw", () => {
+  it("returns true when signature matches timestamped payload", () => {
+    const payload = JSON.stringify(deliveryEvent);
+    const timestamp = "1714176000000";
+    const signature = signWebhookPayload("top-secret", payload, timestamp);
+
+    const result = verifyWebhookRaw(
+      payload,
+      signature,
+      "top-secret",
+      timestamp,
+    );
+
+    expect(result).toBe(true);
+  });
+
+  it("returns false when timestamp is missing or invalid", () => {
+    const payload = JSON.stringify(deliveryEvent);
+    const signature = signWebhookPayload(
+      "top-secret",
+      payload,
+      "1714176000000",
+    );
+
+    expect(verifyWebhookRaw(payload, signature, "top-secret", "")).toBe(false);
+    expect(
+      verifyWebhookRaw(payload, signature, "top-secret", "not-a-number"),
+    ).toBe(false);
+  });
+
+  it("returns false when signature does not match timestamped payload", () => {
+    const payload = JSON.stringify(deliveryEvent);
+    const timestamp = "1714176000000";
+    const signature = signWebhookPayload("top-secret", payload, timestamp);
+
+    expect(
+      verifyWebhookRaw(payload, signature, "wrong-secret", timestamp),
+    ).toBe(false);
+    expect(
+      verifyWebhookRaw(`${payload}x`, signature, "top-secret", timestamp),
+    ).toBe(false);
+    expect(
+      verifyWebhookRaw(payload, signature, "top-secret", "1714176000001"),
+    ).toBe(false);
+  });
+
+  it("returns true for malformed JSON payload (raw variant skips JSON parse)", () => {
+    const payload = "{ invalid json }";
+    const timestamp = "1714176000000";
+    const signature = signWebhookPayload("top-secret", payload, timestamp);
+
+    // Raw variant should return true (signature is valid), ignoring JSON validity
+    const result = verifyWebhookRaw(
+      payload,
+      signature,
+      "top-secret",
+      timestamp,
+    );
+
+    expect(result).toBe(true);
+  });
+});
+
+describe("pulse-webhooks verifyWebhookEdgeRaw", () => {
+  it("returns true when signature matches timestamped payload", async () => {
+    const payload = JSON.stringify(deliveryEvent);
+    const timestamp = "1714176000000";
+    const signature = signWebhookPayload("top-secret", payload, timestamp);
+
+    const result = await verifyWebhookEdgeRaw(
+      payload,
+      signature,
+      "top-secret",
+      timestamp,
+    );
+
+    expect(result).toBe(true);
+  });
+
+  it("returns false when timestamp is missing or invalid", async () => {
+    const payload = JSON.stringify(deliveryEvent);
+    const signature = signWebhookPayload(
+      "top-secret",
+      payload,
+      "1714176000000",
+    );
+
+    expect(
+      await verifyWebhookEdgeRaw(payload, signature, "top-secret", ""),
+    ).toBe(false);
+    expect(
+      await verifyWebhookEdgeRaw(
+        payload,
+        signature,
+        "top-secret",
+        "not-a-number",
+      ),
+    ).toBe(false);
+  });
+
+  it("returns false when signature does not match timestamped payload", async () => {
+    const payload = JSON.stringify(deliveryEvent);
+    const timestamp = "1714176000000";
+    const signature = signWebhookPayload("top-secret", payload, timestamp);
+
+    expect(
+      await verifyWebhookEdgeRaw(payload, signature, "wrong-secret", timestamp),
+    ).toBe(false);
+    expect(
+      await verifyWebhookEdgeRaw(
+        `${payload}x`,
+        signature,
+        "top-secret",
+        timestamp,
+      ),
+    ).toBe(false);
+    expect(
+      await verifyWebhookEdgeRaw(
+        payload,
+        signature,
+        "top-secret",
+        "1714176000001",
+      ),
+    ).toBe(false);
+  });
+
+  it("returns true for malformed JSON payload (raw variant skips JSON parse)", async () => {
+    const payload = "{ invalid json }";
+    const timestamp = "1714176000000";
+    const signature = signWebhookPayload("top-secret", payload, timestamp);
+
+    // Raw variant should return true (signature is valid), ignoring JSON validity
+    const result = await verifyWebhookEdgeRaw(
+      payload,
+      signature,
+      "top-secret",
+      timestamp,
+    );
+
+    expect(result).toBe(true);
+  });
+});
+
 describe("pulse-webhooks DeadLetterStore", () => {
   it("adds and retrieves entries by ID", () => {
     const dlq = new DeadLetterStore();
@@ -1173,6 +1397,19 @@ describe("pulse-webhooks DeadLetterStore", () => {
     expect(entries.map((e) => e.id)).toEqual([id1, id2, id3]);
 
     vi.useRealTimers();
+  });
+
+  it("returns healthy when recent success and no failures", () => {
+    vi.setSystemTime(new Date("2026-05-30T12:00:00Z"));
+
+    const dlqInstance = new DeadLetterStore();
+    dlqInstance.recordSuccess("https://example.com/hook");
+
+    const health = dlqInstance.getHealth("https://example.com/hook");
+
+    expect(health.healthy).toBe(true);
+    expect(health.failureRate).toBe(0);
+    expect(health.lastSuccess).toBeDefined();
   });
 
   it("tracks failed deliveries in the store automatically", async () => {
