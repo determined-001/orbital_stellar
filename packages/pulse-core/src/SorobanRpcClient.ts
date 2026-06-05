@@ -1,3 +1,34 @@
+import type { ContractSubscriptionFilter } from "./index.js";
+
+export type SorobanNetworkInfo = {
+  friendbotUrl?: string;
+  passphrase: string;
+  protocolVersion?: number;
+};
+
+export class SorobanRpcClient {
+  private static cachedNetwork: SorobanNetworkInfo | null = null;
+
+  static setCachedNetwork(info: SorobanNetworkInfo | null): void {
+    SorobanRpcClient.cachedNetwork = info;
+  }
+
+  static getCachedNetwork(): SorobanNetworkInfo | null {
+    return SorobanRpcClient.cachedNetwork;
+  }
+
+  static getNetwork(): SorobanNetworkInfo {
+    if (!SorobanRpcClient.cachedNetwork) {
+      throw new Error("SorobanRpcClient.getNetwork() called before network info was cached.");
+    }
+    return SorobanRpcClient.cachedNetwork;
+  }
+
+  static async fetchAndCacheNetwork(_url: string): Promise<SorobanNetworkInfo> {
+    throw new Error("fetchAndCacheNetwork not implemented");
+  }
+}
+
 /**
  * Options for creating a SorobanRpcClient.
  */
@@ -64,9 +95,10 @@ export class SorobanRpcClient {
    *
    * @param method - The JSON-RPC method name.
    * @param params - Optional JSON-RPC parameters.
+   * @param signal - Optional AbortSignal.
    * @returns The JSON-RPC response body.
    */
-  async request(method: string, params?: unknown): Promise<unknown> {
+  async request(method: string, params?: unknown, signal?: AbortSignal): Promise<unknown> {
     const body = JSON.stringify({
       jsonrpc: "2.0",
       id: 1,
@@ -88,6 +120,7 @@ export class SorobanRpcClient {
         ...this.headers,
       },
       body,
+      signal,
     });
 
     if (!response.ok) {
@@ -100,21 +133,26 @@ export class SorobanRpcClient {
   }
 
   /**
-   * Fetches Soroban events with optional cursor-based pagination.
+   * Fetches Soroban events with optional cursor-based pagination and filters.
    *
    * @param startCursor - Optional cursor to start fetching from.
    * @param limit - Optional maximum number of events to return.
+   * @param signal - Optional AbortSignal.
+   * @param filters - Optional array of filters (up to 5 filters).
    * @returns An object containing the events array.
    */
   async getEvents(
     startCursor?: string,
-    limit?: number
+    limit?: number,
+    signal?: AbortSignal,
+    filters?: ContractSubscriptionFilter[]
   ): Promise<{ events: unknown[] }> {
     const params: Record<string, unknown> = {};
     if (startCursor !== undefined) params.startCursor = startCursor;
     if (limit !== undefined) params.limit = limit;
+    if (filters !== undefined && filters.length > 0) params.filters = filters;
 
-    const result = (await this.request("getEvents", params)) as {
+    const result = (await this.request("getEvents", params, signal)) as {
       result?: { events?: unknown[] };
     };
     return { events: result?.result?.events ?? [] };
