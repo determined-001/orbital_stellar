@@ -6,9 +6,14 @@ export { SorobanSubscriber } from "./SorobanSubscriber.js";
 export type { SorobanSubscriberOptions, ReconnectingPayload } from "./SorobanSubscriber.js";
 export { validateContractFilters } from "./contractFilters.js";
 export { Watcher } from "./Watcher.js";
-export { EngineAlreadyStartedError, HorizonStreamError, SorobanRpcError, isSorobanRpcError } from "./errors.js";
-export type { SorobanRpcErrorCode, SorobanRpcErrorOptions } from "./errors.js";
-export type { SorobanGetEventsResponse, SorobanRpcClientOptions, SorobanRpcEvent } from "./SorobanRpcClient.js";
+export { SorobanSubscriber } from "./SorobanSubscriber.js";
+export type {
+  SorobanSubscriberOptions,
+  SorobanRpc,
+  SorobanEvent,
+  CursorStore as SorobanCursorStore,
+} from "./SorobanSubscriber.js";
+export { EngineAlreadyStartedError, HorizonStreamError } from "./errors.js";
 export { StrKey } from "@stellar/stellar-sdk";
 export { CursorStore, MemoryCursorStore } from "./CursorStore.js";
 export { PostgresCursorStore, PgLike } from "./PostgresCursorStore.js";
@@ -334,8 +339,13 @@ export type AccountMergeEvent = {
  * ```
  *
  * @see {@link events} for the full list of narrower per-event types.
+ *
+ * Every event exposes a lazy, cached `timestampDate` getter derived from
+ * `event.timestamp`.  The Date is parsed on first access and memoised;
+ * subsequent accesses return the same instance.  The property is
+ * **non-enumerable** so `JSON.stringify` output is unaffected.
  */
-export type NormalizedEvent =
+export type NormalizedEvent = (
   | PaymentEvent
   | AccountOptionsEvent
   | AccountCreatedEvent
@@ -350,7 +360,12 @@ export type NormalizedEvent =
   | LiquidityPoolWithdrawEvent
   | TrustAuthEvent
   | ContractInvokedEvent
-  | ContractEmittedEvent;
+  | ContractEmittedEvent
+) & {
+  /** Lazy, cached `Date` derived from `event.timestamp`. Non-enumerable; does not appear in JSON.stringify output. */
+  readonly timestampDate: Date;
+};
+
 
 /**
  * A notification emitted by the EventEngine during reconnection attempts.

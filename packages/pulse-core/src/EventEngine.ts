@@ -105,6 +105,24 @@ function stableFilterKey(filters: ContractFilter[]): string {
   return JSON.stringify(normalized);
 }
 
+/**
+ * Attaches a non-enumerable lazy getter `timestampDate` to an event object.
+ * The Date is parsed from `event.timestamp` on first access and cached.
+ * JSON.stringify output is unaffected because the property is non-enumerable.
+ */
+function withTimestampDate<T extends { timestamp: string }>(event: T): T {
+  let cached: Date | undefined;
+  Object.defineProperty(event, "timestampDate", {
+    enumerable: false,
+    configurable: true,
+    get(): Date {
+      if (cached === undefined) cached = new Date(event.timestamp);
+      return cached;
+    },
+  });
+  return event;
+}
+
 export class EventEngine {
   private server: Horizon.Server;
   private registry: Map<string, Watcher> = new Map();
@@ -945,6 +963,11 @@ export class EventEngine {
   }
 
   private normalize(record: unknown): NormalizedEventOrPending | null {
+    const result = this._normalize(record);
+    return result ? withTimestampDate(result) : null;
+  }
+
+  private _normalize(record: unknown): NormalizedEventOrPending | null {
     const r = record as Record<string, unknown>;
 
     if (r.type === "payment") {

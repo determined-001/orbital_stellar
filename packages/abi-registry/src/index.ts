@@ -9,7 +9,6 @@ export type {
 
 export type {
   PublishResult,
-  RegistryPublisher,
 } from "./RegistryPublisher.js";
 
 export { LocalFilePublisher } from "./RegistryPublisher.js";
