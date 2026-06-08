@@ -116,6 +116,11 @@ In addition to event payloads, watchers receive lifecycle notifications:
 | `engine.reconnected` | Reconnect succeeded |
 | `engine.rate_limited` | Horizon returned HTTP 429; engine will retry after the delay |
 | `engine.stopped` | `engine.stop()` was called |
+| `engine.cursor_expired` | The stream cursor has expired or is no longer valid, requiring a reset |
+
+For `engine.cursor_expired` notifications, the payload includes extra fields:
+- `lostCursor?: string` — The value of the expired or lost cursor.
+- `source?: "horizon" | "soroban"` — The subscription engine source where the expiry occurred.
 
 ## NormalizedEvent shape
 

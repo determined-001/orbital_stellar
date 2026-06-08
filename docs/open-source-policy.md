@@ -60,6 +60,15 @@ Everything below is in `packages/` or `apps/` today, or will be added to one of 
 - Replay-queue **interface** + the in-memory reference adapter
 - Starter boilerplates (`orbital-next-starter`, `orbital-express-starter`, `orbital-anchor-starter`)
 
+### ABI Registry
+
+`@orbital/abi-registry` is the MIT package surface for Soroban ABI client code, schema helpers, and publishing interfaces.
+
+- Technical map: [`docs/ARCHITECTURE.md`](./ARCHITECTURE.md)
+- Package README: [`packages/abi-registry/README.md`](../packages/abi-registry/README.md)
+
+The hosted verification / publishing service remains a separate Cloud product. The schema, client, and decoder helpers in this repository stay open.
+
 ### Phase 2 (2027)
 
 - `@orbital/hooks` — `useAccount`, `useBalance`, `useTransaction`, `useOrderBook`
