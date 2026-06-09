@@ -1,12 +1,22 @@
-import type { NormalizedEvent, Watcher, WatcherNotification } from "@orbital/pulse-core";
+import type {
+  NormalizedEvent,
+  Watcher,
+  WatcherNotification,
+} from "@orbital/pulse-core";
 import { createHmac, timingSafeEqual } from "crypto";
 
 import type { VerifyWebhookOptions, WebhookConfig } from "./types.js";
 import { DEFAULT_MAX_AGE_MS, DEFAULT_CLOCK_SKEW_MS } from "./types.js";
+import { NOOP_WEBHOOK_METRICS, CountingWebhookMetrics } from "./metrics.js";
 export { verifyWebhookEdge } from "./edge.js";
 export type { VerifyWebhookOptions, WebhookConfig } from "./types.js";
+export type { WebhookMetrics } from "./types.js";
+export { NOOP_WEBHOOK_METRICS, CountingWebhookMetrics } from "./metrics.js";
 
-type ResolvedWebhookConfig = Omit<Required<WebhookConfig>, "url" | "urlValidator"> & {
+type ResolvedWebhookConfig = Omit<
+  Required<WebhookConfig>,
+  "url" | "urlValidator"
+> & {
   urls: string[];
   urlValidator?: WebhookConfig["urlValidator"];
 };
@@ -15,7 +25,10 @@ export class WebhookDelivery {
   private config: ResolvedWebhookConfig;
   private watcher: Watcher;
   // Map of timer -> event so we can evict the newest entry when the cap is hit.
-  private retryTimers: Map<ReturnType<typeof setTimeout>, { event: NormalizedEvent; url: string }> = new Map();
+  private retryTimers: Map<
+    ReturnType<typeof setTimeout>,
+    { event: NormalizedEvent; url: string }
+  > = new Map();
 
   constructor(watcher: Watcher, config: WebhookConfig) {
     this.watcher = watcher;
@@ -24,10 +37,15 @@ export class WebhookDelivery {
       deliveryTimeoutMs: 10000,
       maxConcurrentRetries: 100,
       random: Math.random,
+      metrics: NOOP_WEBHOOK_METRICS,
       ...config,
       urls: Array.isArray(config.url) ? [...config.url] : [config.url],
     };
-    this.config.maxConcurrentRetries = Math.max(1, this.config.maxConcurrentRetries);
+    this.config.maxConcurrentRetries = Math.max(
+      1,
+      this.config.maxConcurrentRetries,
+    );
+    this.config.metrics = this.config.metrics ?? NOOP_WEBHOOK_METRICS;
 
     this.watcher.addStopHandler(() => {
       this.clearRetryTimers();
@@ -74,6 +92,7 @@ export class WebhookDelivery {
     const controller = new AbortController();
     const timeoutMs = this.config.deliveryTimeoutMs;
     const abortTimer = setTimeout(() => controller.abort(), timeoutMs);
+    const attemptStartedAt = Date.now();
 
     try {
       const res = await fetch(url, {
@@ -89,8 +108,20 @@ export class WebhookDelivery {
       });
 
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+      this.config.metrics.recordAttempt(
+        url,
+        attempt,
+        Date.now() - attemptStartedAt,
+        "success",
+      );
+      this.config.metrics.recordTerminal(url, "success");
+      return;
     } catch (err) {
       if (this.watcher.stopped) return;
+
+      const durationMs = Date.now() - attemptStartedAt;
+      this.config.metrics.recordAttempt(url, attempt, durationMs, "failure");
 
       const errorMessage = this.getErrorMessage(err);
 
@@ -134,6 +165,7 @@ export class WebhookDelivery {
     errorMessage: string,
     attempt: number,
   ): void {
+    this.config.metrics.recordTerminal(url, "failure");
     this.watcher.emit("webhook.failed", {
       ...event,
       raw: {

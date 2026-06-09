@@ -1,3 +1,13 @@
+export type WebhookMetrics = {
+  recordAttempt(
+    url: string,
+    attempt: number,
+    durationMs: number,
+    status: "success" | "failure",
+  ): void;
+  recordTerminal(url: string, outcome: "success" | "failure"): void;
+};
+
 export type WebhookConfig = {
   url: string | string[];
   secret: string;
@@ -9,6 +19,8 @@ export type WebhookConfig = {
   random?: () => number;
   /** Optional custom URL validator for additional block-lists. Return an error message to reject, or null to allow. */
   urlValidator?: (url: string) => Promise<string | null>;
+  /** Optional metrics observer for webhook delivery attempts and terminal outcomes. */
+  metrics?: WebhookMetrics;
 };
 
 export const DEFAULT_MAX_AGE_MS = 300_000;
