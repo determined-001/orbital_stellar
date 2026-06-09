@@ -4,7 +4,6 @@ type ConnectionKey = {
   serverUrl: string;
   address: string;
   token?: string;
-  withCredentials?: boolean;
 };
 
 type ConnectionSubscriber = {
@@ -22,8 +21,8 @@ type ConnectionEntry = {
 
 const pool = new Map<string, ConnectionEntry>();
 
-function getConnectionKey({ serverUrl, address, token, withCredentials }: ConnectionKey): string {
-  return JSON.stringify([serverUrl, address, token ?? "", withCredentials ?? false]);
+function getConnectionKey({ serverUrl, address, token }: ConnectionKey): string {
+  return JSON.stringify([serverUrl, address, token ?? ""]);
 }
 
 function getEventSourceUrl({ serverUrl, address, token }: ConnectionKey): string {
@@ -49,7 +48,7 @@ export function acquireEventConnection(
 
   if (!entry) {
     const newEntry: ConnectionEntry = {
-      source: new EventSource(getEventSourceUrl(key), key.withCredentials ? { withCredentials: true } : undefined),
+      source: new EventSource(getEventSourceUrl(key)),
       subscribers: new Set(),
       connected: false,
     };
@@ -80,9 +79,7 @@ export function acquireEventConnection(
   entry.subscribers.add(subscriber);
 
   return {
-    get connected() {
-      return entry.connected;
-    },
+    connected: entry.connected,
     unsubscribe: () => {
       entry.subscribers.delete(subscriber);
 
