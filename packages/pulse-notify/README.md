@@ -38,6 +38,84 @@ export function LiveBalance({ address }: { address: string }) {
 }
 ```
 
+## Testing
+
+Install `msw` and an `EventSource` polyfill as devDependencies:
+
+```bash
+pnpm add -D msw
+# Node lacks EventSource, so provide one:
+pnpm add -D eventsource
+```
+
+This package's own `test/connectionPool.test.ts` shows the `EventSource` polyfill style used for hook tests.
+
+```ts
+import { http, HttpResponse } from "msw";
+import { setupServer } from "msw/node";
+import { renderHook, act } from "@testing-library/react";
+import { useStellarActivity } from "@orbital/pulse-notify";
+
+class MockEventSource {
+  static instances: MockEventSource[] = [];
+
+  onopen: (() => void) | null = null;
+  onmessage: ((event: { data: string }) => void) | null = null;
+  onerror: (() => void) | null = null;
+  closeCount = 0;
+
+  constructor(public url: string) {
+    MockEventSource.instances.push(this);
+    setTimeout(() => this.onopen?.(), 0);
+  }
+
+  close() {
+    this.closeCount += 1;
+  }
+
+  emit(event: unknown) {
+    this.onmessage?.({ data: JSON.stringify(event) });
+  }
+}
+
+globalThis.EventSource = MockEventSource as unknown as typeof EventSource;
+
+const server = setupServer(
+  http.get("https://events.example.com/events/:address", () => {
+    return new HttpResponse(null, {
+      status: 200,
+      headers: { "Content-Type": "text/event-stream" },
+    });
+  })
+);
+
+beforeAll(() => server.listen());
+afterEach(() => server.resetHandlers());
+afterAll(() => server.close());
+
+test("receives events from EventSource", async () => {
+  const { result, waitForNextUpdate } = renderHook(() =>
+    useStellarActivity("https://events.example.com", "GABC")
+  );
+
+  await waitForNextUpdate();
+
+  act(() => {
+    MockEventSource.instances[0]?.emit({
+      type: "payment.received",
+      amount: "10",
+      asset: "XLM",
+      from: "GB...",
+      timestamp: new Date().toISOString(),
+    });
+  });
+
+  expect(result.current.event?.type).toBe("payment.received");
+});
+```
+
+This pattern keeps tests fast and deterministic while still validating the hook's SSE wiring.
+
 ## Hooks
 
 ### `useStellarEvent(serverUrl, address, options?)`
@@ -76,6 +154,38 @@ Shorthand for payments received. Equivalent to `useStellarEvent(serverUrl, addre
 ### `useStellarActivity(serverUrl, address)`
 
 Shorthand for all events on an address. Equivalent to `useStellarEvent(serverUrl, address, { event: "*" })`.
+
+### `<StellarConnectionStatus serverUrl address />`
+
+Small client-side status indicator for places that need connection health but do not need to wire `connected` and `error` state by hand.
+
+```tsx
+"use client";
+import { StellarConnectionStatus } from "@orbital/pulse-notify";
+
+export function HeaderConnection({ address }: { address: string }) {
+  return (
+    <StellarConnectionStatus
+      serverUrl={process.env.NEXT_PUBLIC_ORBITAL_URL!}
+      address={address}
+    />
+  );
+}
+```
+
+The indicator owns its `EventSource` lifecycle and sets `data-status` to `connecting`, `connected`, or `error`. It also adds state classes such as `stellar-connection-status--connected`.
+
+Customize the built-in styles with CSS custom properties:
+
+```css
+.stellar-connection-status {
+  --stellar-connection-status-background: color-mix(in srgb, currentColor 10%, transparent);
+  --stellar-connection-status-padding: 0.35rem 0.65rem;
+  --stellar-connection-status-connected-color: #16a34a;
+  --stellar-connection-status-error-color: #dc2626;
+  --stellar-connection-status-dot-size: 0.55rem;
+}
+```
 
 ## Return shape
 
@@ -209,6 +319,16 @@ useStellarEvent(
 ```
 
 **Server-only tokens** (secrets) must never ship to the browser. Use a per-user short-lived token issued by your backend.
+
+### Cookie-based auth (`withCredentials`)
+
+Same-origin `httpOnly` cookies travel automatically with SSE when `withCredentials: true` is set.
+
+```tsx
+useStellarEvent(serverUrl, address, { withCredentials: true });
+```
+
+If the server is cross-origin, it must respond with `Access-Control-Allow-Credentials: true` and an explicit `Access-Control-Allow-Origin` value — not `*`.
 
 ## Server-side rendering
 
