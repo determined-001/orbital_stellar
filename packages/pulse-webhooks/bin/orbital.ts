@@ -14,7 +14,7 @@ function parseArgs(argv: string[]): { flags: Record<string, string>; positional:
   for (const arg of argv) {
     const m = arg.match(/^--([^=]+)=(.*)$/);
     if (m) {
-      flags[m[1]] = m[2];
+      flags[m[1]!] = m[2]!;
     } else if (!arg.startsWith("--")) {
       positional.push(arg);
     }

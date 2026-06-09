@@ -1,87 +1,113 @@
 ---
 title: Quick Start
-description: Get real-time Stellar events in under 5 minutes.
+description: Subscribe to real-time Stellar events in five minutes.
 ---
 
-## 1. Start the server
+This guide walks you through the three SDK packages with the smallest possible working example for each. Pick the one that matches what you're building.
 
-```bash
-cd apps/server && npm run dev
-# Server running on http://localhost:3000 (testnet)
+## 1. Subscribe to events directly (`pulse-core`)
+
+The fastest path. Install `pulse-core`, instantiate `EventEngine`, subscribe to an address, handle events.
+
+```ts
+import { EventEngine } from "@orbital/pulse-core";
+
+const engine = new EventEngine({ network: "testnet" });
+engine.start();
+
+const watcher = engine.subscribe("GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN");
+
+watcher.on("payment.received", (event) => {
+  console.log(`+${event.amount} ${event.asset} from ${event.from}`);
+});
+
+watcher.on("payment.sent", (event) => {
+  console.log(`-${event.amount} ${event.asset} to ${event.to}`);
+});
+
+// Listen to everything on this address
+watcher.on("*", (event) => {
+  console.log(`event ${event.type}`, event);
+});
 ```
 
-## 2. Register a webhook
+Run it on testnet, send a test payment to that address from the [Stellar Laboratory](https://laboratory.stellar.org), and you'll see the event print within a few seconds.
 
-Send a `POST` to `/webhooks/register` with the address you want to watch, your endpoint URL, and a signing secret:
+`engine.stop()` cleanly closes the upstream connection. Always call it in your shutdown path.
 
-```bash
-curl -X POST http://localhost:3000/webhooks/register \
-  -H "Content-Type: application/json" \
-  -d '{
-    "address": "GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN",
-    "url": "https://your-app.com/webhook",
-    "secret": "my-signing-secret"
-  }'
+## 2. Add webhook delivery (`pulse-webhooks`)
+
+Want to push events to an HTTPS endpoint with signed retries? Layer `WebhookDelivery` on top of a watcher:
+
+```ts
+import { EventEngine } from "@orbital/pulse-core";
+import { WebhookDelivery } from "@orbital/pulse-webhooks";
+
+const engine = new EventEngine({ network: "testnet" });
+engine.start();
+
+const watcher = engine.subscribe("GABC...");
+
+new WebhookDelivery(watcher, {
+  url: "https://your-app.com/hooks/stellar",
+  secret: process.env.WEBHOOK_SECRET!,
+  retries: 3,
+  deliveryTimeoutMs: 10_000,
+});
 ```
 
-Your endpoint will now receive signed `POST` requests for every payment on that address.
+Verify on the receiver side:
 
-## 3. Verify incoming webhooks
+```ts
+import { verifyWebhook } from "@orbital/pulse-webhooks";
+import express from "express";
 
-```typescript
-import { verifyWebhook } from '@orbital/pulse-webhooks'
+const app = express();
 
-app.post('/webhook', express.raw({ type: '*/*' }), (req, res) => {
-  const signature = req.headers['x-orbital-signature'] as string
-  const isValid = verifyWebhook(req.body, signature, 'my-signing-secret')
+app.post("/hooks/stellar", express.raw({ type: "application/json" }), (req, res) => {
+  const signature = req.header("x-orbital-signature");
+  const timestamp = req.header("x-orbital-timestamp");
+  if (!signature || !timestamp) return res.sendStatus(400);
 
-  if (!isValid) return res.status(401).send('Invalid signature')
+  const event = verifyWebhook(req.body, signature, process.env.WEBHOOK_SECRET!, timestamp);
+  if (!event) return res.sendStatus(401);
 
-  const event = JSON.parse(req.body.toString())
-  console.log('Received event:', event)
-
-  res.sendStatus(200)
-})
+  console.log(`Verified ${event.type}: ${event.amount} ${event.asset}`);
+  res.sendStatus(200);
+});
 ```
 
-## 4. Use React hooks
+Cloudflare Workers? Use `verifyWebhookEdge` instead — same arguments, returns a `Promise`. See the [webhooks guide](../guides/webhooks) for the full edge example.
 
-In your frontend, subscribe to live events with a single hook:
+## 3. Add React hooks (`pulse-notify`)
+
+The React hooks open a browser `EventSource` connection to a backend that exposes Orbital events as SSE. You can stand that backend up yourself with `pulse-core` and a few lines of Express, or copy the Next.js route handler that powers the demo on this site (`apps/web/app/api/events/[address]/route.ts` in the repo).
 
 ```tsx
-import { useStellarPayment } from '@orbital/pulse-notify'
+"use client";
+import { useStellarPayment } from "@orbital/pulse-notify";
 
-export function PaymentFeed({ address }: { address: string }) {
-  const { event, connected } = useStellarPayment(
-    process.env.NEXT_PUBLIC_SERVER_URL!,
-    address
-  )
+export function LiveBalance({ address }: { address: string }) {
+  const { event, connected, error } = useStellarPayment(
+    process.env.NEXT_PUBLIC_ORBITAL_URL!,
+    address,
+  );
+
+  if (error) return <div className="text-red-500">{error}</div>;
+  if (!connected) return <div>Connecting…</div>;
+  if (!event) return <div>Listening for payments…</div>;
 
   return (
     <div>
-      <span>{connected ? '● Live' : '○ Connecting...'}</span>
-      {event && (
-        <p>
-          {event.type === 'payment.received' ? 'Received' : 'Sent'}{' '}
-          {event.amount} {event.asset}
-        </p>
-      )}
+      +{event.amount} {event.asset} from {event.from.slice(0, 8)}…
     </div>
-  )
+  );
 }
 ```
 
-## 5. Watch events via SSE (without React)
+See the [real-time events guide](../guides/real-time-events) for the full hook surface, type narrowing, and how to stand up a minimal SSE backend with `pulse-core`.
 
-```typescript
-const source = new EventSource(
-  `http://localhost:3000/events/GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN`
-)
+## Next step
 
-source.onmessage = (e) => {
-  const event = JSON.parse(e.data)
-  console.log(event.type, event.amount, event.asset)
-}
-```
-
-That's it. You're now streaming real-time Stellar events.
+→ [Webhooks guide](../guides/webhooks) — fan-out, retry policy, SSRF hardening, edge-runtime verification.
+→ [Real-time events guide](../guides/real-time-events) — React hooks, SSE plumbing, type narrowing.

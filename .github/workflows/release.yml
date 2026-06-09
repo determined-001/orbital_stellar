@@ -22,7 +22,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
         with:
           version: 10
 
@@ -40,8 +40,8 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Typecheck pulse-core
-        run: pnpm tsc --noEmit -p packages/pulse-core/tsconfig.json
+      - name: Build pulse-core
+        run: pnpm tsc -p packages/pulse-core/tsconfig.json
 
       - name: Typecheck pulse-webhooks
         run: pnpm tsc --noEmit -p packages/pulse-webhooks/tsconfig.json
@@ -59,7 +59,7 @@ jobs:
         run: pnpm -r --if-present test
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           generate_release_notes: true
           draft: false

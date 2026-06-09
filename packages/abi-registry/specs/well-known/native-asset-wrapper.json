@@ -1,0 +1,106 @@
+{
+  "version": "1.0.0",
+  "name": "Native Asset Wrapper (XLM SAC)",
+  "description": "Stellar Asset Contract wrapping the native XLM asset. Exposes XLM as a SEP-41-compatible Soroban token. Mint, burn, clawback, and authorization operations are not available on the native asset.",
+  "contract_id": "CAS3J7GYLGXMF6TDJBBYYSE3HQ6BBSMLNUQ34T6TZMYMW2EVH34XOWMA",
+  "network": "mainnet",
+  "source": "https://developers.stellar.org/docs/build/guides/tokens/stellar-asset-contract",
+  "tags": ["sep41", "sac", "native", "xlm"],
+  "functions": [
+    {
+      "name": "transfer",
+      "doc": "Transfer `amount` stroops of XLM from `from` to `to`. Requires authorization from `from`.",
+      "params": [
+        { "name": "from",   "type": "Address", "doc": "Source account or contract address." },
+        { "name": "to",     "type": "Address", "doc": "Destination account or contract address." },
+        { "name": "amount", "type": "i128",    "doc": "Amount in stroops (1 XLM = 10,000,000 stroops)." }
+      ],
+      "outputs": []
+    },
+    {
+      "name": "transfer_from",
+      "doc": "Transfer `amount` stroops from `from` to `to` using a pre-approved allowance.",
+      "params": [
+        { "name": "spender", "type": "Address", "doc": "Address that was granted the allowance." },
+        { "name": "from",    "type": "Address", "doc": "Source account whose allowance is consumed." },
+        { "name": "to",      "type": "Address", "doc": "Destination account or contract address." },
+        { "name": "amount",  "type": "i128",    "doc": "Amount in stroops." }
+      ],
+      "outputs": []
+    },
+    {
+      "name": "approve",
+      "doc": "Approve `spender` to transfer up to `amount` stroops from the caller's balance.",
+      "params": [
+        { "name": "from",              "type": "Address", "doc": "Token owner granting the allowance." },
+        { "name": "spender",           "type": "Address", "doc": "Address being granted the allowance." },
+        { "name": "amount",            "type": "i128",    "doc": "Maximum transferable amount in stroops." },
+        { "name": "expiration_ledger", "type": "u32",     "doc": "Ledger sequence number at which the allowance expires." }
+      ],
+      "outputs": []
+    },
+    {
+      "name": "allowance",
+      "doc": "Return the remaining allowance that `spender` may transfer from `from`.",
+      "params": [
+        { "name": "from",    "type": "Address", "doc": "Token owner." },
+        { "name": "spender", "type": "Address", "doc": "Approved spender." }
+      ],
+      "outputs": [
+        { "type": "i128", "doc": "Remaining allowance in stroops." }
+      ]
+    },
+    {
+      "name": "balance",
+      "doc": "Return the XLM balance of `id` in stroops.",
+      "params": [
+        { "name": "id", "type": "Address", "doc": "Account or contract address to query." }
+      ],
+      "outputs": [
+        { "type": "i128", "doc": "Balance in stroops." }
+      ]
+    },
+    {
+      "name": "decimals",
+      "doc": "Return the number of decimal places. Always 7 for XLM (1 XLM = 10^7 stroops).",
+      "params": [],
+      "outputs": [
+        { "type": "u32", "doc": "Always 7." }
+      ]
+    },
+    {
+      "name": "name",
+      "doc": "Return the token name.",
+      "params": [],
+      "outputs": [
+        { "type": "String", "doc": "Always 'native'." }
+      ]
+    },
+    {
+      "name": "symbol",
+      "doc": "Return the token symbol.",
+      "params": [],
+      "outputs": [
+        { "type": "String", "doc": "Always 'XLM'." }
+      ]
+    },
+    {
+      "name": "authorized",
+      "doc": "Return whether `id` is authorized. Always true for the native asset.",
+      "params": [
+        { "name": "id", "type": "Address", "doc": "Account to query." }
+      ],
+      "outputs": [
+        { "type": "bool", "doc": "Always true for the native asset." }
+      ]
+    },
+    {
+      "name": "admin",
+      "doc": "Return the current admin address.",
+      "params": [],
+      "outputs": [
+        { "type": "Address", "doc": "Current admin address." }
+      ]
+    }
+  ]
+}

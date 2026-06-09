@@ -1,60 +1,30 @@
 version: 2
 
+# Single pnpm entry at the workspace root.
+# The root pnpm-lock.yaml covers every package.json in the workspace,
+# so per-directory entries don't apply (they would update sub-package
+# manifests without touching the root lockfile, leaving every PR
+# unmergeable on `pnpm install --frozen-lockfile`).
 updates:
   - package-ecosystem: pnpm
     directory: /
     schedule:
-      interval: weekly
-      day: monday
-    open-pull-requests-limit: 3
+      interval: monthly
+    open-pull-requests-limit: 5
     groups:
-      dev-dependencies:
+      production-minor-patch:
+        dependency-type: production
+        update-types:
+          - minor
+          - patch
+      development:
         dependency-type: development
+        update-types:
+          - minor
+          - patch
 
-  # apps/web
-  - package-ecosystem: pnpm
-    directory: /apps/web
-    schedule:
-      interval: weekly
-      day: monday
-    open-pull-requests-limit: 3
-
-  # apps/server
-  - package-ecosystem: pnpm
-    directory: /apps/server
-    schedule:
-      interval: weekly
-      day: monday
-    open-pull-requests-limit: 3
-
-  # packages/pulse-core — was missing, added to cover @stellar/stellar-sdk etc.
-  - package-ecosystem: pnpm
-    directory: /packages/pulse-core
-    schedule:
-      interval: weekly
-      day: monday
-    open-pull-requests-limit: 3
-
-  # packages/pulse-webhooks — was missing
-  - package-ecosystem: pnpm
-    directory: /packages/pulse-webhooks
-    schedule:
-      interval: weekly
-      day: monday
-    open-pull-requests-limit: 3
-
-  # packages/pulse-notify — was missing
-  - package-ecosystem: pnpm
-    directory: /packages/pulse-notify
-    schedule:
-      interval: weekly
-      day: monday
-    open-pull-requests-limit: 3
-
-  # GitHub Actions — bumped pnpm/action-setup to v4 via Dependabot coverage
   - package-ecosystem: github-actions
     directory: /
     schedule:
-      interval: weekly
-      day: monday
-    open-pull-requests-limit: 3
+      interval: monthly
+    open-pull-requests-limit: 2

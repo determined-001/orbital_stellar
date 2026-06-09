@@ -47,11 +47,9 @@ const LABEL_DEFS = [
   ['complexity:trivial',  'C2E0C6', '100 points'],
   ['complexity:medium',   'FBCA04', '150 points'],
   ['complexity:high',     'D93F0B', '200 points'],
-  ['area:pulse-core',     '0E8A16', ''],
-  ['area:pulse-webhooks', '1D76DB', ''],
-  ['area:pulse-notify',   '5319E7', ''],
-  ['area:server',         'B60205', ''],
-  ['area:web',            'BFDADC', ''],
+  ['area:pulse-core',     '0E8A16', 'Event engine, normalization, watcher routing'],
+  ['area:pulse-webhooks', '1D76DB', 'HMAC delivery, retry, SSRF, edge verification'],
+  ['area:pulse-notify',   '5319E7', 'React hooks for live events'],
   ['type:bug',            'D73A4A', ''],
   ['type:feature',        'A2EEEF', ''],
   ['type:docs',           '0075CA', ''],
@@ -77,9 +75,24 @@ function createLabels() {
 
 // ---------- issue parser ----------
 
+// Major issue number → package area label.
+// Only the three published packages have wave-program scope.
+const AREA_BY_MAJOR = {
+  1: 'area:pulse-core',
+  2: 'area:pulse-webhooks',
+  3: 'area:pulse-notify',
+};
+
 function areaLabel(issueNum) {
   const major = parseInt(issueNum.split('.')[0], 10);
-  return ['', 'area:pulse-core', 'area:pulse-webhooks', 'area:pulse-notify', 'area:server'][major] ?? '';
+  const label = AREA_BY_MAJOR[major];
+  if (!label) {
+    console.error(
+      `  ⚠ issue ${issueNum}: major number ${major} is not in scope (valid: ${Object.keys(AREA_BY_MAJOR).join(', ')}). No area label applied.`
+    );
+    return '';
+  }
+  return label;
 }
 
 function parseComplexityLine(line) {
