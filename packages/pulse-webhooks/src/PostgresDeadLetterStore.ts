@@ -56,7 +56,7 @@ type DeadLetterRow = {
   url: string;
   error: string;
   attempts: number;
-  event: NormalizedEvent;
+  event: NormalizedEvent | string;
   failed_at: Date | string;
   replayed_at: Date | string | null;
 };
@@ -196,10 +196,16 @@ function mapRow(row: DeadLetterRow): DeadLetterRecord {
     url: row.url,
     error: row.error,
     attempts: row.attempts,
-    event: row.event,
+    event: normalizeEventOutput(row.event),
     failedAt: normalizeDateOutput(row.failed_at),
     replayedAt: row.replayed_at ? normalizeDateOutput(row.replayed_at) : null,
   };
+}
+
+function normalizeEventOutput(value: NormalizedEvent | string): NormalizedEvent {
+  return typeof value === "string"
+    ? (JSON.parse(value) as NormalizedEvent)
+    : value;
 }
 
 function normalizeDateInput(value: Date | string): string {

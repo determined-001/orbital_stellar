@@ -1,4 +1,6 @@
 export { AbiRegistryClient } from "./AbiRegistryClient.js";
+export { scvalToJs, jsToScval } from "./scval.js";
+export { RegistryPublisher } from "./RegistryPublisher.js";
 
 export type {
   AbiRegistryClientConfig,
@@ -7,9 +9,15 @@ export type {
 
 export type {
   PublishResult,
-  RegistryPublisher,
 } from "./RegistryPublisher.js";
 
 export { LocalFilePublisher } from "./RegistryPublisher.js";
 
 export { scvalToJs, jsToScval } from "./scval.js";
+export { decodeContractEvent } from "./decode.js";
+export type {
+  DecodedEvent,
+  DecodedValue,
+  DecodeError,
+  DecodeResult,
+} from "./decode.js";

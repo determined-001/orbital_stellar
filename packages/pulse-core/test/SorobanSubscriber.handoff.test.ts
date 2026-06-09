@@ -1,5 +1,8 @@
 import { expect, describe, it, beforeEach } from "vitest";
+import { SorobanRpcError } from "../src/errors.js";
+import { SorobanSubscriber } from "../src/SorobanSubscriber.js";
 import { FakeSorobanRpc } from "./fakes/FakeSorobanRpc.js";
+import { SorobanSubscriber } from "../src/SorobanSubscriber.js";
 
 // --- Self-Contained In-Memory Cursor Store Implementation ---
 export class MemoryCursorStore {
@@ -11,46 +14,6 @@ export class MemoryCursorStore {
 
   async saveCursor(cursor: string): Promise<void> {
     this.cursor = cursor;
-  }
-}
-
-// --- Self-Contained Subscriber Implementation under Test ---
-export interface SubscriberOptions {
-  rpc: FakeSorobanRpc;
-  cursorStore: MemoryCursorStore;
-  onEvent: (event: any) => Promise<void>;
-  pageSize: number;
-}
-
-export class SorobanSubscriber {
-  private rpc: FakeSorobanRpc;
-  private cursorStore: MemoryCursorStore;
-  private onEvent: (event: any) => Promise<void>;
-  private pageSize: number;
-  private isStopped = false;
-
-  constructor(options: SubscriberOptions) {
-    this.rpc = options.rpc;
-    this.cursorStore = options.cursorStore;
-    this.onEvent = options.onEvent;
-    this.pageSize = options.pageSize;
-  }
-
-  async pollOnce(): Promise<void> {
-    if (this.isStopped) return;
-
-    const currentCursor = await this.cursorStore.getCursor();
-    const result = await this.rpc.getEvents(currentCursor, this.pageSize);
-
-    for (const event of result.events) {
-      if (this.isStopped) break;
-      await this.onEvent(event);
-      await this.cursorStore.saveCursor(event.pagingToken);
-    }
-  }
-
-  async shutdown(): Promise<void> {
-    this.isStopped = true;
   }
 }
 
@@ -82,7 +45,7 @@ describe("SorobanSubscriber Handoff & Restart Resiliency", () => {
     await subscriber.pollOnce();
     expect(processedEvents.length).toBe(100);
 
-    await subscriber.shutdown();
+    await subscriber.stop();
 
     const restartedSubscriber = createSubscriber();
     await restartedSubscriber.pollOnce();
@@ -110,7 +73,10 @@ describe("SorobanSubscriber Handoff & Restart Resiliency", () => {
     const subscriber = createSubscriber();
 
     fakeRpc.getEvents = async () => {
-      throw new Error("Soroban RPC Network Timeout");
+      throw new SorobanRpcError("Soroban RPC Network Timeout", {
+        code: "network",
+        retryable: true,
+      });
     };
 
     try {
@@ -130,14 +96,14 @@ describe("SorobanSubscriber Handoff & Restart Resiliency", () => {
 
   it("Scenario 4: should handle termination after processing exactly one event in a page", async () => {
     const localProcessedEvents: any[] = [];
-    
+
     const subscriber = new SorobanSubscriber({
       rpc: fakeRpc,
       cursorStore: cursorStore,
       onEvent: async (evt: any) => {
         localProcessedEvents.push(evt);
         processedEvents.push(evt);
-        await subscriber.shutdown();
+        await subscriber.stop();
       },
       pageSize: 100,
     });
@@ -149,5 +115,86 @@ describe("SorobanSubscriber Handoff & Restart Resiliency", () => {
     await restartedSubscriber.pollOnce();
 
     expect(processedEvents.length).toBe(101);
+  });
+
+  it("schedules a retry for retryable SorobanRpcError without parsing messages", async () => {
+    const retryableError = new SorobanRpcError("any message is fine", {
+      code: "server",
+      retryable: true,
+      status: 503,
+    });
+    const retryableErrors: SorobanRpcError[] = [];
+    const terminalErrors: unknown[] = [];
+    const scheduledCallbacks: Array<() => void> = [];
+
+    fakeRpc.getEvents = async () => {
+      throw retryableError;
+    };
+
+    const subscriber = new SorobanSubscriber({
+      rpc: fakeRpc,
+      cursorStore,
+      onEvent: async (evt: any) => {
+        processedEvents.push(evt);
+      },
+      pageSize: 100,
+      retryDelayMs: 25,
+      setTimeoutFn: ((callback: () => void) => {
+        scheduledCallbacks.push(callback);
+        return 1 as unknown as ReturnType<typeof setTimeout>;
+      }) as typeof setTimeout,
+      clearTimeoutFn: (() => {}) as typeof clearTimeout,
+      onRetryableError: (error) => retryableErrors.push(error),
+      onTerminalError: (error) => terminalErrors.push(error),
+    });
+
+    subscriber.start();
+    await flushAsyncSubscriberWork();
+
+    expect(retryableErrors).toEqual([retryableError]);
+    expect(terminalErrors).toEqual([]);
+    expect(scheduledCallbacks).toHaveLength(1);
+
+    await subscriber.shutdown();
+  });
+
+  it("does not retry terminal SorobanRpcError", async () => {
+    const terminalError = new SorobanRpcError("bad request", {
+      code: "invalid_request",
+      retryable: false,
+      status: 400,
+    });
+    const retryableErrors: SorobanRpcError[] = [];
+    const terminalErrors: unknown[] = [];
+    const scheduledCallbacks: Array<() => void> = [];
+
+    fakeRpc.getEvents = async () => {
+      throw terminalError;
+    };
+
+    const subscriber = new SorobanSubscriber({
+      rpc: fakeRpc,
+      cursorStore,
+      onEvent: async (evt: any) => {
+        processedEvents.push(evt);
+      },
+      pageSize: 100,
+      setTimeoutFn: ((callback: () => void) => {
+        scheduledCallbacks.push(callback);
+        return 1 as unknown as ReturnType<typeof setTimeout>;
+      }) as typeof setTimeout,
+      clearTimeoutFn: (() => {}) as typeof clearTimeout,
+      onRetryableError: (error) => retryableErrors.push(error),
+      onTerminalError: (error) => terminalErrors.push(error),
+    });
+
+    subscriber.start();
+    await flushAsyncSubscriberWork();
+
+    expect(retryableErrors).toEqual([]);
+    expect(terminalErrors).toEqual([terminalError]);
+    expect(scheduledCallbacks).toHaveLength(0);
+
+    await subscriber.shutdown();
   });
 });

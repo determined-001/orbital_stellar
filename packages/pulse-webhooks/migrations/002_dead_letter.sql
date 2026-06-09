@@ -13,3 +13,6 @@ CREATE INDEX IF NOT EXISTS pulse_webhook_dead_letters_url_idx
 
 CREATE INDEX IF NOT EXISTS pulse_webhook_dead_letters_failed_at_idx
   ON pulse_webhook_dead_letters (failed_at);
+
+CREATE INDEX IF NOT EXISTS pulse_webhook_dead_letters_url_failed_at_idx
+  ON pulse_webhook_dead_letters (url, failed_at);
