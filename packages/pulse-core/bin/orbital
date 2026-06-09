@@ -1,0 +1,77 @@
+#!/usr/bin/env node
+
+import yargs from "yargs";
+import { hideBin } from "yargs/helpers";
+
+async function main() {
+  yargs(hideBin(process.argv))
+    .command(
+      "cursor",
+      "Manage cursor backups",
+      (yargs) => {
+        yargs
+          .command(
+            "dump",
+            "Dumps all cursors as line-delimited JSON to stdout",
+            () => {},
+            async () => {
+              const { PostgresCursorStore } = await import("../src/PostgresCursorStore.js");
+              const { Pool } = await import("pg");
+
+              const pg = new Pool();
+              const cursorStore = new PostgresCursorStore(pg);
+
+              try {
+                const result = await pg.query("SELECT stream_key, cursor FROM cursor_store");
+                for (const row of result.rows) {
+                  console.log(JSON.stringify(row));
+                }
+              } finally {
+                await pg.end();
+              }
+            }
+          )
+          .command(
+            "restore",
+            "Restores cursors from line-delimited JSON from stdin",
+            () => {},
+            async () => {
+              const { PostgresCursorStore } = await import("../src/PostgresCursorStore.js");
+              const { Pool } = await import("pg");
+
+              const pg = new Pool();
+              const cursorStore = new PostgresCursorStore(pg);
+
+              const readline = await import("readline");
+              const rl = readline.createInterface({
+                input: process.stdin,
+                terminal: false,
+              });
+
+              try {
+                for await (const line of rl) {
+                  if (!line.trim()) continue;
+                  try {
+                    const { stream_key, cursor } = JSON.parse(line);
+                    await cursorStore.set(stream_key, cursor);
+                  } catch (error) {
+                    console.error("Error parsing line or restoring cursor:", error);
+                    process.exit(1);
+                  }
+                }
+              } finally {
+                await pg.end();
+              }
+            }
+          )
+          .demandCommand(1, "Please provide a command (dump or restore)");
+      }
+    )
+    .demandCommand(1, "Please provide a command (cursor)")
+    .help().argv;
+}
+
+main().catch((error) => {
+  console.error("Error:", error);
+  process.exit(1);
+});

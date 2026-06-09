@@ -55,10 +55,19 @@ Everything below is in `packages/` or `apps/` today, or will be added to one of 
 ### Phase 1 (`v1.0`, Q2–Q3 2026)
 
 - Soroban event subscriber (plug into the same normalization pipeline)
-- ABI Registry **client library** and **schema** (the data layer is operated, not owned — see §3)
+- ABI Registry client library, schema, and RegistryPublisher interface
 - Cursor persistence **interface** + the in-memory and on-disk reference adapters
 - Replay-queue **interface** + the in-memory reference adapter
 - Starter boilerplates (`orbital-next-starter`, `orbital-express-starter`, `orbital-anchor-starter`)
+
+### ABI Registry
+
+`@orbital/abi-registry` is the MIT package surface for Soroban ABI client code, schema helpers, and publishing interfaces.
+
+- Technical map: [`docs/ARCHITECTURE.md`](./ARCHITECTURE.md)
+- Package README: [`packages/abi-registry/README.md`](../packages/abi-registry/README.md)
+
+The hosted verification / publishing service remains a separate Cloud product. The schema, client, and decoder helpers in this repository stay open.
 
 ### Phase 2 (2027)
 

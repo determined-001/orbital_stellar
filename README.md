@@ -11,7 +11,7 @@
 
 **Stellar's biggest developer-experience gap isn't a missing API — it's that Horizon's firehose still requires every team to build their own event delivery.**
 
-Orbital ships that delivery layer once, openly: a typed event engine that normalizes Horizon output into application-shaped events, HMAC-signed webhook delivery with retry and edge-runtime verification, and React hooks for live data in the browser. Three MIT-licensed packages, designed to be composed.
+Orbital ships that delivery layer once, openly: a typed event engine that normalizes Horizon output into application-shaped events, HMAC-signed webhook delivery with retry and edge-runtime verification, a shared ABI registry for Soroban schemas, and React hooks for live data in the browser. Four MIT-licensed packages, designed to be composed.
 
 ---
 
@@ -52,6 +52,7 @@ The longer-form thesis, the multi-year vision, and the SCF grant case live in [`
 | [`@orbital/pulse-core`](./packages/pulse-core) | EventEngine — Horizon subscription, normalization, reconnection, rate-limit handling | ✅ Phase 0 |
 | [`@orbital/pulse-webhooks`](./packages/pulse-webhooks) | HMAC-signed webhook delivery + verification (Node + edge runtimes) | ✅ Phase 0 |
 | [`@orbital/pulse-notify`](./packages/pulse-notify) | React hooks — `useStellarEvent`, `useStellarPayment`, `useStellarActivity` | ✅ Phase 0 |
+| [`@orbital/abi-registry`](./packages/abi-registry) | Canonical Soroban ABI client, schema helpers, and registry publisher interface | ✅ Phase 1 |
 
 > The full classic-operation taxonomy is shipped (payments, account create/merge/options/bump-sequence, trustlines + auth, offers, claimables, liquidity pools, manage-data). Soroban contract events are Phase 1 (Q2–Q3 2026) — see [`ROADMAP.md`](ROADMAP.md).
 
@@ -185,6 +186,7 @@ The reference composition — a Next.js route handler that subscribes to an addr
 | [`packages/pulse-core/README.md`](packages/pulse-core/README.md) | EventEngine API, event taxonomy, configuration |
 | [`packages/pulse-webhooks/README.md`](packages/pulse-webhooks/README.md) | Delivery contract, verification, SSRF safety |
 | [`packages/pulse-notify/README.md`](packages/pulse-notify/README.md) | React hooks, type narrowing, authentication |
+| [`packages/abi-registry/README.md`](packages/abi-registry/README.md) | ABI Registry client, publisher interface, and shared schema helpers |
 | [`apps/web/README.md`](apps/web/README.md) | Marketing site + sandboxed demo API routes |
 
 ---

@@ -62,6 +62,24 @@ Once a watcher has been stopped, it will not accept new listeners. Calling `watc
 
 Stops and removes the watcher for the given address.
 
+### Network passphrases and asset format
+
+`pulse-core` exports `NETWORK_PASSPHRASES` as the source of truth for the supported Stellar network passphrases:
+
+```ts
+import { NETWORK_PASSPHRASES } from "@orbital/pulse-core";
+
+NETWORK_PASSPHRASES.mainnet; // "Public Global Stellar Network ; September 2015"
+NETWORK_PASSPHRASES.testnet; // "Test SDF Network ; September 2015"
+```
+
+Use these constants in tests, signing helpers, or Stellar RPC calls that need the exact network passphrase for the same `network` value passed to `EventEngine`.
+
+Normalized asset strings follow one rule across every event payload:
+
+- Native XLM is emitted as `XLM`.
+- Issued assets are emitted as `CODE:ISSUER`, for example `USDC:G...`.
+
 ### `Watcher` events
 
 | Event | Payload | Fired when |
@@ -74,6 +92,18 @@ Stops and removes the watcher for the given address.
 | `engine.reconnected` | `WatcherNotification` | Reconnect succeeded |
 | `engine.rate_limited` | `WatcherNotification` | The engine was rate limited and will retry after the delay |
 | `engine.stopped` | `WatcherNotification` | `engine.stop()` was called; emitted before watchers are torn down |
+| `engine.cursor_expired` | `WatcherNotification` | The ingestion stream cursor has expired or is no longer valid, requiring a reset |
+| `webhook.failed` | `NormalizedEvent` | All delivery attempts to a webhook URL have failed (emitted by `pulse-webhooks`) |
+| `webhook.dropped` | `NormalizedEvent` | A pending webhook retry is dropped because the concurrency cap is reached (emitted by `pulse-webhooks`) |
+
+> [!NOTE]
+> Webhook events (`webhook.failed` and `webhook.dropped`) are emitted on the `Watcher` by the [`@orbital/pulse-webhooks`](../pulse-webhooks/README.md) package when attached. For these events, the `NormalizedEvent`'s `raw` field is populated with specialized metadata objects (`WebhookFailureRaw` and `WebhookDroppedRaw`, respectively). See the [Failure events section of `@orbital/pulse-webhooks`](../pulse-webhooks/README.md#failure-events) for detailed documentation and payload schemas.
+
+> [!NOTE]
+> For `engine.cursor_expired` notifications, the `WatcherNotification` payload includes additional fields:
+> - `lostCursor`: `string` — The value of the cursor that expired.
+> - `source`: `"horizon" | "soroban"` — The subscription engine source where the expiry occurred.
+
 
 ### `NormalizedEvent` shape
 
@@ -97,6 +127,46 @@ type NormalizedEvent =
 ```
 
 Every event includes a `timestamp` (ISO 8601) and a `raw` field with the original Horizon record. See [`docs/ARCHITECTURE.md` § 4 The normalization layer](../../docs/ARCHITECTURE.md#4-the-normalization-layer) for the full per-event shape table and the routing rules that decide which watcher receives which event.
+
+### Type narrowing with `isEventType`
+
+Use the `isEventType` helper to narrow events to specific types in a type-safe way:
+
+```ts
+import { EventEngine, isEventType } from "@orbital/pulse-core";
+
+const engine = new EventEngine({ network: "testnet" });
+engine.start();
+
+const watcher = engine.subscribe("GABC...");
+
+// Narrow to a single type
+watcher.on("*", (event) => {
+  if (isEventType(event, "payment.received")) {
+    console.log(`Received ${event.amount} ${event.asset} from ${event.from}`);
+  }
+});
+
+// Narrow to multiple types
+watcher.on("*", (event) => {
+  if (isEventType(event, "payment.received", "payment.sent", "payment.self")) {
+    console.log(`Payment of ${event.amount} ${event.asset}`);
+  }
+});
+
+// Filter an array of events
+const allEvents: NormalizedEvent[] = [];
+const paymentEvents = allEvents.filter((e) =>
+  isEventType(e, "payment.received", "payment.sent", "payment.self")
+);
+
+// Combine with other checks
+watcher.on("*", (event) => {
+  if (isEventType(event, "trustline.added", "trustline.updated")) {
+    console.log(`Trustline for ${event.asset} on account ${event.account}`);
+  }
+});
+```
 
 ## Design principles
 
@@ -127,9 +197,31 @@ The harness subscribes `N` watchers and replays `M` synthetic payment records th
 
 Results vary by CPU, Node version, and runtime load; rerun locally to compare changes over time.
 
+### Soroban Benchmark
+
+Soroban contract event subscription has a matching replay benchmark at `bench/soroban-throughput.ts`.
+
+Run it with:
+
+```bash
+pnpm --filter @orbital/pulse-core exec node --expose-gc --import tsx bench/soroban-throughput.ts
+```
+
+The harness subscribes `N` contract watchers with exact `contractIds` filters, synthesizes `getEvents` responses, and replays each RPC event through the engine's normalize + route + emit path. Use `--responses=100 --events-per-response=100` to scale the replay size.
+
+#### Baseline numbers (Node v24.12.0, 10 responses x 100 events)
+
+| Contract subscriptions (`N`) | RPC events | Routed events | Duration (ms) | Events/sec | Subscribed heap (MB) | Post-replay heap (MB) | Post-replay RSS (MB) |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| 1,000 | 1,000 | 2,000 | 473.32 | 4,225.49 | 18.80 | 18.79 | 122.21 |
+| 5,000 | 1,000 | 2,000 | 2,362.72 | 846.48 | 23.19 | 22.56 | 127.73 |
+| 10,000 | 1,000 | 2,000 | 5,290.83 | 378.01 | 28.56 | 27.30 | 130.18 |
+
+Each matching contract subscription receives both the typed event and the `*` wildcard event. Results vary by CPU, Node version, and runtime load; rerun locally to compare changes over time.
+
 ## Current limitations
 
-- **Soroban contract events are not yet covered.** The full classic operation taxonomy is shipped in `v0.1.0`; Soroban event subscription via Stellar RPC lands in Phase 1 (`v1.0`, Q2–Q3 2026). Open issues tracked under [`core-engine`](https://github.com/determined-001/orbital_stellar/labels/core-engine).
+- **Soroban subscription is still Phase 1 work.** Contract event normalization and in-process routing are present, with RPC handoff and restart resiliency covered by tests. Production cursor persistence and broader RPC integration continue under Phase 1 (`v1.0`, Q2–Q3 2026). Open issues tracked under [`core-engine`](https://github.com/determined-001/orbital_stellar/labels/core-engine).
 - **In-process only.** Horizontal scale and multi-region coordination belong in the deployment layer, not in the SDK. See [`docs/open-source-policy.md`](../../docs/open-source-policy.md) for the public/private boundary.
 - **Cursor starts at `now` on every run.** Resume-from-cursor with pluggable adapters ships in Phase 1 — see [`ROADMAP.md`](../../ROADMAP.md#wave-13--cursor-persistence-and-replay-primitives).
 
