@@ -1,5 +1,27 @@
 import type { ContractSubscriptionFilter, ContractAddress } from "./index.js";
 
+class LruSet {
+  private readonly map = new Map<string, 1>();
+
+  constructor(private readonly maxSize: number) {}
+
+  has(id: string): boolean {
+    return this.map.has(id);
+  }
+
+  add(id: string): void {
+    if (this.map.has(id)) this.map.delete(id);
+    this.map.set(id, 1);
+    if (this.map.size > this.maxSize) {
+      this.map.delete(this.map.keys().next().value as string);
+    }
+  }
+
+  get size(): number {
+    return this.map.size;
+  }
+}
+
 /**
  * SorobanSubscriber — polls a Soroban RPC for contract events and forwards
  * them to a caller-supplied handler.
@@ -274,7 +296,7 @@ export class SorobanSubscriber {
     const promises = rpcCalls.map((filters) =>
       this.rpc.getEvents(
         currentCursor,
-        this.pageSize,
+        this.pageLimit,
         signal,
         filters.length > 0 ? filters : undefined
       )
