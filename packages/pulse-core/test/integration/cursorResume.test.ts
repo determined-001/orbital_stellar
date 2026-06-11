@@ -32,7 +32,7 @@ function createMemoryStore() {
   return {
     async getCursor() { return cursor; },
     async saveCursor(c: string) { cursor = c; },
-    async cleanup?() { /* noop */ },
+    async cleanup() { /* noop */ },
   } as any;
 }
 

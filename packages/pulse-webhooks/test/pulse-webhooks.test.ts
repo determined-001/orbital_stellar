@@ -976,6 +976,7 @@ describe("pulse-webhooks verifyWebhookRaw", () => {
       signature,
       "top-secret",
       timestamp,
+      { nowMs: Number(timestamp) },
     );
 
     expect(result).toBe(true);
@@ -1022,6 +1023,7 @@ describe("pulse-webhooks verifyWebhookRaw", () => {
       signature,
       "top-secret",
       timestamp,
+      { nowMs: Number(timestamp) },
     );
 
     expect(result).toBe(true);

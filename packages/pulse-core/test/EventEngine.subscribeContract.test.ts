@@ -102,8 +102,8 @@ describe("EventEngine.subscribeContract — filter predicate", () => {
 
     expect(handler).not.toHaveBeenCalled();
     expect(log.warn).toHaveBeenCalledWith(
-      "[pulse-core] subscribe() filter threw for address sub1 — treating as reject.",
-      filterError
+      "[pulse-core] subscribe() filter threw for address. Treating as reject.",
+      { address: "sub1", error: filterError }
     );
 
     // Verify engine continues to deliver to other watchers

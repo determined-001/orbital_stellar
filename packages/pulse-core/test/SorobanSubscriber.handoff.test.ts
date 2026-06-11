@@ -2,7 +2,12 @@ import { expect, describe, it, beforeEach } from "vitest";
 import { SorobanRpcError } from "../src/errors.js";
 import { SorobanSubscriber } from "../src/SorobanSubscriber.js";
 import { FakeSorobanRpc } from "./fakes/FakeSorobanRpc.js";
-import { SorobanSubscriber } from "../src/SorobanSubscriber.js";
+
+/** Flushes the microtask/timer queue so start()-driven polls settle. */
+async function flushAsyncSubscriberWork(): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  for (let i = 0; i < 5; i++) await Promise.resolve();
+}
 
 // --- Self-Contained In-Memory Cursor Store Implementation ---
 export class MemoryCursorStore {

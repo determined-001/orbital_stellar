@@ -1,3 +1,4 @@
+import { describe, it, expect } from "vitest";
 import { MemoryCursorStore } from "../src/MemoryCursorStore";
 
 describe("MemoryCursorStore", () => {
