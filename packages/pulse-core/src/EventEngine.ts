@@ -2,8 +2,9 @@ import { Horizon } from "@stellar/stellar-sdk";
 import { Watcher } from "./Watcher.js";
 import { EngineAlreadyStartedError, HorizonStreamError } from "./errors.js";
 import { SorobanSubscriber } from "./SorobanSubscriber.js";
-import type { ReplayOptions } from "./SorobanSubscriber.js";
+import type { SorobanRpcLike, SorobanEvent } from "./SorobanSubscriber.js";
 import { toAccountAddress, toContractAddress } from "./address.js";
+import { toStellarAmount } from "./amount.js";
 import type { ContractAddress } from "./address.js";
 import type {
   AccountCreatedEvent,
@@ -68,6 +69,13 @@ type NormalizedEventOrPending =
   | ContractInvokedEvent
   | ContractEmittedEvent;
 
+/**
+ * Adds the lazy, non-enumerable `timestampDate` getter to an event type.
+ * Applied at runtime by {@link withTimestampDate} once an event has been
+ * normalized, so every event leaving the engine carries it.
+ */
+type Timestamped<T> = T & { readonly timestampDate: Date };
+
 type StreamCallbacks = {
   onmessage: (record: unknown) => void;
   onerror: (error: unknown) => void;
@@ -110,7 +118,7 @@ function stableFilterKey(filters: ContractFilter[]): string {
  * The Date is parsed from `event.timestamp` on first access and cached.
  * JSON.stringify output is unaffected because the property is non-enumerable.
  */
-function withTimestampDate<T extends { timestamp: string }>(event: T): T {
+function withTimestampDate<T extends { timestamp: string }>(event: T): Timestamped<T> {
   let cached: Date | undefined;
   Object.defineProperty(event, "timestampDate", {
     enumerable: false,
@@ -120,7 +128,7 @@ function withTimestampDate<T extends { timestamp: string }>(event: T): T {
       return cached;
     },
   });
-  return event;
+  return event as Timestamped<T>;
 }
 
 export class EventEngine {
@@ -155,6 +163,14 @@ export class EventEngine {
   private consecutiveCursorFailures = 0;
   private isCursorStoreUnhealthy = false;
   private pausedSources = new Set<"horizon" | "soroban">();
+  /**
+   * Optional live Soroban subscriber. Wired only when the engine is configured
+   * for live contract streaming; otherwise undefined, and the guarded calls
+   * throughout the engine are no-ops.
+   */
+  private sorobanSubscriber?: SorobanSubscriber;
+  /** Optional ABI registry used to enrich `contract.emitted` events with `decodedData`. */
+  private abiRegistry?: AbiRegistryClientLike;
 
 
   /**
@@ -186,6 +202,9 @@ export class EventEngine {
       ...config.reconnect,
     };
     this.log = config.logger ?? noop;
+    this.streamKey = config.streamKey ?? "pulse-core-cursor";
+    this.cursorFailureThreshold = config.cursorFailureThreshold ?? 5;
+    this.abiRegistry = config.abiRegistry;
   }
 
   /**
@@ -838,50 +857,6 @@ export class EventEngine {
     return Number.isNaN(date) ? null : Math.max(date - Date.now(), 0);
   }
 
-  private getHeaderValue(error: unknown, headerName: string): string | null {
-    const e = error as Record<string, unknown>;
-    const directHeader =
-      typeof e[headerName.toLowerCase()] === "string"
-        ? (e[headerName.toLowerCase()] as string)
-        : typeof e[headerName] === "string"
-          ? (e[headerName] as string)
-          : null;
-    if (directHeader) {
-      return directHeader;
-    }
-
-    const response = e.response as Record<string, unknown> | undefined;
-    const candidates = [e.headers, response?.headers];
-
-    for (const headers of candidates) {
-      if (!headers || typeof headers !== "object") {
-        continue;
-      }
-
-      if (typeof (headers as any).get === "function") {
-        const value =
-          (headers as any).get(headerName) ??
-          (headers as any).get(headerName.toLowerCase());
-        if (typeof value === "string") {
-          return value;
-        }
-      }
-
-      const value =
-        typeof (headers as any)[headerName] === "string"
-          ? (headers as any)[headerName]
-          : typeof (headers as any)[headerName.toLowerCase()] === "string"
-            ? (headers as any)[headerName.toLowerCase()]
-            : null;
-
-      if (typeof value === "string") {
-        return value;
-      }
-    }
-
-    return null;
-  }
-
   private closeStream(): void {
     if (!this.stopStream) {
       return;
@@ -944,7 +919,7 @@ export class EventEngine {
     return name !== undefined ? `${name} (${key})` : `address ${key}`;
   }
 
-  private normalize(record: unknown): NormalizedEventOrPending | null {
+  private normalize(record: unknown): Timestamped<NormalizedEventOrPending> | null {
     const result = this._normalize(record);
     return result ? withTimestampDate(result) : null;
   }
@@ -974,7 +949,7 @@ export class EventEngine {
         type: "unknown",
         to: toAccountAddress(r.to as string),
         from: toAccountAddress(r.from as string),
-        amount: r.amount as string,
+        amount: toStellarAmount(r.amount as string),
         asset,
         timestamp: r.created_at as string,
         raw: record,
@@ -1089,7 +1064,7 @@ export class EventEngine {
       source: toAccountAddress(r.source_account),
       buying_asset,
       selling_asset,
-      amount,
+      amount: toStellarAmount(amount),
       price: r.price as string,
       timestamp: r.created_at,
       raw,
@@ -1323,7 +1298,7 @@ export class EventEngine {
         predicate: c.predicate,
       })),
       asset,
-      amount: r.amount as string,
+      amount: toStellarAmount(r.amount as string),
       timestamp: r.created_at as string,
       raw,
     };
@@ -1512,16 +1487,14 @@ export class EventEngine {
   ): ContractInvokedEvent | null {
     if (typeof r.contract_id !== "string" || r.contract_id === "") return null;
     if (typeof r.function !== "string") return null;
-    if (typeof r.ledger !== "number") return null;
-    if (typeof r.txHash !== "string") return null;
     if (typeof r.created_at !== "string") return null;
     return {
       type: "contract.invoked",
       contractId: toContractAddress(r.contract_id),
       function: r.function,
       args: Array.isArray(r.args) ? (r.args as unknown[]) : [],
-      ledger: r.ledger,
-      txHash: r.txHash,
+      ...(typeof r.ledger === "number" ? { ledger: r.ledger } : {}),
+      ...(typeof r.txHash === "string" ? { txHash: r.txHash } : {}),
       timestamp: r.created_at,
       raw,
     };
@@ -1532,9 +1505,6 @@ export class EventEngine {
     raw: unknown
   ): ContractEmittedEvent | null {
     if (typeof r.contract_id !== "string" || r.contract_id === "") return null;
-    if (typeof r.ledger !== "number") return null;
-    if (typeof r.eventId !== "string") return null;
-    if (typeof r.txHash !== "string") return null;
     if (typeof r.created_at !== "string") return null;
     return {
       type: "contract.emitted",
@@ -1542,9 +1512,9 @@ export class EventEngine {
       topics: Array.isArray(r.topics) ? (r.topics as string[]) : [],
       data: r.data ?? null,
       decodedData: r.decodedData,
-      ledger: r.ledger,
-      eventId: r.eventId,
-      txHash: r.txHash,
+      ...(typeof r.ledger === "number" ? { ledger: r.ledger } : {}),
+      ...(typeof r.eventId === "string" ? { eventId: r.eventId } : {}),
+      ...(typeof r.txHash === "string" ? { txHash: r.txHash } : {}),
       inSuccessfulContractCall: Boolean(r.inSuccessfulContractCall),
       timestamp: r.created_at,
       raw,
@@ -1567,7 +1537,7 @@ export class EventEngine {
   }
 
   private matchesContractFilters(
-    event: { type: string; contractId: ContractAddress; topics: string[] },
+    event: ContractInvokedEvent | ContractEmittedEvent,
     filters: ContractSubscriptionFilter[]
   ): boolean {
     // No filters = match everything
@@ -1594,16 +1564,18 @@ export class EventEngine {
   }
 
   /** Dispatch a contract event (invoked or emitted) to all matching contract watchers. */
-  private dispatchContractEvent(event: ContractInvokedEvent | ContractEmittedEvent): void {
-    for (const { watcher, filters } of this.contractRegistry.values()) {
-      if (this.matchesContractFilters(event, filters)) {
+  private dispatchContractEvent(event: Timestamped<ContractInvokedEvent | ContractEmittedEvent>): void {
+    for (const [id, { watcher, filters }] of this.contractRegistry.entries()) {
+      // Structural contractId/topic filters first, then the optional
+      // per-subscription predicate (keyed by subscription id).
+      if (this.matchesContractFilters(event, filters) && this.passesFilter(id, event)) {
         watcher.emit(event.type, event);
         watcher.emit("*", event);
       }
     }
   }
 
-  private route(event: NormalizedEventOrPending): void {
+  private route(event: Timestamped<NormalizedEventOrPending>): void {
     // Check if Soroban source is paused for contract events
     if ((event.type === "contract.invoked" || event.type === "contract.emitted") && this.pausedSources.has("soroban")) {
       return;
@@ -1834,11 +1806,13 @@ export class EventEngine {
   private withResolvedType(
     event: PendingPaymentEvent,
     type: PaymentEventType,
-  ): PaymentEvent {
-    return {
+  ): Timestamped<PaymentEvent> {
+    // `timestampDate` is a non-enumerable getter, so spreading drops it —
+    // re-attach it to the resolved event so derived payment events carry it too.
+    return withTimestampDate({
       ...event,
       type,
-    };
+    });
   }
 }
 
@@ -1923,6 +1897,7 @@ export function normalizeContractEvent(
     contractId,
     txHash,
     ledger,
+    ledgerClosedAt,
     type,
     inSuccessfulContractCall,
     topic,
@@ -1935,13 +1910,14 @@ export function normalizeContractEvent(
       return null;
     }
     return {
-      type: "contract.invoked",
+      type: "contract_invoked",
+      id: String(e.id),
+      pagingToken: String(e.pagingToken),
       contractId: String(contractId),
-      function: String(rawRpcEvent.function),
-      args: Array.isArray(rawRpcEvent.args) ? (rawRpcEvent.args as unknown[]) : [],
       txHash: String(txHash),
       ledger: Number(ledger),
-      timestamp: typeof created_at === "string" ? created_at : new Date().toISOString(),
+      ledgerClosedAt: String(ledgerClosedAt),
+      inSuccessfulContractCall: Boolean(inSuccessfulContractCall),
       raw: rawRpcEvent,
     };
   }
@@ -1956,7 +1932,9 @@ export function normalizeContractEvent(
     }
 
     return {
-      type: "contract.emitted",
+      type: "contract_emitted",
+      id: String(e.id),
+      pagingToken: String(e.pagingToken),
       contractId: String(contractId),
       txHash: String(txHash),
       ledger: Number(ledger),

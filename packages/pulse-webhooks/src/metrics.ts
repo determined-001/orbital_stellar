@@ -11,35 +11,38 @@ export class CountingWebhookMetrics implements WebhookMetrics {
     Array<{
       attempt: number;
       durationMs: number;
-      status: "success" | "failure";
+      status: number | "timeout" | "error";
     }>
   >();
-  private readonly terminalOutcomes = new Map<string, "success" | "failure">();
+  private readonly terminalOutcomes = new Map<
+    string,
+    "success" | "failed" | "dropped"
+  >();
 
   recordAttempt(
     url: string,
     attempt: number,
     durationMs: number,
-    status: "success" | "failure",
+    status: number | "timeout" | "error",
   ): void {
     const existing = this.attemptsByUrl.get(url) ?? [];
     existing.push({ attempt, durationMs, status });
     this.attemptsByUrl.set(url, existing);
   }
 
-  recordTerminal(url: string, outcome: "success" | "failure"): void {
+  recordTerminal(url: string, outcome: "success" | "failed" | "dropped"): void {
     this.terminalOutcomes.set(url, outcome);
   }
 
   getAttempts(url: string): Array<{
     attempt: number;
     durationMs: number;
-    status: "success" | "failure";
+    status: number | "timeout" | "error";
   }> {
     return [...(this.attemptsByUrl.get(url) ?? [])];
   }
 
-  getTerminalOutcome(url: string): "success" | "failure" | undefined {
+  getTerminalOutcome(url: string): "success" | "failed" | "dropped" | undefined {
     return this.terminalOutcomes.get(url);
   }
 }

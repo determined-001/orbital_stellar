@@ -44,10 +44,11 @@ export type WebhookDroppedRaw = {
   originalEvent: NormalizedEvent;
 };
 
-type ResolvedWebhookConfig = Omit<Required<WebhookConfig>, "url" | "tracer" | "urlValidator"> & {
+type ResolvedWebhookConfig = Omit<Required<WebhookConfig>, "url" | "tracer" | "urlValidator" | "metrics"> & {
   urls: string[];
   tracer?: Tracer;
   urlValidator?: WebhookConfig["urlValidator"];
+  metrics?: WebhookConfig["metrics"];
 };
 
 export class WebhookDelivery {

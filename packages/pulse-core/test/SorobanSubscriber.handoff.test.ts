@@ -17,13 +17,6 @@ export class MemoryCursorStore {
   }
 }
 
-async function flushAsyncSubscriberWork(): Promise<void> {
-  for (let i = 0; i < 10; i += 1) {
-    await Promise.resolve();
-  }
-}
-
-
 // --- Complete 4 Scenario Invariant Handoff Test Suite ---
 describe("SorobanSubscriber Handoff & Restart Resiliency", () => {
   let fakeRpc: FakeSorobanRpc;

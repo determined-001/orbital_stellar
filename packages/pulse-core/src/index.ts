@@ -1,44 +1,35 @@
 import { CursorStore } from "./CursorStore.js";
+import type { StellarAmount } from "./amount.js";
+import type { AccountAddress, MuxedAddress, ContractAddress } from "./address.js";
 export { SorobanRpcClient } from "./SorobanRpcClient.js";
 export type { SorobanRpcClientOptions } from "./SorobanRpcClient.js";
 export { EventEngine } from "./EventEngine.js";
 export { SorobanSubscriber } from "./SorobanSubscriber.js";
-export type { SorobanSubscriberOptions, ReconnectingPayload } from "./SorobanSubscriber.js";
+export type {
+  SorobanSubscriberOptions,
+  ReconnectingPayload,
+  SorobanRpc,
+  SorobanEvent,
+  CursorStore as SorobanCursorStore,
+} from "./SorobanSubscriber.js";
 export { validateContractFilters } from "./contractFilters.js";
 export { Watcher } from "./Watcher.js";
-export { EngineAlreadyStartedError, HorizonStreamError, SorobanRpcError, isSorobanRpcError } from "./errors.js";
-export type { SorobanRpcErrorCode, SorobanRpcErrorOptions } from "./errors.js";
-export type { SorobanGetEventsResponse, SorobanRpcClientOptions, SorobanRpcEvent } from "./SorobanRpcClient.js";
+export type { StellarAmount } from "./amount.js";
+export type { AccountAddress, MuxedAddress, ContractAddress } from "./address.js";
+export { EngineAlreadyStartedError, HorizonStreamError } from "./errors.js";
 export { StrKey } from "@stellar/stellar-sdk";
 export { CursorStore } from "./CursorStore.js";
-export { PostgresCursorStore, PgLike } from "./PostgresCursorStore.js";
+export { MemoryCursorStore } from "./MemoryCursorStore.js";
+export { FileCursorStore } from "./FileCursorStore.js";
+export { PostgresCursorStore } from "./PostgresCursorStore.js";
+export type { PgLike } from "./PostgresCursorStore.js";
+export { RedisCursorStore } from "./RedisCursorStore.js";
+export { S3CursorStore } from "./S3CursorStore.js";
 export { cacheCursorStore } from "./cacheCursorStore.js";
-export { migrateCursors } from "./migrateCursors.js";
-export type { MigrateCursorsResult } from "./migrateCursors.js";
-export { RedisCursorStore, RedisLike } from "./RedisCursorStore.js";
 export { coalesceCursorStore, CoalescingStore } from "./coalesceCursorStore.js";
 export type { CoalescingStoreOptions } from "./coalesceCursorStore.js";
-export { evaluatePredicate, normalizeClaimPredicate, isClaimPredicateType } from "./claimPredicate.js";
-export type { ClaimPredicate } from "./claimPredicate.js";
-export type { StellarAmount } from "./amount.js";
-export { toBigInt } from "./amount.js";
-export {
-  isAccountAddress,
-  isMuxedAddress,
-  isContractAddress,
-  isStellarAddress,
-  toAccountAddress,
-  toMuxedAddress,
-  toContractAddress,
-} from "./address.js";
-export type {
-  AccountAddress,
-  MuxedAddress,
-  ContractAddress,
-  StellarAddress,
-} from "./address.js";
-
-import type { AccountAddress, ContractAddress, MuxedAddress } from "./address.js";
+export { migrateCursors } from "./migrateCursors.js";
+export type { MigrateCursorsResult } from "./migrateCursors.js";
 
 /** The Stellar network to connect to. */
 export type Network = "mainnet" | "testnet";
@@ -388,8 +379,6 @@ export type WatcherNotification = {
   emittedAt: string;
   /** The cursor value that was expired or lost, if applicable. */
   lostCursor?: string;
-  /** The source engine that encountered the expired cursor. */
-  source?: "horizon" | "soroban";
 };
 
 /**
@@ -454,6 +443,8 @@ export type CoreConfig = {
   streamKey?: string;
   /** Number of consecutive cursor store failures before marking it unhealthy. Defaults to 5. */
   cursorFailureThreshold?: number;
+  /** Optional ABI registry client used to enrich `contract.emitted` events with `decodedData`. */
+  abiRegistry?: AbiRegistryClientLike;
   /** Soroban RPC configuration. */
   soroban?: {
     /** Pagination limit for RPC `getEvents` calls. Must be 1–10,000. Defaults to 100. */
@@ -501,10 +492,10 @@ export type ContractInvokedEvent = {
   function: string;
   /** Ordered list of arguments passed to the function. */
   args: unknown[];
-  /** The ledger sequence number where the invocation occurred. */
-  ledger: number;
-  /** The transaction hash of the transaction containing this invocation. */
-  txHash: string;
+  /** The ledger sequence number where the invocation occurred, when available. */
+  ledger?: number;
+  /** The transaction hash of the transaction containing this invocation, when available. */
+  txHash?: string;
   /** ISO 8601 timestamp of the invocation. */
   timestamp: string;
   /** The original raw record from the Soroban API. */
@@ -527,6 +518,14 @@ export type ContractEmittedEvent = {
    * decode error, or when no registry is configured.
    */
   decodedData?: unknown;
+  /** Ledger sequence number where the event was emitted, when available. */
+  ledger?: number;
+  /** Unique event identifier from the Soroban RPC, when available. */
+  eventId?: string;
+  /** Transaction hash containing this event, when available. */
+  txHash?: string;
+  /** Whether the emitting contract call succeeded, when available. */
+  inSuccessfulContractCall?: boolean;
   timestamp: string;
   /** The original raw record from the Soroban API. */
   raw: unknown;
