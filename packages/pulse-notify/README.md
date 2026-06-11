@@ -38,6 +38,84 @@ export function LiveBalance({ address }: { address: string }) {
 }
 ```
 
+## Testing
+
+Install `msw` and an `EventSource` polyfill as devDependencies:
+
+```bash
+pnpm add -D msw
+# Node lacks EventSource, so provide one:
+pnpm add -D eventsource
+```
+
+This package's own `test/connectionPool.test.ts` shows the `EventSource` polyfill style used for hook tests.
+
+```ts
+import { http, HttpResponse } from "msw";
+import { setupServer } from "msw/node";
+import { renderHook, act } from "@testing-library/react";
+import { useStellarActivity } from "@orbital/pulse-notify";
+
+class MockEventSource {
+  static instances: MockEventSource[] = [];
+
+  onopen: (() => void) | null = null;
+  onmessage: ((event: { data: string }) => void) | null = null;
+  onerror: (() => void) | null = null;
+  closeCount = 0;
+
+  constructor(public url: string) {
+    MockEventSource.instances.push(this);
+    setTimeout(() => this.onopen?.(), 0);
+  }
+
+  close() {
+    this.closeCount += 1;
+  }
+
+  emit(event: unknown) {
+    this.onmessage?.({ data: JSON.stringify(event) });
+  }
+}
+
+globalThis.EventSource = MockEventSource as unknown as typeof EventSource;
+
+const server = setupServer(
+  http.get("https://events.example.com/events/:address", () => {
+    return new HttpResponse(null, {
+      status: 200,
+      headers: { "Content-Type": "text/event-stream" },
+    });
+  })
+);
+
+beforeAll(() => server.listen());
+afterEach(() => server.resetHandlers());
+afterAll(() => server.close());
+
+test("receives events from EventSource", async () => {
+  const { result, waitForNextUpdate } = renderHook(() =>
+    useStellarActivity("https://events.example.com", "GABC")
+  );
+
+  await waitForNextUpdate();
+
+  act(() => {
+    MockEventSource.instances[0]?.emit({
+      type: "payment.received",
+      amount: "10",
+      asset: "XLM",
+      from: "GB...",
+      timestamp: new Date().toISOString(),
+    });
+  });
+
+  expect(result.current.event?.type).toBe("payment.received");
+});
+```
+
+This pattern keeps tests fast and deterministic while still validating the hook's SSE wiring.
+
 ## Hooks
 
 ### `useStellarEvent(serverUrl, address, options?)`

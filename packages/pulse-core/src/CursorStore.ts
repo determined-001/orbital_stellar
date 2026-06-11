@@ -1,10 +1,12 @@
 /**
- * Pluggable durable store abstract base class for the Horizon stream cursor.
+ * Pluggable durable store for the Horizon stream cursor.
  *
- * Concrete adapters must implement `get` and `set`. The `getMany` and `setMany`
- * methods have default implementations that delegate to the single-key operations
- * sequentially; adapters capable of batching (e.g. Postgres, Redis) may override
- * them for efficiency.
+ * Subclasses must implement the single-key {@link get} and {@link set}
+ * primitives. The batch helpers ({@link getMany} / {@link setMany}) and
+ * {@link getAll} ship with default implementations built on those primitives,
+ * so a minimal store only needs `get` and `set`. Stores backed by a database
+ * that can do batched or set-based I/O (e.g. Postgres) should override the
+ * batch helpers for efficiency.
  */
 export abstract class CursorStore {
   /**
@@ -19,19 +21,13 @@ export abstract class CursorStore {
   abstract set(streamKey: string, cursor: string): Promise<void>;
 
   /**
-   * Optional liveness probe. If present, EventEngine.healthCheck() will call
-   * it and report ok: false if it rejects.
+   * Retrieves cursors for many stream keys at once.
+   *
+   * Default implementation calls {@link get} once per key. Returns an empty
+   * object for an empty input without issuing any reads. Keys with no stored
+   * cursor map to `null`. Errors from {@link get} propagate unchanged.
    */
-  ping?(): Promise<void>;
-
-  /**
-   * Returns all stored stream-key → cursor entries.
-   * Used by the cursor migration utility to bulk-copy state between stores.
-   */
-  getAll?(): Promise<Array<{ streamKey: string; cursor: string }>>;
-
   async getMany(keys: string[]): Promise<Record<string, string | null>> {
-    if (keys.length === 0) return {};
     const result: Record<string, string | null> = {};
     for (const key of keys) {
       result[key] = await this.get(key);
@@ -39,11 +35,33 @@ export abstract class CursorStore {
     return result;
   }
 
+  /**
+   * Stores or updates many cursors at once.
+   *
+   * Default implementation calls {@link set} once per entry in
+   * `Object.entries` order. Returns without writing for an empty input.
+   * Errors from {@link set} propagate unchanged.
+   */
   async setMany(entries: Record<string, string>): Promise<void> {
-    const pairs = Object.entries(entries);
-    if (pairs.length === 0) return;
-    for (const [key, value] of pairs) {
+    for (const [key, value] of Object.entries(entries)) {
       await this.set(key, value);
     }
   }
+
+  /**
+   * Enumerates every stored cursor. Only meaningful for stores that can list
+   * their contents (e.g. Postgres); the default throws because most stores
+   * cannot enumerate keys. Used by {@link migrateCursors}.
+   */
+  async getAll(): Promise<Array<{ streamKey: string; cursor: string }>> {
+    throw new Error(
+      `${this.constructor.name} does not support getAll(); cursor enumeration is unavailable for this store.`
+    );
+  }
+
+  /**
+   * Optional liveness probe used by the engine health check. Stores backed by
+   * a network service may implement this to verify connectivity.
+   */
+  ping?: () => Promise<unknown>;
 }

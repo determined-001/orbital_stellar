@@ -2,6 +2,7 @@ import { createHmac } from "crypto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { Watcher } from "@orbital/pulse-core";
+import type { WebhookMetrics } from "../src/index.js";
 import {
   DeadLetterStore,
   verifyWebhook,
@@ -100,6 +101,85 @@ describe("pulse-webhooks WebhookDelivery", () => {
         method: "POST",
         body: payload,
       }),
+    );
+  });
+
+  it("records each webhook attempt and terminal success outcome", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200 });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const metrics: WebhookMetrics = {
+      recordAttempt: vi.fn(),
+      recordTerminal: vi.fn(),
+    };
+
+    const watcher = new Watcher("GABC");
+    new WebhookDelivery(watcher, {
+      url: "https://prod.example.com/webhooks/stellar",
+      secret: "top-secret",
+      metrics,
+    });
+
+    watcher.emit("*", deliveryEvent);
+    await flushAsyncWork();
+
+    expect(metrics.recordAttempt).toHaveBeenCalledTimes(1);
+    expect(metrics.recordAttempt).toHaveBeenCalledWith(
+      "https://prod.example.com/webhooks/stellar",
+      1,
+      expect.any(Number),
+      "success",
+    );
+    expect(metrics.recordTerminal).toHaveBeenCalledTimes(1);
+    expect(metrics.recordTerminal).toHaveBeenCalledWith(
+      "https://prod.example.com/webhooks/stellar",
+      "success",
+    );
+  });
+
+  it("records all attempts and terminal failure when final delivery fails", async () => {
+    const fetchMock = vi.fn().mockRejectedValue(new Error("network down"));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const metrics: WebhookMetrics = {
+      recordAttempt: vi.fn(),
+      recordTerminal: vi.fn(),
+    };
+
+    const watcher = new Watcher("GABC");
+    new WebhookDelivery(watcher, {
+      url: "https://prod.example.com/webhooks/stellar",
+      secret: "top-secret",
+      retries: 2,
+      random: () => 0,
+      metrics,
+    });
+
+    watcher.emit("*", deliveryEvent);
+    await flushAsyncWork();
+
+    vi.advanceTimersByTime(0);
+    await flushAsyncWork();
+
+    expect(metrics.recordAttempt).toHaveBeenCalledTimes(2);
+    expect(metrics.recordAttempt).toHaveBeenNthCalledWith(
+      1,
+      "https://prod.example.com/webhooks/stellar",
+      1,
+      expect.any(Number),
+      "failure",
+    );
+    expect(metrics.recordAttempt).toHaveBeenNthCalledWith(
+      2,
+      "https://prod.example.com/webhooks/stellar",
+      2,
+      expect.any(Number),
+      "failure",
+    );
+    expect(metrics.recordTerminal).toHaveBeenCalledTimes(1);
+    expect(metrics.recordTerminal).toHaveBeenCalledWith(
+      "https://prod.example.com/webhooks/stellar",
+      "failure",
     );
   });
 
@@ -821,11 +901,17 @@ describe("pulse-webhooks verifyWebhookEdge", () => {
     const timestamp = String(nowMs + 20_000);
     const signature = signWebhookPayload("top-secret", payload, timestamp);
 
-    const event = await verifyWebhookEdge(payload, signature, "top-secret", timestamp, {
-      nowMs,
-      maxAgeMs: 60_000,
-      clockSkewMs: 30_000,
-    });
+    const event = await verifyWebhookEdge(
+      payload,
+      signature,
+      "top-secret",
+      timestamp,
+      {
+        nowMs,
+        maxAgeMs: 60_000,
+        clockSkewMs: 30_000,
+      },
+    );
 
     expect(event).toEqual(deliveryEvent);
   });
@@ -840,11 +926,17 @@ describe("pulse-webhooks verifyWebhookEdge", () => {
     const oldSig = signWebhookPayload("top-secret", payload, tooOldTs);
 
     expect(
-      await verifyWebhookEdge(payload, futureSig, "top-secret", tooFarFutureTs, {
-        nowMs,
-        maxAgeMs: 60_000,
-        clockSkewMs: 30_000,
-      }),
+      await verifyWebhookEdge(
+        payload,
+        futureSig,
+        "top-secret",
+        tooFarFutureTs,
+        {
+          nowMs,
+          maxAgeMs: 60_000,
+          clockSkewMs: 30_000,
+        },
+      ),
     ).toBeNull();
     expect(
       await verifyWebhookEdge(payload, oldSig, "top-secret", tooOldTs, {

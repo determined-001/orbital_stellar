@@ -3,3 +3,9 @@ packages:
   - "apps/*"
 allowBuilds:
   esbuild: false
+# pnpm v10 reads dependency overrides from here, NOT from package.json.
+# axios <1.16.0 has the Proxy-Authorization credential-leak advisories (GHSA-j5f8-grm9-p9fc et al.).
+overrides:
+  path-to-regexp: 0.1.13
+  vite: 7.3.3
+  axios: 1.17.0

@@ -6,29 +6,6 @@ export type SorobanNetworkInfo = {
   protocolVersion?: number;
 };
 
-export class SorobanRpcClient {
-  private static cachedNetwork: SorobanNetworkInfo | null = null;
-
-  static setCachedNetwork(info: SorobanNetworkInfo | null): void {
-    SorobanRpcClient.cachedNetwork = info;
-  }
-
-  static getCachedNetwork(): SorobanNetworkInfo | null {
-    return SorobanRpcClient.cachedNetwork;
-  }
-
-  static getNetwork(): SorobanNetworkInfo {
-    if (!SorobanRpcClient.cachedNetwork) {
-      throw new Error("SorobanRpcClient.getNetwork() called before network info was cached.");
-    }
-    return SorobanRpcClient.cachedNetwork;
-  }
-
-  static async fetchAndCacheNetwork(_url: string): Promise<SorobanNetworkInfo> {
-    throw new Error("fetchAndCacheNetwork not implemented");
-  }
-}
-
 /**
  * Options for creating a SorobanRpcClient.
  */
@@ -67,6 +44,27 @@ export interface SorobanRpcClientOptions {
  * ```
  */
 export class SorobanRpcClient {
+  private static cachedNetwork: SorobanNetworkInfo | null = null;
+
+  static setCachedNetwork(info: SorobanNetworkInfo | null): void {
+    SorobanRpcClient.cachedNetwork = info;
+  }
+
+  static getCachedNetwork(): SorobanNetworkInfo | null {
+    return SorobanRpcClient.cachedNetwork;
+  }
+
+  static getNetwork(): SorobanNetworkInfo {
+    if (!SorobanRpcClient.cachedNetwork) {
+      throw new Error("SorobanRpcClient.getNetwork() called before network info was cached.");
+    }
+    return SorobanRpcClient.cachedNetwork;
+  }
+
+  static async fetchAndCacheNetwork(_url: string): Promise<SorobanNetworkInfo> {
+    throw new Error("fetchAndCacheNetwork not implemented");
+  }
+
   private readonly url: string;
   private readonly headers: Record<string, string>;
 

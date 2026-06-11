@@ -42,9 +42,19 @@ export type DecodedValue =
   | boolean
   | number
   | string
-  | DecodedValue[]
-  | { key: DecodedValue; value: DecodedValue }[]
-  | Record<string, DecodedValue>;
+  | DecodedValueArray
+  | DecodedValueMap
+  | DecodedValueObject;
+
+/** Array of decoded values (interface indirection breaks the alias self-reference). */
+export interface DecodedValueArray extends Array<DecodedValue> {}
+/** Decoded Soroban map: an array of key/value pairs. */
+export interface DecodedValueMap
+  extends Array<{ key: DecodedValue; value: DecodedValue }> {}
+/** Decoded struct: string-keyed record of decoded values. */
+export interface DecodedValueObject {
+  [key: string]: DecodedValue;
+}
 
 /** A successfully decoded contract event. */
 export type DecodedEvent = {
