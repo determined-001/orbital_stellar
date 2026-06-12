@@ -69,7 +69,7 @@ export class PostgresRetryQueue implements RetryQueue {
         record.url,
         JSON.stringify(record.event),
         record.attempt,
-        new Date(record.nextAttemptAt),
+        new Date(record.nextRetryAt),
       ]);
     } else {
       // Legacy Postgres-specific signature
@@ -114,7 +114,7 @@ export class PostgresRetryQueue implements RetryQueue {
         url: row.url,
         event: typeof row.event === "string" ? JSON.parse(row.event) : row.event,
         attempt: row.attempt,
-        nextAttemptAt: new Date(row.next_attempt_at).getTime(),
+        nextRetryAt: new Date(row.next_attempt_at).getTime(),
       };
     } else {
       // Legacy Postgres-specific signature
@@ -168,13 +168,21 @@ export class PostgresRetryQueue implements RetryQueue {
       url: row.url,
       event: typeof row.event === "string" ? JSON.parse(row.event) : row.event,
       attempt: row.attempt,
-      nextAttemptAt: new Date(row.next_attempt_at).getTime(),
+      nextRetryAt: new Date(row.next_attempt_at).getTime(),
     };
   }
 
   /**
    * Returns the current number of items in the queue.
    */
+  async ack(recordId: string): Promise<void> {
+    await this.complete(recordId);
+  }
+
+  async nack(recordId: string, requeueDelayMs: number): Promise<void> {
+    await this.fail(recordId, new Date(Date.now() + requeueDelayMs));
+  }
+
   async size(): Promise<number> {
     const queryText = `SELECT COUNT(*)::int as count FROM ${this.tableName}`;
     const result = await this.pg.query(queryText);

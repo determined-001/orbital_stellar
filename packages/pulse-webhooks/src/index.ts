@@ -1,4 +1,4 @@
-import type { NormalizedEvent, Watcher, WatcherNotification } from "@orbital/pulse-core";
+import type { NormalizedEvent, Watcher, WatcherNotification } from "@orbital-stellar/pulse-core";
 import { createHmac, timingSafeEqual } from "crypto";
 
 import type { VerifyWebhookOptions, WebhookConfig } from "./types.js";
@@ -11,10 +11,13 @@ export type { PgLike, PostgresRetryQueueOptions } from "./PostgresRetryQueue.js"
 export type { VerifyWebhookOptions, WebhookConfig } from "./types.js";
 export type { RetryRecord, RetryQueue } from "./RetryQueue.js";
 
-type ResolvedWebhookConfig = Omit<Required<WebhookConfig>, "url" | "urlValidator" | "retryQueue"> & {
+type ResolvedWebhookConfig = Omit<Required<WebhookConfig>, "url" | "urlValidator" | "retryQueue" | "backoff" | "tracer" | "metrics"> & {
   urls: string[];
   urlValidator?: WebhookConfig["urlValidator"];
   retryQueue?: WebhookConfig["retryQueue"];
+  backoff?: WebhookConfig["backoff"];
+  tracer?: WebhookConfig["tracer"];
+  metrics?: WebhookConfig["metrics"];
 };
 
 export class WebhookDelivery {
@@ -106,20 +109,16 @@ export class WebhookDelivery {
         const id = Math.random().toString(36).slice(2);
 
         const record: RetryRecord = {
-          webhookId: url,
-          payload: event,
-          attemptCount: attempt,
-          nextRetryAt: nextAttemptAt,
-          createdAt: Date.now(),
           id,
           url,
           event,
           attempt,
-          nextAttemptAt,
+          nextRetryAt: nextAttemptAt,
+          createdAt: Date.now(),
         };
 
         if (this.config.retryQueue) {
-          this.config.retryQueue.enqueue(record);
+          void this.config.retryQueue.enqueue(record);
         } else {
           if (this.retryTimers.size >= this.config.maxConcurrentRetries) {
             const newestId = [...this.retryTimers.keys()].at(-1);
@@ -130,7 +129,7 @@ export class WebhookDelivery {
                 this.retryTimers.delete(newestId);
 
                 this.watcher.emit("webhook.dropped", {
-                  ...active.record.event,
+                  ...(active.record.event as Record<string, unknown>),
                   raw: {
                     reason: "retry_cap_exceeded",
                     url: active.record.url,

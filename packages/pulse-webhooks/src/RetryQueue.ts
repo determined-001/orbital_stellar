@@ -1,42 +1,50 @@
-export interface RetryRecord {
-  webhookId: string;
-  payload: any;
-  attemptCount: number;
-  nextRetryAt: number;
-  createdAt: number;
-  id?: string | number;
+export type RetryRecord<Event = unknown> = {
+  id: string;
+  event: Event;
   url: string;
-  event: any;
   attempt: number;
-  nextAttemptAt: number;
-}
+  nextRetryAt: number;
+  lastError?: string;
+  createdAt?: number;
+  metadata?: Record<string, unknown>;
+};
 
-export interface RetryQueue {
-  enqueue(record: RetryRecord): void;
-  dequeue(): RetryRecord | undefined;
-  evictNewest(): RetryRecord | undefined;
-  size(): number;
-}
+export type RetryQueue = {
+  enqueue(record: RetryRecord): Promise<void>;
+  dequeue(nowMs?: number): Promise<RetryRecord | null>;
+  ack(recordId: string): Promise<void>;
+  nack(recordId: string, requeueDelayMs: number): Promise<void>;
+  evictNewest(): Promise<RetryRecord | null>;
+  size(): Promise<number>;
+};
 
 export class MemoryRetryQueue implements RetryQueue {
   private queue: RetryRecord[] = [];
 
-  enqueue(record: RetryRecord): void {
+  async enqueue(record: RetryRecord): Promise<void> {
     this.queue.push(record);
   }
 
-  dequeue(): RetryRecord | undefined {
-    const now = Date.now();
-    const idx = this.queue.findIndex(r => r.nextRetryAt <= now);
-    if (idx === -1) return undefined;
-    return this.queue.splice(idx, 1)[0];
+  async dequeue(nowMs?: number): Promise<RetryRecord | null> {
+    const cutoff = nowMs ?? Date.now();
+    const idx = this.queue.findIndex(r => r.nextRetryAt <= cutoff);
+    if (idx === -1) return null;
+    return this.queue.splice(idx, 1)[0] ?? null;
   }
 
-  evictNewest(): RetryRecord | undefined {
-    return this.queue.pop();
+  async ack(_recordId: string): Promise<void> {
+    // no-op for in-memory
   }
 
-  size(): number {
+  async nack(_recordId: string, _requeueDelayMs: number): Promise<void> {
+    // no-op for in-memory
+  }
+
+  async evictNewest(): Promise<RetryRecord | null> {
+    return this.queue.pop() ?? null;
+  }
+
+  async size(): Promise<number> {
     return this.queue.length;
   }
 }
