@@ -1,11 +1,14 @@
+export type WebhookAttemptStatus = "success" | "failure";
+export type WebhookTerminalOutcome = "success" | "failure";
+
 export type WebhookMetrics = {
   recordAttempt(
     url: string,
     attempt: number,
     durationMs: number,
-    status: "success" | "failure",
+    status: WebhookAttemptStatus,
   ): void;
-  recordTerminal(url: string, outcome: "success" | "failure"): void;
+  recordTerminal(url: string, outcome: WebhookTerminalOutcome): void;
 };
 
 export type WebhookConfig = {
@@ -20,7 +23,7 @@ export type WebhookConfig = {
   /** Retry delay strategy. Defaults to `exponentialJittered`. */
   backoff?: import("./backoff.js").BackoffStrategy;
   /** Optional OpenTelemetry-compatible tracer. When provided, one span is emitted per delivery attempt. */
-  tracer?: Tracer;
+  tracer?: any;
   /** Optional custom URL validator for additional block-lists. Return an error message to reject, or null to allow. */
   urlValidator?: (url: string) => Promise<string | null>;
   /** Optional metrics observer for webhook delivery attempts and terminal outcomes. */
