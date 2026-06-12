@@ -23,7 +23,7 @@ Describe the API or behaviour change you have in mind. If you have a specific in
 What workarounds have you tried? Why don't they work for you?
 
 **Package / area affected**
-Which part of the codebase would this touch? (e.g. `@orbital/pulse-core`, `@orbital/pulse-notify`)
+Which part of the codebase would this touch? (e.g. `@orbital-stellar/pulse-core`, `@orbital-stellar/pulse-notify`)
 
 **Additional context**
 Links, prior art in similar projects, Stellar SEPs, etc.

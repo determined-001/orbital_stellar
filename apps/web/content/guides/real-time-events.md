@@ -1,19 +1,19 @@
 ---
 title: Real-time Events
-description: Stream live Stellar events with @orbital/pulse-core and React hooks.
+description: Stream live Stellar events with @orbital-stellar/pulse-core and React hooks.
 ---
 
 There are two ways to consume Orbital events in real time:
 
-1. **Server-side** — `@orbital/pulse-core` opens a streaming connection to Horizon directly. Use this in Node.js, edge workers, or background processes.
-2. **Browser-side** — `@orbital/pulse-notify` React hooks open a browser `EventSource` to a backend you operate (which uses `pulse-core` under the hood).
+1. **Server-side** — `@orbital-stellar/pulse-core` opens a streaming connection to Horizon directly. Use this in Node.js, edge workers, or background processes.
+2. **Browser-side** — `@orbital-stellar/pulse-notify` React hooks open a browser `EventSource` to a backend you operate (which uses `pulse-core` under the hood).
 
 The server-side path is the lowest layer; the React hooks sit on top.
 
 ## Server-side subscription with `pulse-core`
 
 ```ts
-import { EventEngine } from "@orbital/pulse-core";
+import { EventEngine } from "@orbital-stellar/pulse-core";
 
 const engine = new EventEngine({
   network: "testnet",
@@ -43,14 +43,14 @@ Always call `engine.stop()` in your shutdown path.
 
 ## Browser-side with React hooks
 
-`@orbital/pulse-notify` opens an `EventSource` connection to a backend that exposes Orbital events as Server-Sent Events. The `apps/web` marketing site ships a Next.js route handler that does this (`app/api/events/[address]/route.ts`); you can copy that or stand up an equivalent SSE endpoint with about 30 lines of `pulse-core` + Express in your own backend.
+`@orbital-stellar/pulse-notify` opens an `EventSource` connection to a backend that exposes Orbital events as Server-Sent Events. The `apps/web` marketing site ships a Next.js route handler that does this (`app/api/events/[address]/route.ts`); you can copy that or stand up an equivalent SSE endpoint with about 30 lines of `pulse-core` + Express in your own backend.
 
 ### Standing up an SSE endpoint
 
 If you're not using the reference server, here's the shape of what your backend needs to expose:
 
 ```ts
-import { EventEngine } from "@orbital/pulse-core";
+import { EventEngine } from "@orbital-stellar/pulse-core";
 import express from "express";
 
 const app = express();
@@ -83,7 +83,7 @@ Subscribe to one event type, several types, or all events on an address:
 
 ```tsx
 "use client";
-import { useStellarEvent } from "@orbital/pulse-notify";
+import { useStellarEvent } from "@orbital-stellar/pulse-notify";
 
 // Single type
 const { event, connected, error } = useStellarEvent(
@@ -142,8 +142,8 @@ useEffect(() => {
 `useStellarEvent` is generic — pass a narrower union as `T` to get full IDE support and avoid manual casts:
 
 ```tsx
-import type { NormalizedEvent } from "@orbital/pulse-core";
-import { useStellarEvent } from "@orbital/pulse-notify";
+import type { NormalizedEvent } from "@orbital-stellar/pulse-core";
+import { useStellarEvent } from "@orbital-stellar/pulse-notify";
 
 type WalletEvents = Extract<
   NormalizedEvent,

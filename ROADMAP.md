@@ -19,9 +19,9 @@
 |---|---|---|---|---|
 | **Phase 0 — Foundation** | Typed SDKs for Stellar classic operations | `v0.1.0` | `pnpm -r typecheck && pnpm test` green; tag pushed; CHANGELOG entry shipped | 🟢 **Released 2026-05-29** |
 | **Phase 1 — Production SDK** | Soroban + cursor persistence + stability pledge | `v1.0.0` | `pnpm publish -r --filter "./packages/*"` succeeds; STABILITY.md merged; Soroban e2e test green | ⚪ Q2–Q3 2026 |
-| **Phase 2 — SDK Ecosystem** | `@orbital/hooks`, `@orbital/payments`, `@orbital/auth`, first SEP | `v2.0.0` | First SEP submission accepted or under review by SDF; `useBalance` + `useTransaction` on npm | ⚪ 2027 |
+| **Phase 2 — SDK Ecosystem** | `@orbital-stellar/hooks`, `@orbital-stellar/payments`, `@orbital-stellar/auth`, first SEP | `v2.0.0` | First SEP submission accepted or under review by SDF; `useBalance` + `useTransaction` on npm | ⚪ 2027 |
 | **Phase 3 — Trust & Agent Layer** | x402, agent-sdk, intent compiler, shadow-fork | `v3.0.0` | x402 reference deployed; intent compiler OSS; ≥1,000 agent integrations | ⚪ 2028+ |
-| **Phase 4 — Protocol Permanence** | Identity layer, reactor library, 10+ SEPs | n/a | 10 SEPs authored or co-authored; Orbital identity in `@orbital/auth` ≥80% of major Stellar apps | ⚪ long-term |
+| **Phase 4 — Protocol Permanence** | Identity layer, reactor library, 10+ SEPs | n/a | 10 SEPs authored or co-authored; Orbital identity in `@orbital-stellar/auth` ≥80% of major Stellar apps | ⚪ long-term |
 
 ---
 
@@ -85,7 +85,7 @@
 
 ### Wave 1.2 — ABI Registry
 
-- [ ] `@orbital/abi-registry` client package (TBD final naming)
+- [ ] `@orbital-stellar/abi-registry` client package (TBD final naming)
 - [ ] Schema spec published as a draft SEP
 - [ ] Hosted registry service (operated; client is MIT — see [`docs/open-source-policy.md`](./docs/open-source-policy.md))
 - [ ] `decodedData` field on `contract.emitted` for registered contracts
@@ -105,7 +105,7 @@
 ### Wave 1.5 — Distribution
 
 - [ ] Starter boilerplates: `orbital-next-starter`, `orbital-express-starter`, `orbital-anchor-starter`
-- [ ] `pnpm add @orbital/pulse-core` works against npm
+- [ ] `pnpm add @orbital-stellar/pulse-core` works against npm
 - [ ] [`STABILITY.md`](./STABILITY.md) — semver contract, deprecation window (6 months), breaking-change policy
 - [ ] `v1.0.0` git tag with full release notes
 
@@ -115,12 +115,12 @@
 
 **Goal:** own the full Stellar developer SDK surface with a coherent, composable package family.
 
-**Release gate:** first SEP submission accepted or under review by SDF; at least three data hooks (`useBalance`, `useTransaction`, `useAccount`) shipped to npm under `@orbital/hooks`; reference reactor contract published.
+**Release gate:** first SEP submission accepted or under review by SDF; at least three data hooks (`useBalance`, `useTransaction`, `useAccount`) shipped to npm under `@orbital-stellar/hooks`; reference reactor contract published.
 
-- [ ] **`@orbital/hooks`** — complete data-hook library: `useAccount`, `useBalance`, `useTransaction`, `useOrderBook`, full account activity surface
-- [ ] **`@orbital/payments`** — transaction primitives: send, receive, path payment, payroll batch, with typed results
-- [ ] **`@orbital/auth`** — embedded wallets via WebAuthn/passkeys, fee sponsorship, WalletConnect
-- [ ] **`@orbital/analytics`** — client library and event-volume reference dashboards
+- [ ] **`@orbital-stellar/hooks`** — complete data-hook library: `useAccount`, `useBalance`, `useTransaction`, `useOrderBook`, full account activity surface
+- [ ] **`@orbital-stellar/payments`** — transaction primitives: send, receive, path payment, payroll batch, with typed results
+- [ ] **`@orbital-stellar/auth`** — embedded wallets via WebAuthn/passkeys, fee sponsorship, WalletConnect
+- [ ] **`@orbital-stellar/analytics`** — client library and event-volume reference dashboards
 - [ ] **Reactor contracts** — reference SDK and library of Soroban Rust contracts that react to events from other contracts
 - [ ] **First SEP submission** — formalize the event normalization format so other implementations can interoperate
 
@@ -130,11 +130,11 @@
 
 **Goal:** turn event subscriptions into programmable intent pipelines and capture the AI-agent economy on Stellar.
 
-**Release gate:** `@orbital/x402` middleware deployed in a public reference application; intent compiler OSS published; ≥1,000 agent integrations recorded against `@orbital/agent-sdk`.
+**Release gate:** `@orbital-stellar/x402` middleware deployed in a public reference application; intent compiler OSS published; ≥1,000 agent integrations recorded against `@orbital-stellar/agent-sdk`.
 
-- [ ] **`@orbital/x402`** — Express/Next.js middleware for payment-gated API access via the HTTP 402 / x402 protocol
-- [ ] **`@orbital/agent-sdk`** — payment client for autonomous AI agents; integrates with x402 for agent-to-agent and agent-to-service payments on Stellar
-- [ ] **`@orbital/anchor-sdk`** — client library for SEP-24 and SEP-31 lifecycle events
+- [ ] **`@orbital-stellar/x402`** — Express/Next.js middleware for payment-gated API access via the HTTP 402 / x402 protocol
+- [ ] **`@orbital-stellar/agent-sdk`** — payment client for autonomous AI agents; integrates with x402 for agent-to-agent and agent-to-service payments on Stellar
+- [ ] **`@orbital-stellar/anchor-sdk`** — client library for SEP-24 and SEP-31 lifecycle events
 - [ ] **Intent compiler** — declare "when X happens, do Y" as a typed intent; the compiler produces a webhook + reactor contract + replay policy
 - [ ] **Shadow-Fork simulator (OSS core)** — fork any ledger state, inject hypothetical operations, replay Soroban invocations
 - [ ] **Additional SEPs** — reactor contract spec, intent schema, attestation format

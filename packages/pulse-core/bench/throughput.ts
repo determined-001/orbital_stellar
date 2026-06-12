@@ -147,7 +147,7 @@ function main(): void {
       subscribed_heap_mb: result.memory.subscribedHeapMb,
       post_replay_heap_mb: result.memory.postReplayHeapMb,
       post_replay_rss_mb: result.memory.postReplayRssMb,
-    }))
+    })),
   );
 
   console.log("\nJSON results:");

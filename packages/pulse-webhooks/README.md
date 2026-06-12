@@ -1,9 +1,9 @@
-# @orbital/pulse-webhooks
+# @orbital-stellar/pulse-webhooks
 
 **HMAC-signed webhook delivery for Stellar events.** Attach to a `pulse-core` watcher and every event becomes one or more outbound HTTPS POSTs with a verifiable signature, retry on failure, and configurable timeout.
 
 ```bash
-pnpm add @orbital/pulse-webhooks @orbital/pulse-core
+pnpm add @orbital-stellar/pulse-webhooks @orbital-stellar/pulse-core
 ```
 
 ## What it does
@@ -15,8 +15,8 @@ Consumers verify the signature using the shared secret you provisioned — `veri
 ## Quickstart — sender side
 
 ```ts
-import { EventEngine } from "@orbital/pulse-core";
-import { WebhookDelivery } from "@orbital/pulse-webhooks";
+import { EventEngine } from "@orbital-stellar/pulse-core";
+import { WebhookDelivery } from "@orbital-stellar/pulse-webhooks";
 
 const engine = new EventEngine({ network: "testnet" });
 engine.start();
@@ -37,7 +37,7 @@ new WebhookDelivery(watcher, {
 ## Quickstart — receiver side
 
 ```ts
-import { verifyWebhook } from "@orbital/pulse-webhooks";
+import { verifyWebhook } from "@orbital-stellar/pulse-webhooks";
 import express from "express";
 
 const app = express();
@@ -71,7 +71,7 @@ app.post(
 Cloudflare Workers don't have Node.js crypto — they use Web Crypto API. Use `verifyWebhookEdge` for edge runtime compatibility:
 
 ```js
-import { verifyWebhookEdge } from "@orbital/pulse-webhooks";
+import { verifyWebhookEdge } from "@orbital-stellar/pulse-webhooks";
 
 export default {
   async fetch(request, env, ctx) {
@@ -157,7 +157,7 @@ When a delivery cannot be completed, the `Watcher` emits special events for rout
 Emitted after all retry attempts are exhausted for a given URL. The event payload is a `NormalizedEvent` where the `raw` field is a `WebhookFailureRaw` object:
 
 ```ts
-import type { WebhookFailureRaw } from "@orbital/pulse-webhooks";
+import type { WebhookFailureRaw } from "@orbital-stellar/pulse-webhooks";
 
 watcher.on("webhook.failed", (event) => {
   const meta = event.raw as WebhookFailureRaw;
@@ -171,7 +171,7 @@ watcher.on("webhook.failed", (event) => {
 Emitted when a pending retry is dropped because the `maxConcurrentRetries` cap has been reached. This happens before the retry is even attempted. The `raw` field is a `WebhookDroppedRaw` object:
 
 ```ts
-import type { WebhookDroppedRaw } from "@orbital/pulse-webhooks";
+import type { WebhookDroppedRaw } from "@orbital-stellar/pulse-webhooks";
 
 watcher.on("webhook.dropped", (event) => {
   const meta = event.raw as WebhookDroppedRaw;
@@ -197,7 +197,7 @@ watcher.on("webhook.dropped", (event) => {
 Failed webhooks are automatically tracked in a `DeadLetterStore`. Query failures by URL, time window, or limit.
 
 ```ts
-import { DeadLetterStore, WebhookDelivery } from "@orbital/pulse-webhooks";
+import { DeadLetterStore, WebhookDelivery } from "@orbital-stellar/pulse-webhooks";
 
 const dlq = new DeadLetterStore();
 

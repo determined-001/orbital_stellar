@@ -8,7 +8,7 @@
  *   4. Events at or beyond endLedger are NOT delivered.
  */
 
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach } from "vitest";
 import { EventEngine } from "../src/EventEngine.js";
 import type { SorobanRpcLike, SorobanEvent } from "../src/SorobanSubscriber.js";
 
@@ -44,7 +44,7 @@ class StubRpc implements SorobanRpcLike {
   async getEvents(
     startCursor: string | undefined,
     limit: number,
-    _signal?: AbortSignal
+    _signal?: AbortSignal,
   ): Promise<{ events: SorobanEvent[] }> {
     this.callCount++;
     const startIdx = startCursor

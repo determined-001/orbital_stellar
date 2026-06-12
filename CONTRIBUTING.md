@@ -73,12 +73,12 @@ pnpm test
 
 **Run tests for one package:**
 ```bash
-pnpm --filter @orbital/pulse-core test
+pnpm --filter @orbital-stellar/pulse-core test
 ```
 
 **Run tests in watch mode:**
 ```bash
-pnpm --filter @orbital/pulse-core exec vitest
+pnpm --filter @orbital-stellar/pulse-core exec vitest
 ```
 
 **Start the marketing/docs site:**
@@ -111,7 +111,7 @@ All packages use [Vitest](https://vitest.dev). Tests live in `packages/<name>/te
 
 - Write a test for every new public API.
 - Update existing tests when you change behaviour.
-- Coverage is tracked with `@vitest/coverage-v8`. Run `pnpm --filter @orbital/pulse-core test:coverage` to generate a report.
+- Coverage is tracked with `@vitest/coverage-v8`. Run `pnpm --filter @orbital-stellar/pulse-core test:coverage` to generate a report.
 
 CI runs tests on Node 20 and Node 22. Make sure your changes pass on both.
 

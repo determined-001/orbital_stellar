@@ -5,21 +5,21 @@ description: HMAC-signed webhook delivery with automatic retry, Node + edge veri
 
 ## Overview
 
-`@orbital/pulse-webhooks` wraps a `pulse-core` `Watcher` and delivers events to one or more HTTPS endpoints. Each delivery is signed with HMAC-SHA256 so your server can verify authenticity. On transient failure each URL is retried independently with exponential backoff; on permanent failure a `webhook.failed` event is emitted.
+`@orbital-stellar/pulse-webhooks` wraps a `pulse-core` `Watcher` and delivers events to one or more HTTPS endpoints. Each delivery is signed with HMAC-SHA256 so your server can verify authenticity. On transient failure each URL is retried independently with exponential backoff; on permanent failure a `webhook.failed` event is emitted.
 
 Two verifiers are exported for the receiver side: `verifyWebhook` (Node.js `crypto`) and `verifyWebhookEdge` (Web Crypto API — works in Cloudflare Workers, Vercel Edge, Deno, and browsers).
 
 ## Installation
 
 ```bash
-pnpm add @orbital/pulse-webhooks @orbital/pulse-core
+pnpm add @orbital-stellar/pulse-webhooks @orbital-stellar/pulse-core
 ```
 
 ## WebhookDelivery
 
 ```ts
-import { EventEngine } from "@orbital/pulse-core";
-import { WebhookDelivery } from "@orbital/pulse-webhooks";
+import { EventEngine } from "@orbital-stellar/pulse-core";
+import { WebhookDelivery } from "@orbital-stellar/pulse-webhooks";
 
 const engine = new EventEngine({ network: "testnet" });
 engine.start();
@@ -60,7 +60,7 @@ To also stop the underlying subscription, call `engine.unsubscribe(address)`.
 ## verifyWebhook (Node.js)
 
 ```ts
-import { verifyWebhook } from "@orbital/pulse-webhooks";
+import { verifyWebhook } from "@orbital-stellar/pulse-webhooks";
 
 // req.body must be the raw Buffer (use express.raw() middleware)
 const event = verifyWebhook(
@@ -78,7 +78,7 @@ Uses `crypto.timingSafeEqual` under the hood — never roll your own HMAC compar
 ## verifyWebhookEdge (Cloudflare Workers / Vercel Edge / Deno / browsers)
 
 ```ts
-import { verifyWebhookEdge } from "@orbital/pulse-webhooks";
+import { verifyWebhookEdge } from "@orbital-stellar/pulse-webhooks";
 
 const event = await verifyWebhookEdge(
   payload,                 // string

@@ -9,7 +9,7 @@
     "lint": "next lint"
   },
   "dependencies": {
-    "@orbital/pulse-core": "workspace:*",
+    "@orbital-stellar/pulse-core": "workspace:*",
     "framer-motion": "^12.36.0",
     "geist": "^1.7.0",
     "gray-matter": "^4.0.3",

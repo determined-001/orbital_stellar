@@ -34,9 +34,9 @@ Three MIT-licensed packages, designed to be composed and (at Phase 1) published 
 
 | Package | Role |
 |---|---|
-| `@orbital/pulse-core` | Event engine — Horizon + Stellar RPC subscription, normalized typed events, reconnection |
-| `@orbital/pulse-webhooks` | HMAC-signed webhook delivery, retry, SSRF hardening, edge-runtime verification |
-| `@orbital/pulse-notify` | React hooks (`useStellarEvent`, `useStellarPayment`, `useStellarActivity`) |
+| `@orbital-stellar/pulse-core` | Event engine — Horizon + Stellar RPC subscription, normalized typed events, reconnection |
+| `@orbital-stellar/pulse-webhooks` | HMAC-signed webhook delivery, retry, SSRF hardening, edge-runtime verification |
+| `@orbital-stellar/pulse-notify` | React hooks (`useStellarEvent`, `useStellarPayment`, `useStellarActivity`) |
 
 Phase 0 (foundation) shipped as [`v0.1.0`](../CHANGELOG.md) — full classic operation taxonomy, edge-runtime verification, React hooks, reference composition. This proposal funds **Phase 1: production-grade `v1.0`** — the milestone at which any Stellar team can build on Orbital with a stability pledge.
 
@@ -141,9 +141,9 @@ Three reference projects: `orbital-next-starter`, `orbital-express-starter`, `or
 
 ### M6 · `v1.0` stability pledge + npm publish
 
-All three packages published under `@orbital/` on npm with a documented stability contract: no breaking changes within `v1.x` without a 6-month deprecation window.
+All three packages published under `@orbital-stellar/` on npm with a documented stability contract: no breaking changes within `v1.x` without a 6-month deprecation window.
 
-**Done when:** `pnpm add @orbital/pulse-core` works, semver policy is documented in `STABILITY.md`, and a v1.0 release is tagged on GitHub.
+**Done when:** `pnpm add @orbital-stellar/pulse-core` works, semver policy is documented in `STABILITY.md`, and a v1.0 release is tagged on GitHub.
 
 ---
 
@@ -211,8 +211,8 @@ Phase 1 will be delivered by the same founder with the same commit transparency.
 
 Reproduced from [`ROADMAP.md`](../ROADMAP.md) for context only — these are not Phase 1 deliverables and not part of this funding ask:
 
-- **Phase 2 (2027)** — `@orbital/hooks` data hook library, `@orbital/payments` transaction primitives, `@orbital/auth` passkey embedded wallets, `@orbital/analytics`, **first SEP submission** formalizing the event normalization format.
-- **Phase 3 (2028+)** — `@orbital/x402` payment-gated middleware, `@orbital/agent-sdk` for autonomous AI agent payments on Stellar, `@orbital/anchor-sdk` for SEP-24/SEP-31, intent compiler, shadow-fork simulator.
+- **Phase 2 (2027)** — `@orbital-stellar/hooks` data hook library, `@orbital-stellar/payments` transaction primitives, `@orbital-stellar/auth` passkey embedded wallets, `@orbital-stellar/analytics`, **first SEP submission** formalizing the event normalization format.
+- **Phase 3 (2028+)** — `@orbital-stellar/x402` payment-gated middleware, `@orbital-stellar/agent-sdk` for autonomous AI agent payments on Stellar, `@orbital-stellar/anchor-sdk` for SEP-24/SEP-31, intent compiler, shadow-fork simulator.
 - **Phase 4 (long-term)** — identity layer, reactor-contract library, 10+ SEPs.
 
 Each future phase will be a separate proposal if grant support is sought.

@@ -2,16 +2,16 @@
  * pulseNotifyVitePlugin
  * ---------------------
  * Stubs the browser-only `EventSource` global during Vite SSR so that
- * importing `@orbital/pulse-notify` in a server-side render context does not
+ * importing `@orbital-stellar/pulse-notify` in a server-side render context does not
  * throw "EventSource is not defined".
  *
  * ### Usage (vite.config.ts)
  * ```ts
- * import { pulseNotifyVitePlugin } from "@orbital/pulse-notify/vitePlugin";
+ * import { pulseNotifyVitePlugin } from "@orbital-stellar/pulse-notify/vitePlugin";
  *
  * export default defineConfig({
  *   plugins: [pulseNotifyVitePlugin()],
- *   ssr: { noExternal: ["@orbital/pulse-notify"] },
+ *   ssr: { noExternal: ["@orbital-stellar/pulse-notify"] },
  * });
  * ```
  *

@@ -90,7 +90,7 @@ describe("NormalizedEvent.timestampDate", () => {
     const normalize = getNormalize();
     const evt = normalize(PAYMENT_RECORD) as object;
     // Trigger getter.
-    (evt as { timestampDate?: Date }).timestampDate;
+    void (evt as { timestampDate?: Date }).timestampDate;
     const keys = Object.keys(JSON.parse(JSON.stringify(evt)));
     expect(keys).not.toContain("timestampDate");
   });

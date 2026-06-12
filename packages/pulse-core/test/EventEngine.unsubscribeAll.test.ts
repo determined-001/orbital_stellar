@@ -59,8 +59,7 @@ describe("unsubscribeAll()", () => {
     engine.subscribe("GDEF");
     engine.start();
 
-    const registry = (engine as unknown as { registry: Map<string, unknown> })
-      .registry;
+    const registry = (engine as unknown as { registry: Map<string, unknown> }).registry;
     expect(registry.size).toBe(2);
 
     engine.unsubscribeAll();
@@ -78,9 +77,8 @@ describe("unsubscribeAll()", () => {
 
     engine.unsubscribeAll();
 
-    const contractRegistry = (
-      engine as unknown as { contractRegistry: Map<string, unknown> }
-    ).contractRegistry;
+    const contractRegistry = (engine as unknown as { contractRegistry: Map<string, unknown> })
+      .contractRegistry;
     expect(contractRegistry.size).toBe(1);
     expect(engine.status().watcherCount).toBe(0);
     expect(engine.status().contractWatcherCount).toBe(1);
@@ -122,11 +120,11 @@ describe("unsubscribeAllContracts()", () => {
 
     expect(stoppedA).toHaveBeenCalledOnce();
     expect(stoppedA).toHaveBeenCalledWith(
-      expect.objectContaining({ type: "engine.stopped", attempt: 0 })
+      expect.objectContaining({ type: "engine.stopped", attempt: 0 }),
     );
     expect(stoppedB).toHaveBeenCalledOnce();
     expect(stoppedB).toHaveBeenCalledWith(
-      expect.objectContaining({ type: "engine.stopped", attempt: 0 })
+      expect.objectContaining({ type: "engine.stopped", attempt: 0 }),
     );
   });
 
@@ -147,8 +145,7 @@ describe("unsubscribeAllContracts()", () => {
 
     engine.unsubscribeAllContracts();
 
-    const registry = (engine as unknown as { registry: Map<string, unknown> })
-      .registry;
+    const registry = (engine as unknown as { registry: Map<string, unknown> }).registry;
     expect(registry.size).toBe(1);
     expect(engine.status().watcherCount).toBe(1);
   });
@@ -195,9 +192,8 @@ describe("subscribeContract() / unsubscribeContract()", () => {
     engine.unsubscribeContract("CAAA");
 
     expect(engine.status().contractWatcherCount).toBe(1);
-    const contractRegistry = (
-      engine as unknown as { contractRegistry: Map<string, unknown> }
-    ).contractRegistry;
+    const contractRegistry = (engine as unknown as { contractRegistry: Map<string, unknown> })
+      .contractRegistry;
     expect(contractRegistry.has("CAAA")).toBe(false);
     expect(contractRegistry.has("CBBB")).toBe(true);
   });

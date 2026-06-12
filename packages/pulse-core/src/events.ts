@@ -1,9 +1,9 @@
 /**
  * Per-event named types for pulse-core, grouped for precise type narrowing.
- * Accessible via the `events` namespace export from "@orbital/pulse-core".
+ * Accessible via the `events` namespace export from "@orbital-stellar/pulse-core".
  *
  * @example
- * import type { events } from "@orbital/pulse-core";
+ * import type { events } from "@orbital-stellar/pulse-core";
  * type Payment = events.PaymentEvent;
  */
 export type {

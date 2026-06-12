@@ -15,8 +15,9 @@ describe("PostgresCursorStore Integration Test", () => {
     return;
   }
 
-  const connectionString = process.env.PG_TEST_URL || "postgres://postgres:postgres@localhost:5432/postgres";
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const connectionString =
+    process.env.PG_TEST_URL || "postgres://postgres:postgres@localhost:5432/postgres";
+
   let pool: any;
   let store: PostgresCursorStore;
 
@@ -69,7 +70,9 @@ describe("PostgresCursorStore Integration Test", () => {
     expect(retrieved2).toBe(cursor2);
 
     // Verify row count in database to ensure it upserted instead of creating multiple rows
-    const res = await pool.query("SELECT COUNT(*) FROM cursor_store WHERE stream_key = $1", [streamKey]);
+    const res = await pool.query("SELECT COUNT(*) FROM cursor_store WHERE stream_key = $1", [
+      streamKey,
+    ]);
     expect(parseInt(res.rows[0].count, 10)).toBe(1);
   });
 });

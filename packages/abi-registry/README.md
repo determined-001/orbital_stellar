@@ -1,9 +1,9 @@
-# @orbital/abi-registry
+# @orbital-stellar/abi-registry
 
 **Shared Soroban ABI registry for Orbital.** This package holds the canonical client surface for ABI-aware code, along with schema helpers and publisher abstractions that keep Soroban integration logic consistent across the repo.
 
 ```bash
-pnpm add @orbital/abi-registry
+pnpm add @orbital-stellar/abi-registry
 ```
 
 ## What it does
@@ -27,7 +27,7 @@ import {
   RegistryPublisher,
   jsToScval,
   scvalToJs,
-} from "@orbital/abi-registry";
+} from "@orbital-stellar/abi-registry";
 
 const client = new AbiRegistryClient({
   baseUrl: "https://abi.example.com",

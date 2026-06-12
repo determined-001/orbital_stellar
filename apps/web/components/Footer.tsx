@@ -104,8 +104,8 @@ export default function Footer() {
           <div>
             <span style={labelStyle}>Packages</span>
             {[
-              'npm i @orbital/pulse-webhooks',
-              'npm i @orbital/pulse-notify',
+              'npm i @orbital-stellar/pulse-webhooks',
+              'npm i @orbital-stellar/pulse-notify',
             ].map((cmd) => (
               <p
                 key={cmd}

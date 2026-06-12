@@ -2,7 +2,6 @@ import { expect, describe, it, vi, beforeEach } from "vitest";
 import { normalizeContractEvent } from "../src/EventEngine.js";
 
 describe("Soroban Event Normalizer Utility Suite", () => {
-  
   beforeEach(() => {
     vi.restoreAllMocks();
   });
@@ -28,24 +27,24 @@ describe("Soroban Event Normalizer Utility Suite", () => {
     expect(result!.id).toBe("000000123456789-00001");
     expect(result!.pagingToken).toBe("000000123456789-00001");
     expect(result!.contractId).toBe("CBB76TESTNETCONTRACTIDXXXXXXXXXXXXXXXYZZZZZZZZZZ");
-    
+
     const emittedEvent = result as any;
     expect(emittedEvent.topics).toEqual(["transfer", "G...", "G..."]);
     expect(emittedEvent.value).toBe("AAAAEAAAAA5VbW91bnQAAAAAAA==");
     expect(emittedEvent.raw).toStrictEqual(mockTestnetEvent);
   });
 
-  it("should output null and log a console warning for broken payloads instead of throwing", () => {
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+  it("should output null and log a warning for broken payloads instead of throwing", () => {
+    const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
 
     const brokenPayload = {
       type: "contract",
       ledger: 485921,
     };
 
-    const result = normalizeContractEvent(brokenPayload);
+    const result = normalizeContractEvent(brokenPayload, logger);
 
     expect(result).toBeNull();
-    expect(warnSpy).toHaveBeenCalled();
+    expect(logger.warn).toHaveBeenCalled();
   });
 });

@@ -38,4 +38,4 @@
 }
 ```
 
-All fields match the `NormalizedEvent` union from `@orbital/pulse-core`.
+All fields match the `NormalizedEvent` union from `@orbital-stellar/pulse-core`.

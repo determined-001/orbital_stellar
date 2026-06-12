@@ -41,9 +41,9 @@ Everything below is in `packages/` or `apps/` today, or will be added to one of 
 
 ### Today (Phase 0, `v0.1.0`)
 
-- `@orbital/pulse-core` — EventEngine, Watcher, normalization layer, reconnection state machine
-- `@orbital/pulse-webhooks` — `WebhookDelivery`, `verifyWebhook`, `verifyWebhookEdge`
-- `@orbital/pulse-notify` — `useStellarEvent`, `useStellarPayment`, `useStellarActivity`
+- `@orbital-stellar/pulse-core` — EventEngine, Watcher, normalization layer, reconnection state machine
+- `@orbital-stellar/pulse-webhooks` — `WebhookDelivery`, `verifyWebhook`, `verifyWebhookEdge`
+- `@orbital-stellar/pulse-notify` — `useStellarEvent`, `useStellarPayment`, `useStellarActivity`
 - Event schemas — the `NormalizedEvent` discriminated union and per-event TypeScript shapes
 - Webhook delivery contract — header format, signing scheme, retry rules
 - Reference composition — the Next.js route handlers in `apps/web/app/api/*` that wire the three packages together end-to-end
@@ -62,7 +62,7 @@ Everything below is in `packages/` or `apps/` today, or will be added to one of 
 
 ### ABI Registry
 
-`@orbital/abi-registry` is the MIT package surface for Soroban ABI client code, schema helpers, and publishing interfaces.
+`@orbital-stellar/abi-registry` is the MIT package surface for Soroban ABI client code, schema helpers, and publishing interfaces.
 
 - Technical map: [`docs/ARCHITECTURE.md`](./ARCHITECTURE.md)
 - Package README: [`packages/abi-registry/README.md`](../packages/abi-registry/README.md)
@@ -71,18 +71,18 @@ The hosted verification / publishing service remains a separate Cloud product. T
 
 ### Phase 2 (2027)
 
-- `@orbital/hooks` — `useAccount`, `useBalance`, `useTransaction`, `useOrderBook`
-- `@orbital/payments` — send, receive, path-payment, payroll-batch primitives
-- `@orbital/auth` — WebAuthn / passkey embedded wallet SDK
-- `@orbital/analytics` — client library + event-volume reference dashboards
+- `@orbital-stellar/hooks` — `useAccount`, `useBalance`, `useTransaction`, `useOrderBook`
+- `@orbital-stellar/payments` — send, receive, path-payment, payroll-batch primitives
+- `@orbital-stellar/auth` — WebAuthn / passkey embedded wallet SDK
+- `@orbital-stellar/analytics` — client library + event-volume reference dashboards
 - First SEP submission — formalized event normalization format
 - Reference reactor contracts (Soroban Rust, open for anyone to fork)
 
 ### Phase 3 (2028+)
 
-- `@orbital/x402` — Express / Next.js middleware for payment-gated API access
-- `@orbital/agent-sdk` — payment client for autonomous AI agents
-- `@orbital/anchor-sdk` — SEP-24 / SEP-31 lifecycle client
+- `@orbital-stellar/x402` — Express / Next.js middleware for payment-gated API access
+- `@orbital-stellar/agent-sdk` — payment client for autonomous AI agents
+- `@orbital-stellar/anchor-sdk` — SEP-24 / SEP-31 lifecycle client
 - Intent compiler — at maturity, the DSL + graph runtime become OSS
 - Shadow-fork simulator OSS core
 - ZK-proof generation library (Noir / RiscZero circuits) — runnable locally
@@ -167,7 +167,7 @@ If you are not sure where a PR falls, open an issue with the `policy-question` l
 ## License commitment
 
 - **All current packages** ship under MIT and will not be relicensed. Specifically, Orbital commits to **not** adopting source-available licenses (SSPL, BSL, Elastic License, Functional Source License, or successors) for any code that has shipped under MIT.
-- **All future SDK packages** under the `@orbital/` namespace will ship under MIT.
+- **All future SDK packages** under the `@orbital-stellar/` namespace will ship under MIT.
 - **Reference implementations, schemas, and specs** ship under MIT. This includes the event normalization format, the webhook delivery contract, and the Soroban ABI Registry schema.
 - **The marketing and documentation site** (`apps/web/`) is MIT — you may fork and adapt it.
 

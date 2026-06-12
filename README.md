@@ -1,5 +1,6 @@
 # Orbital
 
+[![npm](https://img.shields.io/npm/v/@orbital-stellar/pulse-core?style=flat-square&logo=npm&label=pulse-core)](https://www.npmjs.com/package/@orbital-stellar/pulse-core)
 [![License: MIT](https://img.shields.io/github/license/determined-001/orbital_stellar?style=flat-square)](LICENSE)
 [![CI](https://img.shields.io/github/actions/workflow/status/determined-001/orbital_stellar/ci.yml?branch=main&style=flat-square&label=ci)](https://github.com/determined-001/orbital_stellar/actions/workflows/ci.yml)
 [![CodeQL](https://img.shields.io/github/actions/workflow/status/determined-001/orbital_stellar/codeql.yml?branch=main&style=flat-square&label=codeql)](https://github.com/determined-001/orbital_stellar/actions/workflows/codeql.yml)
@@ -7,7 +8,7 @@
 [![Node](https://img.shields.io/badge/node-20%20%7C%2022-339933?style=flat-square&logo=node.js)](.github/workflows/ci.yml)
 [![Conventional Commits](https://img.shields.io/badge/commits-conventional-fe5196?style=flat-square&logo=conventionalcommits)](https://www.conventionalcommits.org)
 
-> **Status**: Phase 0 — Foundation &nbsp;·&nbsp; **Networks**: testnet + mainnet &nbsp;·&nbsp; **License**: MIT
+> **Status**: Phase 0 — `v0.1.0` on npm &nbsp;·&nbsp; **Networks**: testnet + mainnet &nbsp;·&nbsp; **License**: MIT
 
 **Stellar's biggest developer-experience gap isn't a missing API — it's that Horizon's firehose still requires every team to build their own event delivery.**
 
@@ -49,10 +50,10 @@ The longer-form thesis, the multi-year vision, and the SCF grant case live in [`
 
 | Package | Description | Status |
 |---|---|---|
-| [`@orbital/pulse-core`](./packages/pulse-core) | EventEngine — Horizon subscription, normalization, reconnection, rate-limit handling | ✅ Phase 0 |
-| [`@orbital/pulse-webhooks`](./packages/pulse-webhooks) | HMAC-signed webhook delivery + verification (Node + edge runtimes) | ✅ Phase 0 |
-| [`@orbital/pulse-notify`](./packages/pulse-notify) | React hooks — `useStellarEvent`, `useStellarPayment`, `useStellarActivity` | ✅ Phase 0 |
-| [`@orbital/abi-registry`](./packages/abi-registry) | Canonical Soroban ABI client, schema helpers, and registry publisher interface | ✅ Phase 1 |
+| [`@orbital-stellar/pulse-core`](./packages/pulse-core) | EventEngine — Horizon subscription, normalization, reconnection, rate-limit handling | ✅ Phase 0 |
+| [`@orbital-stellar/pulse-webhooks`](./packages/pulse-webhooks) | HMAC-signed webhook delivery + verification (Node + edge runtimes) | ✅ Phase 0 |
+| [`@orbital-stellar/pulse-notify`](./packages/pulse-notify) | React hooks — `useStellarEvent`, `useStellarPayment`, `useStellarActivity` | ✅ Phase 0 |
+| [`@orbital-stellar/abi-registry`](./packages/abi-registry) | Canonical Soroban ABI client, schema helpers, and registry publisher interface | ✅ Phase 1 |
 
 > The full classic-operation taxonomy is shipped (payments, account create/merge/options/bump-sequence, trustlines + auth, offers, claimables, liquidity pools, manage-data). Soroban contract events are Phase 1 (Q2–Q3 2026) — see [`ROADMAP.md`](ROADMAP.md).
 
@@ -60,7 +61,16 @@ The longer-form thesis, the multi-year vision, and the SCF grant case live in [`
 
 ## Quickstart
 
-> _Packages publish to npm at `v0.1.0` (Phase 0 milestone). Until then, clone the repo and use the workspace install below._
+Install only what you need from npm:
+
+```bash
+pnpm add @orbital-stellar/pulse-core             # always
+pnpm add @orbital-stellar/pulse-webhooks         # if you push events to HTTPS endpoints
+pnpm add @orbital-stellar/pulse-notify react     # if you render live events in React
+pnpm add @orbital-stellar/abi-registry           # if you decode Soroban contract events
+```
+
+Or clone the repo to work from source:
 
 ```bash
 git clone https://github.com/determined-001/orbital_stellar.git
@@ -68,18 +78,10 @@ cd orbital_stellar
 pnpm install
 ```
 
-Once published, install only what you need:
-
-```bash
-pnpm add @orbital/pulse-core             # always
-pnpm add @orbital/pulse-webhooks         # if you push events to HTTPS endpoints
-pnpm add @orbital/pulse-notify react     # if you render live events in React
-```
-
 ### Subscribe to events directly
 
 ```ts
-import { EventEngine } from "@orbital/pulse-core";
+import { EventEngine } from "@orbital-stellar/pulse-core";
 
 const engine = new EventEngine({ network: "testnet" });
 engine.start();
@@ -98,8 +100,8 @@ watcher.on("*", (event) => {
 ### Deliver events to a webhook
 
 ```ts
-import { EventEngine } from "@orbital/pulse-core";
-import { WebhookDelivery } from "@orbital/pulse-webhooks";
+import { EventEngine } from "@orbital-stellar/pulse-core";
+import { WebhookDelivery } from "@orbital-stellar/pulse-webhooks";
 
 const engine = new EventEngine({ network: "mainnet" });
 engine.start();
@@ -119,7 +121,7 @@ Receivers verify the signature with `verifyWebhook` (Node) or `verifyWebhookEdge
 
 ```tsx
 "use client";
-import { useStellarPayment } from "@orbital/pulse-notify";
+import { useStellarPayment } from "@orbital-stellar/pulse-notify";
 
 export function IncomingPayments({ address }: { address: string }) {
   const { event, connected } = useStellarPayment(
@@ -145,18 +147,18 @@ flowchart LR
     RPC["Stellar RPC<br/>(Soroban) — Phase 1"]
   end
 
-  subgraph Core["@orbital/pulse-core"]
+  subgraph Core["@orbital-stellar/pulse-core"]
     Engine["EventEngine<br/>subscribe · reconnect · backoff"]
     Watcher["Watcher<br/>per-address pub/sub"]
     Normalize["Normalize<br/>13 op types → typed events"]
   end
 
-  subgraph Webhooks["@orbital/pulse-webhooks"]
+  subgraph Webhooks["@orbital-stellar/pulse-webhooks"]
     Sign["HMAC-SHA256<br/>+ retry + SSRF"]
     Verify["verifyWebhook<br/>verifyWebhookEdge"]
   end
 
-  subgraph Notify["@orbital/pulse-notify"]
+  subgraph Notify["@orbital-stellar/pulse-notify"]
     Hooks["useStellarEvent<br/>useStellarPayment<br/>useStellarActivity"]
   end
 
@@ -204,8 +206,8 @@ Two paths:
 
 - **Now (Phase 0)** — Full classic operation taxonomy, edge-runtime webhook verification, React hooks ✅
 - **Q2–Q3 2026 (Phase 1, `v1.0`)** — Soroban event subscription, ABI registry client, cursor persistence, replay adapters, npm publish, stability pledge
-- **2027 (Phase 2)** — `@orbital/hooks`, `@orbital/payments`, `@orbital/auth`, first SEP submission
-- **2028+ (Phase 3)** — `@orbital/x402`, `@orbital/agent-sdk`, intent compiler
+- **2027 (Phase 2)** — `@orbital-stellar/hooks`, `@orbital-stellar/payments`, `@orbital-stellar/auth`, first SEP submission
+- **2028+ (Phase 3)** — `@orbital-stellar/x402`, `@orbital-stellar/agent-sdk`, intent compiler
 
 Full multi-year plan in [`ROADMAP.md`](ROADMAP.md).
 
@@ -220,7 +222,7 @@ Contributions are welcome from the Stellar community. Start here:
 - Stellar Wave Program issues are tagged `wave-program` and pay per-merge per complexity points.
 - Run the test suite before submitting: `pnpm -r typecheck && pnpm test`.
 
-All contributors are expected to follow the [Code of Conduct](CODE_OF_CONDUCT.md) _(in progress)_.
+All contributors are expected to follow the [Code of Conduct](CODE_OF_CONDUCT.md).
 
 ---
 
@@ -260,6 +262,6 @@ The list above is the curated **all-contributors** set. For the full commit hist
 
 ## Community
 
-- GitHub Discussions: _(enable via repo settings — see Drips funding plan)_
+- [GitHub Discussions](https://github.com/determined-001/orbital_stellar/discussions) — questions, ideas, design discussion, and help.
 - Twitter: _(handle pending)_
 - Discord: _(invite pending)_

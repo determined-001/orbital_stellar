@@ -1,19 +1,19 @@
 ---
 title: Webhooks
-description: Sign, deliver, and verify Stellar event webhooks with @orbital/pulse-webhooks.
+description: Sign, deliver, and verify Stellar event webhooks with @orbital-stellar/pulse-webhooks.
 ---
 
 ## Overview
 
-`@orbital/pulse-webhooks` is the "push" side of Orbital. Attach it to a `pulse-core` `Watcher` and every event becomes one or more outbound HTTPS POSTs with a verifiable HMAC-SHA256 signature, retry on failure, configurable timeout, and SSRF hardening.
+`@orbital-stellar/pulse-webhooks` is the "push" side of Orbital. Attach it to a `pulse-core` `Watcher` and every event becomes one or more outbound HTTPS POSTs with a verifiable HMAC-SHA256 signature, retry on failure, configurable timeout, and SSRF hardening.
 
 This guide covers both sides: setting up delivery in your backend, and verifying signatures in the receiving service (Node or edge runtime).
 
 ## Sender side — `WebhookDelivery`
 
 ```ts
-import { EventEngine } from "@orbital/pulse-core";
-import { WebhookDelivery } from "@orbital/pulse-webhooks";
+import { EventEngine } from "@orbital-stellar/pulse-core";
+import { WebhookDelivery } from "@orbital-stellar/pulse-webhooks";
 
 const engine = new EventEngine({ network: "testnet" });
 engine.start();
@@ -79,7 +79,7 @@ Other event types (`account.created`, `trustline.added`, `offer.updated`, etc.) 
 Use `verifyWebhook` with raw-body middleware:
 
 ```ts
-import { verifyWebhook } from "@orbital/pulse-webhooks";
+import { verifyWebhook } from "@orbital-stellar/pulse-webhooks";
 import express from "express";
 
 const app = express();
@@ -112,7 +112,7 @@ app.post("/hooks/stellar", express.raw({ type: "application/json" }), (req, res)
 Cloudflare Workers and Vercel Edge runtimes don't ship Node.js `crypto`. Use `verifyWebhookEdge`, which uses Web Crypto API and is async:
 
 ```js
-import { verifyWebhookEdge } from "@orbital/pulse-webhooks";
+import { verifyWebhookEdge } from "@orbital-stellar/pulse-webhooks";
 
 export default {
   async fetch(request, env) {

@@ -251,7 +251,7 @@ describe("decodeContractEvent — vec and map", () => {
       data: {
         map: [
           { key: { sym: "amount" }, val: { i128: "1000000" } },
-          { key: { sym: "fee" },    val: { i128: "100" } },
+          { key: { sym: "fee" }, val: { i128: "100" } },
         ],
       },
     });
@@ -266,9 +266,7 @@ describe("decodeContractEvent — vec and map", () => {
     const result = decodeContractEvent(USDC_SPEC, {
       topics: [{ sym: "event" }],
       data: {
-        map: [
-          { key: { sym: "x" }, value: { u32: 99 } },
-        ],
+        map: [{ key: { sym: "x" }, value: { u32: 99 } }],
       },
     });
     expect(isDecoded(result)).toBe(true);
@@ -304,7 +302,7 @@ describe("decodeContractEvent — custom struct", () => {
       topics: [{ sym: "transfer" }],
       data: {
         from: { address: "GABC" },
-        to:   { address: "GDEF" },
+        to: { address: "GDEF" },
         amount: { i128: "5000000" },
       },
     });
@@ -361,17 +359,13 @@ describe("decodeContractEvent — real testnet event simulation", () => {
    */
   it("decodes a USDC transfer event with the expected typed structure", () => {
     const FROM = "GABC1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890ABCDE";
-    const TO   = "GDEF1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890ABCDE";
+    const TO = "GDEF1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890ABCDE";
     const AMOUNT = "10000000"; // 1 USDC (7 decimal places)
 
     const rawEvent = {
       type: "contract.emitted",
       contractId: USDC_SPEC.contractId,
-      topics: [
-        { sym: "transfer" },
-        { address: FROM },
-        { address: TO },
-      ],
+      topics: [{ sym: "transfer" }, { address: FROM }, { address: TO }],
       data: { i128: AMOUNT },
       timestamp: "2024-01-15T12:00:00.000Z",
       raw: {},
@@ -394,19 +388,15 @@ describe("decodeContractEvent — real testnet event simulation", () => {
    * Simulates an approve event with a u32 expiration_ledger.
    */
   it("decodes an approve event with mixed types", () => {
-    const OWNER   = "GABC1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890ABCDE";
+    const OWNER = "GABC1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890ABCDE";
     const SPENDER = "GXYZ1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890ABCDE";
 
     const rawEvent = {
-      topics: [
-        { sym: "approve" },
-        { address: OWNER },
-        { address: SPENDER },
-      ],
+      topics: [{ sym: "approve" }, { address: OWNER }, { address: SPENDER }],
       data: {
         map: [
-          { key: { sym: "amount" },            val: { i128: "50000000" } },
-          { key: { sym: "expiration_ledger" },  val: { u32: 999999 } },
+          { key: { sym: "amount" }, val: { i128: "50000000" } },
+          { key: { sym: "expiration_ledger" }, val: { u32: 999999 } },
         ],
       },
     };
@@ -461,15 +451,17 @@ describe("decodeContractEvent — error cases", () => {
 
   it("returns error for vec containing non-decodable value", () => {
     // This should not throw — it should return an error
-    const result = decodeContractEvent(USDC_SPEC, {
+    decodeContractEvent(USDC_SPEC, {
       topics: [{ sym: "event" }],
       data: { vec: [{ unknownType: Symbol("bad") }] },
     });
     // Symbol is not a supported type — should return error or decode as string
     // Either outcome is acceptable as long as it doesn't throw
-    expect(() => decodeContractEvent(USDC_SPEC, {
-      topics: [{ sym: "event" }],
-      data: { vec: [{ unknownType: Symbol("bad") }] },
-    })).not.toThrow();
+    expect(() =>
+      decodeContractEvent(USDC_SPEC, {
+        topics: [{ sym: "event" }],
+        data: { vec: [{ unknownType: Symbol("bad") }] },
+      }),
+    ).not.toThrow();
   });
 });

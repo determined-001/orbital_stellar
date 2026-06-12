@@ -55,7 +55,7 @@ export abstract class CursorStore {
    */
   async getAll(): Promise<Array<{ streamKey: string; cursor: string }>> {
     throw new Error(
-      `${this.constructor.name} does not support getAll(); cursor enumeration is unavailable for this store.`
+      `${this.constructor.name} does not support getAll(); cursor enumeration is unavailable for this store.`,
     );
   }
 

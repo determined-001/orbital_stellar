@@ -76,9 +76,7 @@ describe("PostgresDeadLetterStore", () => {
       offset: 10,
     });
 
-    expect(queries[0]?.sql).toContain(
-      "WHERE url = $1 AND failed_at >= $2 AND failed_at <= $3",
-    );
+    expect(queries[0]?.sql).toContain("WHERE url = $1 AND failed_at >= $2 AND failed_at <= $3");
     expect(queries[0]?.sql).toContain("ORDER BY failed_at ASC, id ASC");
     expect(queries[0]?.sql).toContain("LIMIT $4 OFFSET $5");
     expect(queries[0]?.values).toEqual([
@@ -92,11 +90,7 @@ describe("PostgresDeadLetterStore", () => {
 
   it("rejects unsafe table names", () => {
     expect(
-      () =>
-        new PostgresDeadLetterStore(
-          mockPg([], { rows: [] }),
-          "dlq;DROP TABLE users",
-        ),
+      () => new PostgresDeadLetterStore(mockPg([], { rows: [] }), "dlq;DROP TABLE users"),
     ).toThrow("Invalid Postgres identifier");
   });
 });
@@ -106,15 +100,9 @@ type QueryCall = {
   values?: readonly unknown[];
 };
 
-function mockPg<Row>(
-  queries: QueryCall[],
-  result: PgQueryResult<Row>,
-): PgLike {
+function mockPg<Row>(queries: QueryCall[], result: PgQueryResult<Row>): PgLike {
   return {
-    async query<QueryRow = Record<string, unknown>>(
-      sql: string,
-      values?: readonly unknown[],
-    ) {
+    async query<QueryRow = Record<string, unknown>>(sql: string, values?: readonly unknown[]) {
       queries.push({ sql, values });
       return result as unknown as PgQueryResult<QueryRow>;
     },

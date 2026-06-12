@@ -54,7 +54,6 @@ export type EngineStatus = {
   };
 };
 
-
 /** Passphrase strings for each supported Stellar network. */
 export const NETWORK_PASSPHRASES = {
   mainnet: "Public Global Stellar Network ; September 2015",
@@ -62,25 +61,17 @@ export const NETWORK_PASSPHRASES = {
 } as const satisfies Record<Network, string>;
 
 /** Event types for payment-related events (received, sent, or self-payment). */
-export type PaymentEventType =
-  | "payment.received"
-  | "payment.sent"
-  | "payment.self";
+export type PaymentEventType = "payment.received" | "payment.sent" | "payment.self";
 /** Event type for account options changes. */
 export type AccountOptionsEventType = "account.options_changed";
 export type LiquidityPoolEventType = "lp.deposited" | "lp.withdrawn";
-export type TrustAuthEventType =
-  | "trustline.authorized"
-  | "trustline.deauthorized";
+export type TrustAuthEventType = "trustline.authorized" | "trustline.deauthorized";
 /** Event type for account creation. */
 export type AccountEventType = "account.created";
 export type ClaimableCreatedEventType = "claimable.created";
 export type ClaimableClaimedEventType = "claimable.claimed";
 /** Event types for trustline lifecycle events (added, removed, or limit updated). */
-export type TrustlineEventType =
-  | "trustline.added"
-  | "trustline.removed"
-  | "trustline.updated";
+export type TrustlineEventType = "trustline.added" | "trustline.removed" | "trustline.updated";
 /** Event type for account merges (one account merged into another). */
 export type AccountMergeEventType = "account.merged";
 /** Notification types emitted by the EventEngine during reconnection. */
@@ -92,10 +83,7 @@ export type WatcherNotificationType =
   | "engine.cursor_store_unhealthy"
   | "engine.cursor_expired";
 
-export type OfferEventType =
-  | "offer.created"
-  | "offer.updated"
-  | "offer.deleted";
+export type OfferEventType = "offer.created" | "offer.updated" | "offer.deleted";
 export type BumpSequenceEventType = "account.bump_sequence";
 export type DataEventType = "data.set" | "data.cleared";
 
@@ -320,7 +308,7 @@ export type AccountMergeEvent = {
  * namespace export:
  *
  * ```ts
- * import type { events } from "@orbital/pulse-core";
+ * import type { events } from "@orbital-stellar/pulse-core";
  * type Payment = events.PaymentEvent;
  * type AccountCreated = events.AccountCreatedEvent;
  * ```
@@ -352,7 +340,6 @@ export type NormalizedEvent = (
   /** Lazy, cached `Date` derived from `event.timestamp`. Non-enumerable; does not appear in JSON.stringify output. */
   readonly timestampDate: Date;
 };
-
 
 /**
  * A notification emitted by the EventEngine during reconnection attempts.
@@ -403,26 +390,13 @@ export interface Logger {
   info(message: string, meta?: Record<string, unknown>): void;
   warn(message: string, meta?: Record<string, unknown>): void;
   error(message: string, meta?: Record<string, unknown>): void;
-}
-
-/**
- * Core configuration for initializing the EventEngine.
- *
- * @example
- * const config: CoreConfig = {
- *   network: "testnet",
- *   reconnect: { initialDelayMs: 2000, maxRetries: 5 }
- * };
- */
-export interface Logger {
-  info(message: string, meta?: Record<string, unknown>): void;
-  warn(message: string, meta?: Record<string, unknown>): void;
-  error(message: string, meta?: Record<string, unknown>): void;
+  /** Optional verbose channel for per-request / per-event diagnostics. */
+  debug?(message: string, meta?: Record<string, unknown>): void;
 }
 
 /**
  * Minimal interface for an ABI registry client.
- * Satisfied by `AbiRegistryClient` from `@orbital/abi-registry`, or any
+ * Satisfied by `AbiRegistryClient` from `@orbital-stellar/abi-registry`, or any
  * object with a compatible `getSpec` method (useful for testing).
  */
 export interface AbiRegistryClientLike {
@@ -569,7 +543,7 @@ export type ContractSubscribeOptions = {
  * @see {@link events} for the full list of narrower per-event types.
  *
  * @example
- * import type { events } from "@orbital/pulse-core";
+ * import type { events } from "@orbital-stellar/pulse-core";
  * function handlePayment(e: events.PaymentEvent) { ... }
  */
 export * as events from "./events.js";

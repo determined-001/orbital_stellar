@@ -1,4 +1,4 @@
-import type { NormalizedEvent } from "@orbital/pulse-core";
+import type { NormalizedEvent } from "@orbital-stellar/pulse-core";
 
 export interface DeadLetterEntry {
   id: string;

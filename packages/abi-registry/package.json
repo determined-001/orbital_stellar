@@ -1,10 +1,27 @@
 {
-  "name": "@orbital/abi-registry",
-  "private": true,
+  "name": "@orbital-stellar/abi-registry",
+  "version": "0.1.0",
+  "description": "Canonical Soroban ABI client, schema helpers, and registry publisher interface for Orbital.",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
   "type": "module",
-  "version": "0.0.0",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/determined-001/orbital_stellar.git",
+    "directory": "packages/abi-registry"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "vitest run",

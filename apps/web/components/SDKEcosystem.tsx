@@ -4,37 +4,37 @@ import { useState } from 'react'
 
 const PACKAGES = [
   {
-    pkg: '@orbital/pulse-webhooks',
+    pkg: '@orbital-stellar/pulse-webhooks',
     title: 'Pulse Webhooks',
     description: 'Signed webhook delivery with retries, secrets, and delivery logs for your server.',
     status: 'Live' as const,
   },
   {
-    pkg: '@orbital/pulse-notify',
+    pkg: '@orbital-stellar/pulse-notify',
     title: 'Pulse Notify',
     description: 'React hooks for real-time Stellar events. Drop in, subscribe, done.',
     status: 'Live' as const,
   },
   {
-    pkg: '@orbital/hooks',
+    pkg: '@orbital-stellar/hooks',
     title: 'Stellar Hooks',
     description: 'useAccount, useTransaction, useBalance and more data hooks for React.',
     status: 'Coming soon' as const,
   },
   {
-    pkg: '@orbital/auth',
+    pkg: '@orbital-stellar/auth',
     title: 'Auth SDK',
     description: 'Embedded wallets, passkeys, and fee sponsorship for Stellar apps.',
     status: 'Coming soon' as const,
   },
   {
-    pkg: '@orbital/payments',
+    pkg: '@orbital-stellar/payments',
     title: 'Payments SDK',
     description: 'Send, receive, swap and programmable payroll on Stellar.',
     status: 'Coming soon' as const,
   },
   {
-    pkg: '@orbital/testing',
+    pkg: '@orbital-stellar/testing',
     title: 'Testing Utils',
     description: 'Mock Horizon responses and local testnet helpers for CI.',
     status: 'Coming soon' as const,

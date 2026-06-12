@@ -1,13 +1,6 @@
 export type S3Like = {
-  getObject(params: {
-    Bucket: string;
-    Key: string;
-  }): Promise<{ Body: string | Uint8Array }>;
-  putObject(params: {
-    Bucket: string;
-    Key: string;
-    Body: string | Uint8Array;
-  }): Promise<void>;
+  getObject(params: { Bucket: string; Key: string }): Promise<{ Body: string | Uint8Array }>;
+  putObject(params: { Bucket: string; Key: string; Body: string | Uint8Array }): Promise<void>;
 };
 
 export class S3CursorStore {
@@ -30,13 +23,12 @@ export class S3CursorStore {
     try {
       const res = await this.s3.getObject({ Bucket: this.bucket, Key });
       const body = res.Body;
-      const text =
-        typeof body === "string" ? body : Buffer.from(body).toString();
+      const text = typeof body === "string" ? body : Buffer.from(body).toString();
       try {
         const parsed = JSON.parse(text as string);
         if (parsed && typeof parsed.cursor === "string") return parsed.cursor;
         return null;
-      } catch (err) {
+      } catch {
         // If the object isn't JSON, treat as null / invalid
         return null;
       }
@@ -44,9 +36,7 @@ export class S3CursorStore {
       // Treat NoSuchKey as missing value
       if (
         err &&
-        (err.code === "NoSuchKey" ||
-          err.name === "NoSuchKey" ||
-          err.code === "NoSuchKeyException")
+        (err.code === "NoSuchKey" || err.name === "NoSuchKey" || err.code === "NoSuchKeyException")
       ) {
         return null;
       }

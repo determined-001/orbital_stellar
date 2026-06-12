@@ -66,8 +66,8 @@ export async function POST(req: Request) {
     },
     secret: generatedSecret ? secret : undefined,
     verify: {
-      node: `import { verifyWebhook } from "@orbital/pulse-webhooks";\nverifyWebhook(payload, signature, secret, timestamp);`,
-      edge: `import { verifyWebhookEdge } from "@orbital/pulse-webhooks/edge";\nawait verifyWebhookEdge(payload, signature, secret, timestamp);`,
+      node: `import { verifyWebhook } from "@orbital-stellar/pulse-webhooks";\nverifyWebhook(payload, signature, secret, timestamp);`,
+      edge: `import { verifyWebhookEdge } from "@orbital-stellar/pulse-webhooks/edge";\nawait verifyWebhookEdge(payload, signature, secret, timestamp);`,
     },
   });
 }

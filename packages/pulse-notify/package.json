@@ -1,17 +1,35 @@
 {
-  "name": "@orbital/pulse-notify",
-  "version": "0.0.0",
-  "private": true,
+  "name": "@orbital-stellar/pulse-notify",
+  "version": "0.1.0",
+  "description": "React hooks for live Stellar events — useStellarEvent, useStellarPayment, useStellarActivity.",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/determined-001/orbital_stellar.git",
+    "directory": "packages/pulse-notify"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "vitest run",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "size": "size-limit"
   },
   "dependencies": {
-    "@orbital/pulse-core": "workspace:*"
+    "@orbital-stellar/pulse-core": "workspace:*"
   },
   "devDependencies": {
     "@size-limit/preset-small-lib": "^11.0.0",
@@ -22,6 +40,7 @@
     "jsdom": "^29.1.1",
     "react": "^19.2.5",
     "react-dom": "^19.2.5",
+    "size-limit": "^11.0.0",
     "tsx": "^4.0.0",
     "vitest": "^4.1.7"
   },

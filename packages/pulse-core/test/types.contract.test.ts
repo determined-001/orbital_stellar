@@ -1,9 +1,5 @@
 import { describe, it, expectTypeOf } from "vitest";
-import type {
-  NormalizedEvent,
-  ContractInvokedEvent,
-  ContractEmittedEvent,
-} from "../src/index.js";
+import type { NormalizedEvent, ContractInvokedEvent, ContractEmittedEvent } from "../src/index.js";
 
 describe("Contract Event Types", () => {
   it("should have ContractInvokedEvent in NormalizedEvent union", () => {

@@ -44,5 +44,5 @@ export type VerifyWebhookOptions = {
   /** Optional schema hook to validate the parsed `NormalizedEvent`. When provided, the verifier
    *  will run this after signature verification and return `null` if it returns `false`.
    */
-  schema?: (event: import("@orbital/pulse-core").NormalizedEvent) => boolean;
+  schema?: (event: import("@orbital-stellar/pulse-core").NormalizedEvent) => boolean;
 };

@@ -83,7 +83,7 @@ A contract qualifies as a well-known spec when it meets **all** of the following
 
 1. **Check eligibility** — confirm the contract meets all four criteria above.
 2. **Derive the contract ID** — use the Stellar CLI or SDK to obtain the canonical C-prefixed address.
-3. **Author the spec** — create `specs/well-known/<token-symbol-lowercase>.json` following the schema. Run `pnpm --filter @orbital/abi-registry validate` to confirm it passes before opening a PR.
+3. **Author the spec** — create `specs/well-known/<token-symbol-lowercase>.json` following the schema. Run `pnpm --filter @orbital-stellar/abi-registry validate` to confirm it passes before opening a PR.
 4. **Update the index** — add an entry to `specs/well-known/index.json` with `name`, `contract_id`, `file`, `description`, and `tags`.
 5. **Open a pull request** — include:
    - The new spec file.
@@ -127,7 +127,7 @@ All specs are validated against `specs/well-known/schema.json` using the `valida
 
 ```bash
 # From the repo root
-pnpm --filter @orbital/abi-registry validate
+pnpm --filter @orbital-stellar/abi-registry validate
 
 # Or from the package directory
 cd packages/abi-registry
@@ -144,4 +144,4 @@ node validate.js
 - `0` — all specs pass.
 - `1` — one or more specs fail; errors are printed to stderr with the file path and the failing field.
 
-CI runs `pnpm --filter @orbital/abi-registry validate` on every pull request that touches `packages/abi-registry/`.
+CI runs `pnpm --filter @orbital-stellar/abi-registry validate` on every pull request that touches `packages/abi-registry/`.

@@ -7,9 +7,9 @@ description: What Orbital is and why you need it.
 
 Orbital is **Stellar's open-source real-time event SDK family** — three MIT-licensed packages on npm that turn Horizon and Stellar RPC's raw firehose into typed, application-shaped events you can subscribe to in any Node.js, edge, or React runtime.
 
-- **`@orbital/pulse-core`** — event engine: Horizon SSE subscription, normalization, reconnection, rate-limit handling
-- **`@orbital/pulse-webhooks`** — HMAC-signed webhook delivery (Node) and verification (Node + edge runtimes)
-- **`@orbital/pulse-notify`** — React hooks for live events in the browser
+- **`@orbital-stellar/pulse-core`** — event engine: Horizon SSE subscription, normalization, reconnection, rate-limit handling
+- **`@orbital-stellar/pulse-webhooks`** — HMAC-signed webhook delivery (Node) and verification (Node + edge runtimes)
+- **`@orbital-stellar/pulse-notify`** — React hooks for live events in the browser
 
 ## Why use it?
 
@@ -28,12 +28,12 @@ Orbital ships those primitives once, openly, so you can `pnpm add` them instead 
 Stellar Network (Horizon REST/SSE + Stellar RPC)
         │
         ▼
-  @orbital/pulse-core
+  @orbital-stellar/pulse-core
   EventEngine · Watcher · Normalization · Reconnect
         │
    ┌────┴─────────────────┐
    ▼                      ▼
-@orbital/pulse-webhooks   @orbital/pulse-notify
+@orbital-stellar/pulse-webhooks   @orbital-stellar/pulse-notify
 HMAC delivery (Node)      React hooks (browser SSE)
 Edge verification         useStellarEvent, useStellarPayment
 ```
@@ -42,9 +42,9 @@ Edge verification         useStellarEvent, useStellarPayment
 
 | Package | Description |
 |---------|-------------|
-| `@orbital/pulse-core` | Event engine: Horizon subscription, event normalization, reconnection |
-| `@orbital/pulse-webhooks` | HMAC-signed webhook delivery + verification (Node + edge runtimes) |
-| `@orbital/pulse-notify` | React hooks for client-side event subscription |
+| `@orbital-stellar/pulse-core` | Event engine: Horizon subscription, event normalization, reconnection |
+| `@orbital-stellar/pulse-webhooks` | HMAC-signed webhook delivery + verification (Node + edge runtimes) |
+| `@orbital-stellar/pulse-notify` | React hooks for client-side event subscription |
 
 ## Event taxonomy
 

@@ -1,12 +1,30 @@
 {
-  "name": "@orbital/pulse-core",
-  "private": true,
+  "name": "@orbital-stellar/pulse-core",
+  "version": "0.1.0",
+  "description": "EventEngine for Stellar — Horizon subscription, event normalization, reconnection, and rate-limit handling.",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
   "type": "module",
-  "version": "0.0.0",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "bin": {
     "orbital": "./bin/orbital"
+  },
+  "files": [
+    "dist",
+    "bin",
+    "README.md",
+    "LICENSE"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/determined-001/orbital_stellar.git",
+    "directory": "packages/pulse-core"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",

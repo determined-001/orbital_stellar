@@ -62,7 +62,7 @@ orbital_stellar/
 
 ## Core Packages
 
-### 1. `@orbital/pulse-core` — Event Engine
+### 1. `@orbital-stellar/pulse-core` — Event Engine
 
 Subscribes to Horizon SSE, normalizes raw operations into a typed `NormalizedEvent` taxonomy, and routes them to per-address `Watcher` instances. Handles reconnection, backoff, and rate-limit responses automatically.
 
@@ -70,7 +70,7 @@ Subscribes to Horizon SSE, normalizes raw operations into a typed `NormalizedEve
 
 See [`packages/pulse-core/README.md`](./packages/pulse-core/README.md) for the API and [`packages/pulse-core/CHANGELOG.md`](./packages/pulse-core/CHANGELOG.md) for the per-feature commit trail.
 
-### 2. `@orbital/pulse-webhooks` — Webhook Delivery
+### 2. `@orbital-stellar/pulse-webhooks` — Webhook Delivery
 
 Attaches to a `Watcher` and POSTs every event to one or more endpoints with HMAC-SHA256 signing, exponential backoff retry, configurable timeout, and SSRF hardening. `verifyWebhook` (Node) and `verifyWebhookEdge` (Web Crypto) are exported for the receiver side.
 
@@ -78,7 +78,7 @@ Attaches to a `Watcher` and POSTs every event to one or more endpoints with HMAC
 
 See [`packages/pulse-webhooks/README.md`](./packages/pulse-webhooks/README.md).
 
-### 3. `@orbital/pulse-notify` — React Hooks
+### 3. `@orbital-stellar/pulse-notify` — React Hooks
 
 Browser-side React hooks (`useStellarEvent`, `useStellarPayment`, `useStellarActivity`) that open an SSE connection to your Orbital-powered backend and re-render on each event. Generic type narrowing supported on `useStellarEvent<T>`.
 
@@ -127,12 +127,12 @@ NEXT_PUBLIC_NETWORK=testnet pnpm --filter orbital/web dev
 Stellar Network (Horizon REST/SSE + Stellar RPC)
         │
         ▼
-@orbital/pulse-core
+@orbital-stellar/pulse-core
 EventEngine · Watcher · Normalization · Reconnect · Backoff
         │
    ┌────┴─────────────────┐
    ▼                      ▼
-@orbital/pulse-webhooks   @orbital/pulse-notify
+@orbital-stellar/pulse-webhooks   @orbital-stellar/pulse-notify
 HMAC delivery             React hooks (browser SSE)
 SSRF hardening            useStellarEvent
 Edge-runtime verify       useStellarPayment
@@ -169,8 +169,8 @@ These are **not** in Phase 0 and are tracked for Phase 1 or later:
 2. **Cursor persistence** — resumable streams across process restarts. Phase 1.
 3. **Webhook replay store** — durable retry adapters for Redis/Postgres/S3. Phase 1.
 4. **Production hosting** — multi-region orchestration, persistent registries, leader election. Belongs in **Orbital Cloud** (separate closed product), not in this repository.
-5. **`@orbital/hooks`, `@orbital/payments`, `@orbital/auth`** — Phase 2 SDK family. See [`ROADMAP.md`](./ROADMAP.md).
-6. **`@orbital/x402`, `@orbital/agent-sdk`** — Phase 3. See [`ROADMAP.md`](./ROADMAP.md).
+5. **`@orbital-stellar/hooks`, `@orbital-stellar/payments`, `@orbital-stellar/auth`** — Phase 2 SDK family. See [`ROADMAP.md`](./ROADMAP.md).
+6. **`@orbital-stellar/x402`, `@orbital-stellar/agent-sdk`** — Phase 3. See [`ROADMAP.md`](./ROADMAP.md).
 
 ---
 
@@ -181,7 +181,7 @@ These are **not** in Phase 0 and are tracked for Phase 1 or later:
 | **Events** | Soroban event subscription (Stellar RPC) | ABI registry client for typed decoding |
 | **Types** | Discriminated union refinement (exhaustive `switch`) | — |
 | **Persistence** | Cursor persistence in `pulse-core` | Pluggable replay adapters in `pulse-webhooks` |
-| **Distribution** | Starter boilerplates (`next`, `express`, `anchor`) | npm publish under `@orbital/` |
+| **Distribution** | Starter boilerplates (`next`, `express`, `anchor`) | npm publish under `@orbital-stellar/` |
 | **Stability** | — | `v1.0` stability pledge — semver contract |
 
 See [`ROADMAP.md`](./ROADMAP.md) for the full multi-year vision and [`docs/proposal.md`](./docs/proposal.md) for the Phase 1 SCF funding proposal.
@@ -192,7 +192,7 @@ See [`ROADMAP.md`](./ROADMAP.md) for the full multi-year vision and [`docs/propo
 
 ### As a Stellar Developer
 1. Read [Getting Started](./apps/web/content/getting-started/introduction.md)
-2. Install: `pnpm add @orbital/pulse-core @orbital/pulse-webhooks @orbital/pulse-notify`
+2. Install: `pnpm add @orbital-stellar/pulse-core @orbital-stellar/pulse-webhooks @orbital-stellar/pulse-notify`
 3. Follow the [Quick Start](./apps/web/content/getting-started/quick-start.md)
 
 ### As a Contributor

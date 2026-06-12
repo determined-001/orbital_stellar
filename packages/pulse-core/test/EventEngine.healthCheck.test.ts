@@ -130,7 +130,9 @@ describe("engine.healthCheck()", () => {
     const cursorStore = {
       get: async () => null,
       set: async () => {},
-      ping: async () => { throw new Error("db unreachable"); },
+      ping: async () => {
+        throw new Error("db unreachable");
+      },
     };
     const engine = new EventEngine({ network: "testnet", cursorStore });
     engine.start();
