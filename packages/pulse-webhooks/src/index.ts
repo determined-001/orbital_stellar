@@ -87,10 +87,14 @@ export class WebhookDelivery {
     const abortTimer = setTimeout(() => controller.abort(), timeoutMs);
     const attemptStartedAt = Date.now();
 
+    const parentTraceId =
+      event.raw && typeof event.raw === "object" && "traceId" in event.raw
+        ? (event.raw as { traceId: string }).traceId
+        : undefined;
     const span = this.config.tracer?.startSpan("webhook.delivery", {
       "webhook.url": url,
       "webhook.attempt": attempt,
-      ...(event.raw?.traceId ? { "webhook.parent_trace_id": event.raw.traceId } : {}),
+      ...(parentTraceId ? { "webhook.parent_trace_id": parentTraceId } : {}),
     });
 
     try {
