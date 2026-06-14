@@ -2,7 +2,6 @@ import { expect, describe, it, vi, beforeEach } from "vitest";
 import { normalizeContractEvent } from "../src/EventEngine.js";
 
 describe("Soroban Event Normalizer Utility Suite", () => {
-  
   beforeEach(() => {
     vi.restoreAllMocks();
   });
@@ -28,7 +27,7 @@ describe("Soroban Event Normalizer Utility Suite", () => {
     expect(result!.id).toBe("000000123456789-00001");
     expect(result!.pagingToken).toBe("000000123456789-00001");
     expect(result!.contractId).toBe("CBB76TESTNETCONTRACTIDXXXXXXXXXXXXXXXYZZZZZZZZZZ");
-    
+
     const emittedEvent = result as any;
     expect(emittedEvent.topics).toEqual(["transfer", "G...", "G..."]);
     expect(emittedEvent.value).toBe("AAAAEAAAAA5VbW91bnQAAAAAAA==");

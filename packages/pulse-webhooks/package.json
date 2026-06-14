@@ -3,6 +3,9 @@
   "version": "0.1.0",
   "description": "HMAC-signed webhook delivery and verification for Stellar events (Node + edge runtimes).",
   "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

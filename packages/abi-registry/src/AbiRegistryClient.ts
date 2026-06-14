@@ -58,9 +58,7 @@ export class AbiRegistryClient {
    *
    * @returns A record mapping each contractId to its spec, or null if not found.
    */
-  async getSpecs(
-    contractIds: string[]
-  ): Promise<Record<string, ContractSpec | null>> {
+  async getSpecs(contractIds: string[]): Promise<Record<string, ContractSpec | null>> {
     const result: Record<string, ContractSpec | null> = {};
     const uncached: string[] = [];
 
@@ -88,22 +86,18 @@ export class AbiRegistryClient {
   /**
    * POST /specs with the full list of IDs — one round-trip regardless of batch size.
    */
-  private async fetchBatch(
-    contractIds: string[]
-  ): Promise<Record<string, ContractSpec | null>> {
+  private async fetchBatch(contractIds: string[]): Promise<Record<string, ContractSpec | null>> {
     const response = await fetch(`${this.baseUrl}/specs`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "Accept": `application/vnd.orbital.abi-registry+json; version=${REGISTRY_SPEC_VERSION}`,
+        Accept: `application/vnd.orbital.abi-registry+json; version=${REGISTRY_SPEC_VERSION}`,
       },
       body: JSON.stringify({ contractIds }),
     });
 
     if (!response.ok) {
-      throw new Error(
-        `ABI registry responded with ${response.status} for batch spec fetch`
-      );
+      throw new Error(`ABI registry responded with ${response.status} for batch spec fetch`);
     }
 
     return response.json() as Promise<Record<string, ContractSpec | null>>;

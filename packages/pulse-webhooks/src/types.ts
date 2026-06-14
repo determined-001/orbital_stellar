@@ -14,7 +14,12 @@ export type WebhookAttemptStatus = "success" | "failure";
 export type WebhookTerminalOutcome = "success" | "failure" | "dropped";
 
 export type WebhookMetrics = {
-  recordAttempt(url: string, attempt: number, durationMs: number, status: WebhookAttemptStatus): void;
+  recordAttempt(
+    url: string,
+    attempt: number,
+    durationMs: number,
+    status: WebhookAttemptStatus,
+  ): void;
   recordTerminal(url: string, outcome: WebhookTerminalOutcome): void;
 };
 

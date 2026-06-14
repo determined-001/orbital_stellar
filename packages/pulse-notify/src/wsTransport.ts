@@ -34,10 +34,7 @@ function notify(entry: WsEntry, fn: (s: ConnectionSubscriber) => void) {
   for (const s of [...entry.subscribers]) fn(s);
 }
 
-export function acquireWsConnection(
-  key: ConnectionKey,
-  subscriber: ConnectionSubscriber
-) {
+export function acquireWsConnection(key: ConnectionKey, subscriber: ConnectionSubscriber) {
   const poolKey = getKey(key);
   let entry = pool.get(poolKey);
 

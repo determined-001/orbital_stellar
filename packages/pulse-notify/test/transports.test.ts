@@ -3,14 +3,8 @@
  * and that a consumer can switch by changing only the transport config flag.
  */
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import {
-  acquireEventConnection,
-  __resetConnectionPoolForTests,
-} from "../src/connectionPool.js";
-import {
-  acquireWsConnection,
-  __resetWsPoolForTests,
-} from "../src/wsTransport.js";
+import { acquireEventConnection, __resetConnectionPoolForTests } from "../src/connectionPool.js";
+import { acquireWsConnection, __resetWsPoolForTests } from "../src/wsTransport.js";
 
 // ---------------------------------------------------------------------------
 // Mock EventSource
@@ -24,7 +18,9 @@ class MockEventSource {
   constructor(readonly url: string) {
     MockEventSource.instances.push(this);
   }
-  close() { this.closeCount++; }
+  close() {
+    this.closeCount++;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -40,7 +36,9 @@ class MockWebSocket {
   constructor(readonly url: string) {
     MockWebSocket.instances.push(this);
   }
-  close() { this.closeCount++; }
+  close() {
+    this.closeCount++;
+  }
 }
 
 // Install globals before imports resolve at runtime

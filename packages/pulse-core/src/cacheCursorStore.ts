@@ -43,9 +43,6 @@ class CacheCursorStore extends CursorStore {
   }
 }
 
-export function cacheCursorStore(
-  inner: CursorStore,
-  { ttlMs }: { ttlMs: number },
-): CursorStore {
+export function cacheCursorStore(inner: CursorStore, { ttlMs }: { ttlMs: number }): CursorStore {
   return new CacheCursorStore(inner, ttlMs);
 }

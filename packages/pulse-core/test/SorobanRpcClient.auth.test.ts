@@ -43,10 +43,7 @@ describe("SorobanRpcClient — authenticated RPC providers", () => {
       await client.request("ping");
 
       expect(fetchMock).toHaveBeenCalledTimes(1);
-      const [calledUrl, callOptions] = fetchMock.mock.calls[0] as [
-        string,
-        RequestInit
-      ];
+      const [calledUrl, callOptions] = fetchMock.mock.calls[0] as [string, RequestInit];
       expect(calledUrl).toBe("https://soroban-rpc.example.com");
       expect(callOptions.method).toBe("POST");
       expect(callOptions.headers).toEqual({
@@ -117,7 +114,7 @@ describe("SorobanRpcClient — authenticated RPC providers", () => {
       });
 
       await expect(client.request("getHealth")).rejects.toThrow(
-        "Soroban RPC request failed: 401 Unauthorized"
+        "Soroban RPC request failed: 401 Unauthorized",
       );
     });
   });
@@ -142,14 +139,12 @@ describe("SorobanRpcClient — authenticated RPC providers", () => {
 
       await client.request("ping");
 
-      expect(logger.debug).toHaveBeenCalledWith(
-        "[SorobanRpcClient] sending request",
-        { method: "ping", headers: { Authorization: "[REDACTED]" } }
-      );
+      expect(logger.debug).toHaveBeenCalledWith("[SorobanRpcClient] sending request", {
+        method: "ping",
+        headers: { Authorization: "[REDACTED]" },
+      });
       // The raw secret must never appear in any logged metadata.
-      expect(JSON.stringify(logger.debug.mock.calls)).not.toContain(
-        "super-secret-token-abc-123"
-      );
+      expect(JSON.stringify(logger.debug.mock.calls)).not.toContain("super-secret-token-abc-123");
     });
 
     it("redacts all header values regardless of header name", async () => {
@@ -172,10 +167,10 @@ describe("SorobanRpcClient — authenticated RPC providers", () => {
 
       await client.request("ping");
 
-      expect(logger.debug).toHaveBeenCalledWith(
-        "[SorobanRpcClient] sending request",
-        { method: "ping", headers: { "X-Api-Key": "[REDACTED]", "X-Secret": "[REDACTED]" } }
-      );
+      expect(logger.debug).toHaveBeenCalledWith("[SorobanRpcClient] sending request", {
+        method: "ping",
+        headers: { "X-Api-Key": "[REDACTED]", "X-Secret": "[REDACTED]" },
+      });
     });
   });
 

@@ -187,7 +187,7 @@ export class SorobanRpcClient {
       if (isAbortError(err)) throw err;
       throw new SorobanRpcError(
         `Soroban RPC network error: ${err instanceof Error ? err.message : String(err)}`,
-        { code: "network", retryable: true, cause: err }
+        { code: "network", retryable: true, cause: err },
       );
     }
 
@@ -195,7 +195,7 @@ export class SorobanRpcClient {
       const { code, retryable } = classifyHttpStatus(response.status);
       throw new SorobanRpcError(
         `Soroban RPC request failed: ${response.status} ${response.statusText}`,
-        { code, retryable, status: response.status }
+        { code, retryable, status: response.status },
       );
     }
 
@@ -215,10 +215,10 @@ export class SorobanRpcClient {
       const rpcError = (parsed as { error?: { code?: number; message?: string } }).error;
       if (rpcError) {
         const { code, retryable } = classifyJsonRpcCode(rpcError.code ?? 0);
-        throw new SorobanRpcError(
-          rpcError.message ?? "Soroban RPC returned a JSON-RPC error",
-          { code, retryable }
-        );
+        throw new SorobanRpcError(rpcError.message ?? "Soroban RPC returned a JSON-RPC error", {
+          code,
+          retryable,
+        });
       }
     }
 
@@ -238,7 +238,7 @@ export class SorobanRpcClient {
     startCursor?: string,
     limit?: number,
     signal?: AbortSignal,
-    filters?: ContractSubscriptionFilter[]
+    filters?: ContractSubscriptionFilter[],
   ): Promise<SorobanGetEventsResult> {
     const params: Record<string, unknown> = {};
     if (startCursor !== undefined) params.startCursor = startCursor;

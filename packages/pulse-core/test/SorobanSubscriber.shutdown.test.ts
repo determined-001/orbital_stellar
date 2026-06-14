@@ -5,7 +5,7 @@
  * emitted from the Soroban path, even when a `getEvents` call is in-flight
  * at the moment `stop()` is called.
  */
-import { expect, describe, it, vi, beforeEach } from "vitest";
+import { expect, describe, it, beforeEach } from "vitest";
 import { SorobanSubscriber } from "../src/SorobanSubscriber.js";
 import { FakeSorobanRpc } from "./fakes/FakeSorobanRpc.js";
 
@@ -173,7 +173,7 @@ describe("SorobanSubscriber — graceful shutdown", () => {
     });
 
     await expect(
-      Promise.all([subscriber.stop(), subscriber.stop(), subscriber.stop()])
+      Promise.all([subscriber.stop(), subscriber.stop(), subscriber.stop()]),
     ).resolves.not.toThrow();
   });
 
@@ -191,9 +191,7 @@ describe("SorobanSubscriber — graceful shutdown", () => {
       },
     });
 
-    await expect(subscriber.pollOnce()).rejects.toThrow(
-      "Soroban RPC Network Timeout"
-    );
+    await expect(subscriber.pollOnce()).rejects.toThrow("Soroban RPC Network Timeout");
     expect(emittedEvents).toHaveLength(0);
   });
 });

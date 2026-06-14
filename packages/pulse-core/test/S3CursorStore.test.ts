@@ -4,7 +4,7 @@ import { S3CursorStore, S3Like } from "../src/S3CursorStore.js";
 function makeMockS3(): { s3: S3Like; _store: Map<string, string> } {
   const store = new Map<string, string>();
   const s3: S3Like = {
-    async getObject({ Bucket, Key }) {
+    async getObject({ Key }) {
       if (!store.has(Key)) {
         const e: any = new Error("NoSuchKey");
         e.code = "NoSuchKey";
@@ -12,9 +12,8 @@ function makeMockS3(): { s3: S3Like; _store: Map<string, string> } {
       }
       return { Body: store.get(Key)! };
     },
-    async putObject({ Bucket, Key, Body }) {
-      const text =
-        typeof Body === "string" ? Body : Buffer.from(Body).toString();
+    async putObject({ Key, Body }) {
+      const text = typeof Body === "string" ? Body : Buffer.from(Body).toString();
       store.set(Key, text);
     },
   };
@@ -43,7 +42,6 @@ describe("S3CursorStore", () => {
   });
 
   it("throws for other S3 errors", async () => {
-    const storeMap = new Map<string, string>();
     const s3: S3Like = {
       async getObject() {
         const e: any = new Error("Bad");

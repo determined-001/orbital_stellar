@@ -43,7 +43,7 @@ class StubRpc implements SorobanRpcLike {
 
   async getEvents(
     _startCursor: string | undefined,
-    limit: number
+    limit: number,
   ): Promise<{ events: SorobanEvent[] }> {
     this.recordedLimits.push(limit);
     return { events: this.page };

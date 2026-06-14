@@ -58,17 +58,13 @@ describe("validateContractFilters", () => {
     it("rejects invalid type", () => {
       const filters = [{ type: "invalid.type" }];
       const result = validateContractFilters(filters);
-      expect(result).toContain(
-        'Filter[0].type must be "contract.invoked" or "contract.emitted"'
-      );
+      expect(result).toContain('Filter[0].type must be "contract.invoked" or "contract.emitted"');
     });
 
     it("rejects non-string type", () => {
       const filters = [{ type: 123 }];
       const result = validateContractFilters(filters);
-      expect(result).toContain(
-        'Filter[0].type must be "contract.invoked" or "contract.emitted"'
-      );
+      expect(result).toContain('Filter[0].type must be "contract.invoked" or "contract.emitted"');
     });
   });
 
@@ -114,9 +110,7 @@ describe("validateContractFilters", () => {
         },
       ];
       const result = validateContractFilters(filters);
-      expect(result).toContain(
-        "Filter[0].contractIds length must be ≤ 5, but got 6"
-      );
+      expect(result).toContain("Filter[0].contractIds length must be ≤ 5, but got 6");
     });
 
     it("returns error when contractIds contains non-string", () => {
@@ -193,12 +187,7 @@ describe("validateContractFilters", () => {
     it("accepts mixed valid topic patterns", () => {
       const filters = [
         {
-          topicFilters: [
-            "*",
-            "**",
-            null,
-            "AAAADwAAAAV0cmFuc2Zlcg==",
-          ],
+          topicFilters: ["*", "**", null, "AAAADwAAAAV0cmFuc2Zlcg=="],
         },
       ];
       const result = validateContractFilters(filters);
@@ -208,24 +197,20 @@ describe("validateContractFilters", () => {
     it("rejects non-string, non-null topic", () => {
       const filters = [{ topicFilters: [123] }];
       const result = validateContractFilters(filters);
-      expect(result).toContain(
-        "Filter[0].topicFilters[0] must be null or a string"
-      );
+      expect(result).toContain("Filter[0].topicFilters[0] must be null or a string");
     });
 
     it("rejects boolean topic", () => {
       const filters = [{ topicFilters: [true] }];
       const result = validateContractFilters(filters);
-      expect(result).toContain(
-        "Filter[0].topicFilters[0] must be null or a string"
-      );
+      expect(result).toContain("Filter[0].topicFilters[0] must be null or a string");
     });
 
     it("rejects invalid string topic (not *, **, or base64)", () => {
       const filters = [{ topicFilters: ["invalid!topic"] }];
       const result = validateContractFilters(filters);
       expect(result).toContain(
-        "Filter[0].topicFilters[0] must be '*', '**', or a base64-encoded XDR scval, but got 'invalid!topic'"
+        "Filter[0].topicFilters[0] must be '*', '**', or a base64-encoded XDR scval, but got 'invalid!topic'",
       );
     });
 
@@ -239,7 +224,7 @@ describe("validateContractFilters", () => {
       const filters = [{ topicFilters: [""] }];
       const result = validateContractFilters(filters);
       expect(result).toContain(
-        "Filter[0].topicFilters[0] must be '*', '**', or a base64-encoded XDR scval, but got ''"
+        "Filter[0].topicFilters[0] must be '*', '**', or a base64-encoded XDR scval, but got ''",
       );
     });
 

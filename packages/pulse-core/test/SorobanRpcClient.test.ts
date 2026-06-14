@@ -11,7 +11,7 @@ function jsonResponse(body: unknown, status = 200): Response {
 
 async function expectSorobanRpcError(
   action: () => Promise<unknown>,
-  expected: { code: SorobanRpcError["code"]; retryable: boolean; status?: number }
+  expected: { code: SorobanRpcError["code"]; retryable: boolean; status?: number },
 ): Promise<void> {
   try {
     await action();
@@ -36,7 +36,7 @@ describe("SorobanRpcClient", () => {
           latestLedger: 123,
           cursor: "000001",
         },
-      })
+      }),
     ) as unknown as typeof fetch;
 
     const client = new SorobanRpcClient({ rpcUrl: "https://rpc.example", fetchImpl });
@@ -52,7 +52,7 @@ describe("SorobanRpcClient", () => {
       expect.objectContaining({
         method: "POST",
         body: expect.stringContaining('"method":"getEvents"'),
-      })
+      }),
     );
   });
 
@@ -65,7 +65,9 @@ describe("SorobanRpcClient", () => {
     [500, "server", true],
     [503, "server", true],
   ] as const)("maps HTTP %s to %s retryable=%s", async (status, code, retryable) => {
-    const fetchImpl = vi.fn(async () => jsonResponse({ error: "nope" }, status)) as unknown as typeof fetch;
+    const fetchImpl = vi.fn(async () =>
+      jsonResponse({ error: "nope" }, status),
+    ) as unknown as typeof fetch;
     const client = new SorobanRpcClient({ rpcUrl: "https://rpc.example", fetchImpl });
 
     await expectSorobanRpcError(() => client.getEvents(), {
@@ -88,7 +90,9 @@ describe("SorobanRpcClient", () => {
   });
 
   it("maps malformed JSON to terminal invalid_request", async () => {
-    const fetchImpl = vi.fn(async () => new Response("{", { status: 200 })) as unknown as typeof fetch;
+    const fetchImpl = vi.fn(
+      async () => new Response("{", { status: 200 }),
+    ) as unknown as typeof fetch;
     const client = new SorobanRpcClient({ rpcUrl: "https://rpc.example", fetchImpl });
 
     await expectSorobanRpcError(() => client.getEvents(), {
@@ -103,7 +107,7 @@ describe("SorobanRpcClient", () => {
         jsonrpc: "2.0",
         id: "pulse-core-getEvents",
         error: { code: -32001, message: "temporary upstream failure" },
-      })
+      }),
     ) as unknown as typeof fetch;
     const client = new SorobanRpcClient({ rpcUrl: "https://rpc.example", fetchImpl });
 
@@ -119,7 +123,7 @@ describe("SorobanRpcClient", () => {
         jsonrpc: "2.0",
         id: "pulse-core-getEvents",
         error: { code: -32602, message: "invalid params" },
-      })
+      }),
     ) as unknown as typeof fetch;
     const client = new SorobanRpcClient({ rpcUrl: "https://rpc.example", fetchImpl });
 

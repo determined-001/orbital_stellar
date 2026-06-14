@@ -6,7 +6,7 @@ export interface MigrateCursorsResult {
 
 export async function migrateCursors(
   source: CursorStore,
-  target: CursorStore
+  target: CursorStore,
 ): Promise<MigrateCursorsResult> {
   const entries = await source.getAll();
   for (const entry of entries) {

@@ -140,7 +140,9 @@ describe("RedisCursorStore", () => {
       const failingRedis: RedisLike = {
         get: async () => null,
         set: async () => {},
-        mget: async () => { throw error; },
+        mget: async () => {
+          throw error;
+        },
         mset: async () => {},
       };
       const store = new RedisCursorStore(failingRedis);
@@ -186,7 +188,9 @@ describe("RedisCursorStore", () => {
         get: async () => null,
         set: async () => {},
         mget: async () => [],
-        mset: async () => { throw error; },
+        mset: async () => {
+          throw error;
+        },
       };
       const store = new RedisCursorStore(failingRedis);
 

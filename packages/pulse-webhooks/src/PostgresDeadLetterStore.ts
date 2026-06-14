@@ -44,10 +44,7 @@ export type DeadLetterStore = {
   put(record: DeadLetterInput): Promise<DeadLetterRecord>;
   list(filter?: DeadLetterFilter): Promise<DeadLetterRecord[]>;
   get(id: string): Promise<DeadLetterRecord | null>;
-  markReplayed(
-    id: string,
-    replayedAt?: Date | string,
-  ): Promise<DeadLetterRecord | null>;
+  markReplayed(id: string, replayedAt?: Date | string): Promise<DeadLetterRecord | null>;
   delete(id: string): Promise<boolean>;
 };
 
@@ -203,9 +200,7 @@ function mapRow(row: DeadLetterRow): DeadLetterRecord {
 }
 
 function normalizeEventOutput(value: NormalizedEvent | string): NormalizedEvent {
-  return typeof value === "string"
-    ? (JSON.parse(value) as NormalizedEvent)
-    : value;
+  return typeof value === "string" ? (JSON.parse(value) as NormalizedEvent) : value;
 }
 
 function normalizeDateInput(value: Date | string): string {
