@@ -10,7 +10,6 @@ const __dirname = path.dirname(__filename);
 const shouldRun = process.env.INTEGRATION_TESTS === "true";
 
 describe.runIf(shouldRun)("Soroban Testnet Subscriber Integration Suite", () => {
-  
   it("should deploy or target a testnet contract, invoke it, and receive an event within 2 ledgers", async () => {
     // Verify fixture file readability
     const wasmPath = path.join(__dirname, "fixtures", "test-contract.wasm");
@@ -45,14 +44,14 @@ describe.runIf(shouldRun)("Soroban Testnet Subscriber Integration Suite", () => 
           inSuccessfulContractCall: true,
           raw: {},
         });
-      }
+      },
     };
 
     await simulatedLiveSubscriber.pollOnce();
 
     // Invariant Assertions: Verify an event was emitted and captured within 2 ledgers
     expect(receivedEvents.length).toBeGreaterThan(0);
-    
+
     // Read the first event out of the array accurately
     const firstEvent = receivedEvents[0];
     expect(firstEvent.type).toBe("contract_emitted");

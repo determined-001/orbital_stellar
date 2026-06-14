@@ -19,7 +19,7 @@ export type UseEventConfig<T extends NormalizedEvent = NormalizedEvent> = {
   /** Side-effect callback fired for every incoming event, before filter is applied */
   onEvent?: (event: NormalizedEvent) => void;
   /** Transport to use. Defaults to 'sse'. */
-  transport?: 'sse' | 'websocket';
+  transport?: "sse" | "websocket";
 };
 
 export type EventState<T extends NormalizedEvent = NormalizedEvent> = {
@@ -30,7 +30,7 @@ export type EventState<T extends NormalizedEvent = NormalizedEvent> = {
 };
 
 export function useStellarEvent<T extends NormalizedEvent = NormalizedEvent>(
-  config: UseEventConfig<T>
+  config: UseEventConfig<T>,
 ): EventState<T>;
 export function useStellarEvent<T extends NormalizedEvent = NormalizedEvent>(
   serverUrl: string,
@@ -38,7 +38,7 @@ export function useStellarEvent<T extends NormalizedEvent = NormalizedEvent>(
   options?: Pick<
     UseEventConfig<T>,
     "event" | "token" | "initialEvent" | "filter" | "withCredentials" | "onEvent"
-  >
+  >,
 ): EventState<T>;
 export function useStellarEvent<T extends NormalizedEvent = NormalizedEvent>(
   configOrUrl: UseEventConfig<T> | string,
@@ -46,38 +46,22 @@ export function useStellarEvent<T extends NormalizedEvent = NormalizedEvent>(
   options?: Pick<
     UseEventConfig<T>,
     "event" | "token" | "initialEvent" | "filter" | "withCredentials" | "onEvent"
-  >
+  >,
 ): EventState<T> {
-  const serverUrl =
-    typeof configOrUrl === "string" ? configOrUrl : configOrUrl.serverUrl;
-  const addr =
-    typeof configOrUrl === "string" ? address! : configOrUrl.address;
+  const serverUrl = typeof configOrUrl === "string" ? configOrUrl : configOrUrl.serverUrl;
+  const addr = typeof configOrUrl === "string" ? address! : configOrUrl.address;
   const eventType: string | string[] =
-    typeof configOrUrl === "string"
-      ? options?.event ?? "*"
-      : configOrUrl.event ?? "*";
-  const token =
-    typeof configOrUrl === "string"
-      ? options?.token
-      : configOrUrl.token;
+    typeof configOrUrl === "string" ? (options?.event ?? "*") : (configOrUrl.event ?? "*");
+  const token = typeof configOrUrl === "string" ? options?.token : configOrUrl.token;
   const initialEvent: T | null =
-    (typeof configOrUrl === "string"
-      ? options?.initialEvent
-      : configOrUrl.initialEvent) ?? null;
-  const filter =
-    typeof configOrUrl === "string" ? options?.filter : configOrUrl.filter;
+    (typeof configOrUrl === "string" ? options?.initialEvent : configOrUrl.initialEvent) ?? null;
+  const filter = typeof configOrUrl === "string" ? options?.filter : configOrUrl.filter;
   const withCredentials =
-    typeof configOrUrl === "string"
-      ? options?.withCredentials
-      : configOrUrl.withCredentials;
-  const onEvent =
-    typeof configOrUrl === "string" ? options?.onEvent : configOrUrl.onEvent;
-  const transport =
-    typeof configOrUrl === "string" ? "sse" : (configOrUrl.transport ?? "sse");
+    typeof configOrUrl === "string" ? options?.withCredentials : configOrUrl.withCredentials;
+  const onEvent = typeof configOrUrl === "string" ? options?.onEvent : configOrUrl.onEvent;
+  const transport = typeof configOrUrl === "string" ? "sse" : (configOrUrl.transport ?? "sse");
 
-  const eventKey = Array.isArray(eventType)
-    ? [...eventType].sort().join(",")
-    : eventType;
+  const eventKey = Array.isArray(eventType) ? [...eventType].sort().join(",") : eventType;
 
   const filterRef = useRef(filter);
   useEffect(() => {
@@ -116,7 +100,11 @@ export function useStellarEvent<T extends NormalizedEvent = NormalizedEvent>(
           if (!allowed) return;
           if (filterRef.current && !filterRef.current(incoming)) return;
 
-          setState((prev) => ({ ...prev, event: incoming as T, lastEventAt: incoming.timestamp ?? null }));
+          setState((prev) => ({
+            ...prev,
+            event: incoming as T,
+            lastEventAt: incoming.timestamp ?? null,
+          }));
         },
         onParseError: () => {
           setState((prev) => ({ ...prev, error: "Failed to parse event" }));
@@ -128,7 +116,7 @@ export function useStellarEvent<T extends NormalizedEvent = NormalizedEvent>(
             error: "Connection lost — retrying...",
           }));
         },
-      }
+      },
     );
 
     if (connection.connected) {
@@ -175,7 +163,7 @@ export function useStellarPayment(
     initialEvent?: PaymentEvent | null;
     filter?: (event: NormalizedEvent) => boolean;
     withCredentials?: boolean;
-  }
+  },
 ) {
   const base = useStellarEvent(serverUrl, address, {
     event: "payment.received",
@@ -198,7 +186,7 @@ export function useStellarActivity<T extends NormalizedEvent = NormalizedEvent>(
     initialEvent?: T | null;
     filter?: (event: NormalizedEvent) => boolean;
     withCredentials?: boolean;
-  }
+  },
 ): EventState<T> {
   return useStellarEvent<T>(serverUrl, address, {
     event: "*",
@@ -231,7 +219,7 @@ export type HistoryState<T extends NormalizedEvent = NormalizedEvent> = EventSta
 export function useStellarHistory<T extends NormalizedEvent = NormalizedEvent>(
   serverUrl: string,
   address: string,
-  options?: UseHistoryOptions
+  options?: UseHistoryOptions,
 ): HistoryState<T> {
   const [history, setHistory] = useState<T[]>([]);
   const capacity = options?.capacity ?? 100;

@@ -54,7 +54,6 @@ export type EngineStatus = {
   };
 };
 
-
 /** Passphrase strings for each supported Stellar network. */
 export const NETWORK_PASSPHRASES = {
   mainnet: "Public Global Stellar Network ; September 2015",
@@ -62,25 +61,17 @@ export const NETWORK_PASSPHRASES = {
 } as const satisfies Record<Network, string>;
 
 /** Event types for payment-related events (received, sent, or self-payment). */
-export type PaymentEventType =
-  | "payment.received"
-  | "payment.sent"
-  | "payment.self";
+export type PaymentEventType = "payment.received" | "payment.sent" | "payment.self";
 /** Event type for account options changes. */
 export type AccountOptionsEventType = "account.options_changed";
 export type LiquidityPoolEventType = "lp.deposited" | "lp.withdrawn";
-export type TrustAuthEventType =
-  | "trustline.authorized"
-  | "trustline.deauthorized";
+export type TrustAuthEventType = "trustline.authorized" | "trustline.deauthorized";
 /** Event type for account creation. */
 export type AccountEventType = "account.created";
 export type ClaimableCreatedEventType = "claimable.created";
 export type ClaimableClaimedEventType = "claimable.claimed";
 /** Event types for trustline lifecycle events (added, removed, or limit updated). */
-export type TrustlineEventType =
-  | "trustline.added"
-  | "trustline.removed"
-  | "trustline.updated";
+export type TrustlineEventType = "trustline.added" | "trustline.removed" | "trustline.updated";
 /** Event type for account merges (one account merged into another). */
 export type AccountMergeEventType = "account.merged";
 /** Notification types emitted by the EventEngine during reconnection. */
@@ -92,10 +83,7 @@ export type WatcherNotificationType =
   | "engine.cursor_store_unhealthy"
   | "engine.cursor_expired";
 
-export type OfferEventType =
-  | "offer.created"
-  | "offer.updated"
-  | "offer.deleted";
+export type OfferEventType = "offer.created" | "offer.updated" | "offer.deleted";
 export type BumpSequenceEventType = "account.bump_sequence";
 export type DataEventType = "data.set" | "data.cleared";
 
@@ -352,7 +340,6 @@ export type NormalizedEvent = (
   /** Lazy, cached `Date` derived from `event.timestamp`. Non-enumerable; does not appear in JSON.stringify output. */
   readonly timestampDate: Date;
 };
-
 
 /**
  * A notification emitted by the EventEngine during reconnection attempts.

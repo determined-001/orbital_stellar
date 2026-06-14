@@ -8,7 +8,7 @@
 [![Node](https://img.shields.io/badge/node-20%20%7C%2022-339933?style=flat-square&logo=node.js)](.github/workflows/ci.yml)
 [![Conventional Commits](https://img.shields.io/badge/commits-conventional-fe5196?style=flat-square&logo=conventionalcommits)](https://www.conventionalcommits.org)
 
-> **Status**: Phase 0 — Foundation &nbsp;·&nbsp; **Networks**: testnet + mainnet &nbsp;·&nbsp; **License**: MIT
+> **Status**: Phase 0 — `v0.1.0` on npm &nbsp;·&nbsp; **Networks**: testnet + mainnet &nbsp;·&nbsp; **License**: MIT
 
 **Stellar's biggest developer-experience gap isn't a missing API — it's that Horizon's firehose still requires every team to build their own event delivery.**
 
@@ -61,20 +61,21 @@ The longer-form thesis, the multi-year vision, and the SCF grant case live in [`
 
 ## Quickstart
 
-> _Packages publish to npm at `v0.1.0` (Phase 0 milestone). Until then, clone the repo and use the workspace install below._
-
-```bash
-git clone https://github.com/determined-001/orbital_stellar.git
-cd orbital_stellar
-pnpm install
-```
-
-Once published, install only what you need:
+Install only what you need from npm:
 
 ```bash
 pnpm add @orbital-stellar/pulse-core             # always
 pnpm add @orbital-stellar/pulse-webhooks         # if you push events to HTTPS endpoints
 pnpm add @orbital-stellar/pulse-notify react     # if you render live events in React
+pnpm add @orbital-stellar/abi-registry           # if you decode Soroban contract events
+```
+
+Or clone the repo to work from source:
+
+```bash
+git clone https://github.com/determined-001/orbital_stellar.git
+cd orbital_stellar
+pnpm install
 ```
 
 ### Subscribe to events directly

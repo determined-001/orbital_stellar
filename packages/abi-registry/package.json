@@ -3,6 +3,9 @@
   "version": "0.1.0",
   "description": "Canonical Soroban ABI client, schema helpers, and registry publisher interface for Orbital.",
   "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

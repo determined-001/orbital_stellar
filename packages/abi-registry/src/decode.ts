@@ -49,8 +49,7 @@ export type DecodedValue =
 /** Array of decoded values (interface indirection breaks the alias self-reference). */
 export interface DecodedValueArray extends Array<DecodedValue> {}
 /** Decoded Soroban map: an array of key/value pairs. */
-export interface DecodedValueMap
-  extends Array<{ key: DecodedValue; value: DecodedValue }> {}
+export interface DecodedValueMap extends Array<{ key: DecodedValue; value: DecodedValue }> {}
 /** Decoded struct: string-keyed record of decoded values. */
 export interface DecodedValueObject {
   [key: string]: DecodedValue;
@@ -75,33 +74,6 @@ export type DecodeError = {
 export type DecodeResult = DecodedEvent | DecodeError;
 
 // ---------------------------------------------------------------------------
-// Raw ScVal shape (as returned by Horizon / Soroban RPC JSON responses)
-// ---------------------------------------------------------------------------
-
-/**
- * A raw ScVal as it appears in Horizon/RPC JSON responses.
- * The discriminant is the single key of the object (e.g. `{ "u32": 42 }`).
- */
-type RawScVal =
-  | { bool: boolean }
-  | { void: null | undefined }
-  | { u32: number }
-  | { i32: number }
-  | { u64: string | number }
-  | { i64: string | number }
-  | { u128: { lo: string | number; hi: string | number } | string | number }
-  | { i128: { lo: string | number; hi: string | number } | string | number }
-  | { u256: string | number }
-  | { i256: string | number }
-  | { bytes: string }
-  | { str: string }
-  | { sym: string }
-  | { address: string }
-  | { vec: RawScVal[] | null }
-  | { map: Array<{ key: RawScVal; val: RawScVal }> | null }
-  | Record<string, unknown>; // custom struct / fallback
-
-// ---------------------------------------------------------------------------
 // Core decoder
 // ---------------------------------------------------------------------------
 
@@ -115,10 +87,7 @@ type RawScVal =
  * @returns A {@link DecodedEvent} on success, or `{ error: string }` on
  *   any shape mismatch or unsupported type — never throws.
  */
-export function decodeContractEvent(
-  spec: ContractSpec,
-  rawEvent: unknown
-): DecodeResult {
+export function decodeContractEvent(spec: ContractSpec, rawEvent: unknown): DecodeResult {
   try {
     return _decode(spec, rawEvent);
   } catch (err) {
@@ -137,7 +106,7 @@ function _decode(spec: ContractSpec, rawEvent: unknown): DecodeResult {
   const event = rawEvent as Record<string, unknown>;
 
   if (!Array.isArray(event["topics"])) {
-    return { error: 'rawEvent.topics must be an array' };
+    return { error: "rawEvent.topics must be an array" };
   }
 
   const rawTopics = event["topics"] as unknown[];
@@ -179,9 +148,7 @@ function _decode(spec: ContractSpec, rawEvent: unknown): DecodeResult {
 // ScVal decoder
 // ---------------------------------------------------------------------------
 
-type DecodeValueResult =
-  | { value: DecodedValue }
-  | { error: string };
+type DecodeValueResult = { value: DecodedValue } | { error: string };
 
 function isError(r: DecodeValueResult): r is { error: string } {
   return "error" in r;
@@ -322,9 +289,7 @@ function decodeVec(arr: unknown[]): DecodeValueResult {
   return { value: result };
 }
 
-function decodeMap(
-  arr: unknown[]
-): DecodeValueResult {
+function decodeMap(arr: unknown[]): DecodeValueResult {
   const result: { key: DecodedValue; value: DecodedValue }[] = [];
   for (let i = 0; i < arr.length; i++) {
     const entry = arr[i];

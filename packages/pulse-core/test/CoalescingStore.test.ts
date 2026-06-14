@@ -40,28 +40,29 @@ class FakeInnerStore extends CursorStore {
 
 describe("coalesceCursorStore factory validation", () => {
   it("throws RangeError for intervalMs = 0", () => {
-    expect(() => coalesceCursorStore(new FakeInnerStore(), { intervalMs: 0 }))
-      .toThrow(RangeError);
+    expect(() => coalesceCursorStore(new FakeInnerStore(), { intervalMs: 0 })).toThrow(RangeError);
   });
 
   it("throws RangeError for intervalMs = -1", () => {
-    expect(() => coalesceCursorStore(new FakeInnerStore(), { intervalMs: -1 }))
-      .toThrow(RangeError);
+    expect(() => coalesceCursorStore(new FakeInnerStore(), { intervalMs: -1 })).toThrow(RangeError);
   });
 
   it("throws RangeError for intervalMs = NaN", () => {
-    expect(() => coalesceCursorStore(new FakeInnerStore(), { intervalMs: NaN }))
-      .toThrow(RangeError);
+    expect(() => coalesceCursorStore(new FakeInnerStore(), { intervalMs: NaN })).toThrow(
+      RangeError,
+    );
   });
 
   it("throws RangeError for intervalMs = Infinity", () => {
-    expect(() => coalesceCursorStore(new FakeInnerStore(), { intervalMs: Infinity }))
-      .toThrow(RangeError);
+    expect(() => coalesceCursorStore(new FakeInnerStore(), { intervalMs: Infinity })).toThrow(
+      RangeError,
+    );
   });
 
   it("throws RangeError for intervalMs = -Infinity", () => {
-    expect(() => coalesceCursorStore(new FakeInnerStore(), { intervalMs: -Infinity }))
-      .toThrow(RangeError);
+    expect(() => coalesceCursorStore(new FakeInnerStore(), { intervalMs: -Infinity })).toThrow(
+      RangeError,
+    );
   });
 
   it("does not throw for a valid positive intervalMs", () => {

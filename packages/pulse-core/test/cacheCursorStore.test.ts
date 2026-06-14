@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { cacheCursorStore } from "../src/cacheCursorStore.js";
 import type { CursorStore } from "../src/CursorStore.js";
 
@@ -6,8 +6,13 @@ function makeInner(initial: string | null = "cursor-1"): CursorStore & { getCall
   let stored = initial;
   return {
     getCalls: 0,
-    async get() { this.getCalls++; return stored; },
-    async set(_, cursor) { stored = cursor; },
+    async get() {
+      this.getCalls++;
+      return stored;
+    },
+    async set(_, cursor) {
+      stored = cursor;
+    },
   };
 }
 

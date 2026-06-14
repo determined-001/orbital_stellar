@@ -21,8 +21,8 @@ export class HorizonStreamError extends Error {
       error instanceof Error
         ? error.message
         : typeof error === "string"
-        ? error
-        : "[pulse-core] Horizon SSE stream error"
+          ? error
+          : "[pulse-core] Horizon SSE stream error",
     );
     this.name = "HorizonStreamError";
 
@@ -57,7 +57,9 @@ export class EngineAlreadyStartedError extends Error {
 
 export class NetworkMismatchError extends Error {
   constructor(expected: string, actual: string) {
-    super(`[pulse-core] Soroban RPC network mismatch: expected passphrase "${expected}", got "${actual}"`);
+    super(
+      `[pulse-core] Soroban RPC network mismatch: expected passphrase "${expected}", got "${actual}"`,
+    );
     this.name = "NetworkMismatchError";
   }
 }

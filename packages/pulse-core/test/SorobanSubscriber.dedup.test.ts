@@ -167,13 +167,7 @@ describe("SorobanSubscriber – deduplication", () => {
     await sub.pollOnce();
 
     // Emitted: id-0,id-1,id-2 (first pass) + id-3 + id-0 again
-    expect(emitted.map((e) => e.id)).toEqual([
-      "id-0",
-      "id-1",
-      "id-2",
-      "id-3",
-      "id-0",
-    ]);
+    expect(emitted.map((e) => e.id)).toEqual(["id-0", "id-1", "id-2", "id-3", "id-0"]);
   });
 
   // ── 6. Dedup cache updates correctly ───────────────────────────────────
@@ -194,12 +188,10 @@ describe("SorobanSubscriber – deduplication", () => {
   });
 
   it("does not record an event ID if onEvent throws", async () => {
-    let callCount = 0;
     const throwingSub = new SorobanSubscriber({
       rpc: stub,
       cursorStore,
       onEvent: async () => {
-        callCount++;
         throw new Error("handler error");
       },
     });
@@ -226,9 +218,7 @@ describe("SorobanSubscriber – deduplication", () => {
   // ── 7. Acceptance criteria ──────────────────────────────────────────────
 
   it("replaying a full page twice produces downstream events exactly once per unique ID", async () => {
-    const page = Array.from({ length: 10 }, (_, i) =>
-      makeEvent(`evt-${i}`, `tok-${i}`)
-    );
+    const page = Array.from({ length: 10 }, (_, i) => makeEvent(`evt-${i}`, `tok-${i}`));
     stub.page = page;
 
     const sub = makeSubscriber();

@@ -58,7 +58,7 @@ function makeContractId(index: number): string {
 function makeSyntheticGetEventsResponse(
   responseIndex: number,
   eventsPerResponse: number,
-  subscriptionCount: number
+  subscriptionCount: number,
 ): SyntheticGetEventsResponse {
   const events: SyntheticRpcEvent[] = [];
   const baseIndex = responseIndex * eventsPerResponse;
@@ -99,7 +99,7 @@ function subscribeContractWatchers(engine: EventEngine, subscriptionCount: numbe
 function runScenario(
   subscriptionCount: number,
   responseCount: number,
-  eventsPerResponse: number
+  eventsPerResponse: number,
 ): BenchmarkResult {
   forceGc();
   const baselineHeapMb = toMb(process.memoryUsage().heapUsed);
@@ -114,7 +114,11 @@ function runScenario(
   const start = process.hrtime.bigint();
 
   for (let responseIndex = 0; responseIndex < responseCount; responseIndex += 1) {
-    const response = makeSyntheticGetEventsResponse(responseIndex, eventsPerResponse, subscriptionCount);
+    const response = makeSyntheticGetEventsResponse(
+      responseIndex,
+      eventsPerResponse,
+      subscriptionCount,
+    );
 
     for (const rpcEvent of response.events) {
       const normalized = internals.normalize(rpcEvent);
@@ -171,7 +175,10 @@ function getPositiveIntegerArg(name: string, defaultValue: number): number {
 
 function main(): void {
   const responses = getPositiveIntegerArg("responses", DEFAULT_RESPONSE_COUNT);
-  const eventsPerResponse = getPositiveIntegerArg("events-per-response", DEFAULT_EVENTS_PER_RESPONSE);
+  const eventsPerResponse = getPositiveIntegerArg(
+    "events-per-response",
+    DEFAULT_EVENTS_PER_RESPONSE,
+  );
 
   console.log("pulse-core Soroban throughput benchmark");
   console.log(`node=${process.version}`);
@@ -183,7 +190,7 @@ function main(): void {
   console.log("");
 
   const results = SUBSCRIPTION_COUNTS.map((subscriptions) =>
-    runScenario(subscriptions, responses, eventsPerResponse)
+    runScenario(subscriptions, responses, eventsPerResponse),
   );
 
   console.table(
@@ -198,7 +205,7 @@ function main(): void {
       subscribed_heap_mb: result.memory.subscribedHeapMb,
       post_replay_heap_mb: result.memory.postReplayHeapMb,
       post_replay_rss_mb: result.memory.postReplayRssMb,
-    }))
+    })),
   );
 
   console.log("\nJSON results:");

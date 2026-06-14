@@ -40,7 +40,7 @@ export interface SorobanRpc {
     startCursor: string | undefined,
     limit: number,
     signal?: AbortSignal,
-    filters?: ContractSubscriptionFilter[]
+    filters?: ContractSubscriptionFilter[],
   ): Promise<{ events: SorobanEvent[] }>;
 }
 
@@ -158,14 +158,8 @@ export class SorobanSubscriber {
 
   constructor(options: SorobanSubscriberOptions) {
     const pageLimit = options.pageLimit ?? options.pageSize ?? DEFAULT_PAGE_LIMIT;
-    if (
-      !Number.isFinite(pageLimit) ||
-      pageLimit < MIN_PAGE_LIMIT ||
-      pageLimit > MAX_PAGE_LIMIT
-    ) {
-      throw new RangeError(
-        `pageLimit must be between 1 and 10,000 (received ${pageLimit})`
-      );
+    if (!Number.isFinite(pageLimit) || pageLimit < MIN_PAGE_LIMIT || pageLimit > MAX_PAGE_LIMIT) {
+      throw new RangeError(`pageLimit must be between 1 and 10,000 (received ${pageLimit})`);
     }
 
     this.rpc = options.rpc;
@@ -201,14 +195,16 @@ export class SorobanSubscriber {
     if (this._isRunning) return;
     this._isRunning = true;
     const tick = () => {
-      this.inflightPoll = (this.inflightPoll ?? Promise.resolve()).then(() =>
-        this.pollOnce()
-      );
+      this.inflightPoll = (this.inflightPoll ?? Promise.resolve()).then(() => this.pollOnce());
     };
     tick();
     this.pollTimer = setInterval(tick, this.pollIntervalMs);
     // Allow the Node.js process to exit even if the timer is still active.
-    if (typeof this.pollTimer === "object" && this.pollTimer !== null && "unref" in this.pollTimer) {
+    if (
+      typeof this.pollTimer === "object" &&
+      this.pollTimer !== null &&
+      "unref" in this.pollTimer
+    ) {
       (this.pollTimer as { unref(): void }).unref();
     }
   }
@@ -333,8 +329,8 @@ export class SorobanSubscriber {
         currentCursor,
         this.pageLimit,
         signal,
-        filters.length > 0 ? filters : undefined
-      )
+        filters.length > 0 ? filters : undefined,
+      ),
     );
 
     let results: { events: SorobanEvent[] }[];
@@ -440,25 +436,18 @@ export class SorobanSubscriber {
   }
 
   /** True when any of the subscription's filters matches the event. */
-  private eventMatchesSubscription(
-    event: SorobanEvent,
-    sub: SorobanSubscription
-  ): boolean {
+  private eventMatchesSubscription(event: SorobanEvent, sub: SorobanSubscription): boolean {
     // A subscription with no filters matches every event.
     if (sub.filters.length === 0) return true;
     return sub.filters.some((filter) => this.eventMatchesFilter(event, filter));
   }
 
   /** True when the event satisfies a single filter (currently contractId scoped). */
-  private eventMatchesFilter(
-    event: SorobanEvent,
-    filter: ContractSubscriptionFilter
-  ): boolean {
+  private eventMatchesFilter(event: SorobanEvent, filter: ContractSubscriptionFilter): boolean {
     const contractIds = filter.contractIds as ContractAddress[] | undefined;
     if (contractIds && contractIds.length > 0) {
       return (
-        event.contractId !== undefined &&
-        contractIds.includes(event.contractId as ContractAddress)
+        event.contractId !== undefined && contractIds.includes(event.contractId as ContractAddress)
       );
     }
     // No contractId constraint → matches.
@@ -481,9 +470,7 @@ export class SorobanSubscriber {
     this.retryTimer = this.setTimeoutFn(() => {
       this.retryTimer = null;
       if (this.isStopped) return;
-      this.inflightPoll = (this.inflightPoll ?? Promise.resolve()).then(() =>
-        this.pollOnce()
-      );
+      this.inflightPoll = (this.inflightPoll ?? Promise.resolve()).then(() => this.pollOnce());
     }, this.retryDelayMs);
   }
 

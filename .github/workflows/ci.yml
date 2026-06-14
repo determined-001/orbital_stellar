@@ -32,6 +32,25 @@ jobs:
               - 'apps/web/**'
               - 'packages/**'
 
+  lint:
+    needs: changes
+    if: ${{ needs.changes.outputs.packages == 'true' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Lint packages
+        run: pnpm lint
+      - name: Check formatting
+        run: pnpm format:check
+
   typecheck-packages:
     needs: changes
     if: ${{ needs.changes.outputs.packages == 'true' }}
@@ -45,8 +64,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v6
-        with:
-          version: 10
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node-version }}
@@ -72,8 +89,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v6
-        with:
-          version: 10
       - uses: actions/setup-node@v4
         with:
           node-version: 20
@@ -95,8 +110,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v6
-        with:
-          version: 10
       - uses: actions/setup-node@v4
         with:
           node-version: 20

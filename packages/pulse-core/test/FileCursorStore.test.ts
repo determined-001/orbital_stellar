@@ -4,8 +4,7 @@ import fs from "fs";
 import path from "path";
 import os from "os";
 
-const mkdtemp = (prefix = "filecursor-") =>
-  fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+const mkdtemp = (prefix = "filecursor-") => fs.mkdtempSync(path.join(os.tmpdir(), prefix));
 
 describe("FileCursorStore", () => {
   let dir: string;

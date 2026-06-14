@@ -1,10 +1,8 @@
 import { exec } from "node:child_process";
-import { rm, writeFile } from "node:fs/promises";
 import { Pool } from "pg";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { test, expect, beforeAll, afterAll, beforeEach } from "vitest";
-import type { PostgresCursorStore, PgLike } from "../src/PostgresCursorStore.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -31,7 +29,7 @@ if (!isIntegrationTest) {
         stream_key VARCHAR(255) PRIMARY KEY,
         cursor VARCHAR(255) NOT NULL,
         updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-      );`
+      );`,
     );
   });
 
@@ -65,8 +63,14 @@ if (!isIntegrationTest) {
   }
 
   test("cursor dump outputs line-delimited JSON", async () => {
-    await pg.query("INSERT INTO cursor_store (stream_key, cursor) VALUES ($1, $2)", ["key1", "cursorA"]);
-    await pg.query("INSERT INTO cursor_store (stream_key, cursor) VALUES ($1, $2)", ["key2", "cursorB"]);
+    await pg.query("INSERT INTO cursor_store (stream_key, cursor) VALUES ($1, $2)", [
+      "key1",
+      "cursorA",
+    ]);
+    await pg.query("INSERT INTO cursor_store (stream_key, cursor) VALUES ($1, $2)", [
+      "key2",
+      "cursorB",
+    ]);
 
     const output = await execCli("cursor dump");
     const lines = output.trim().split("\n").map(JSON.parse);
@@ -84,7 +88,9 @@ if (!isIntegrationTest) {
 
     await execCli("cursor restore", input);
 
-    const { rows } = await pg.query("SELECT stream_key, cursor FROM cursor_store ORDER BY stream_key");
+    const { rows } = await pg.query(
+      "SELECT stream_key, cursor FROM cursor_store ORDER BY stream_key",
+    );
 
     expect(rows).toHaveLength(2);
     expect(rows[0]).toEqual({ stream_key: "key3", cursor: "cursorC" });
@@ -92,18 +98,29 @@ if (!isIntegrationTest) {
   });
 
   test("cursor restore updates existing cursors", async () => {
-    await pg.query("INSERT INTO cursor_store (stream_key, cursor) VALUES ($1, $2)", ["key5", "cursorE_old"]);
+    await pg.query("INSERT INTO cursor_store (stream_key, cursor) VALUES ($1, $2)", [
+      "key5",
+      "cursorE_old",
+    ]);
 
     const input = JSON.stringify({ stream_key: "key5", cursor: "cursorE_new" });
     await execCli("cursor restore", input);
 
-    const { rows } = await pg.query("SELECT cursor FROM cursor_store WHERE stream_key = $1", ["key5"]);
+    const { rows } = await pg.query("SELECT cursor FROM cursor_store WHERE stream_key = $1", [
+      "key5",
+    ]);
     expect(rows[0].cursor).toBe("cursorE_new");
   });
 
   test("cursor dump and restore round-trip", async () => {
-    await pg.query("INSERT INTO cursor_store (stream_key, cursor) VALUES ($1, $2)", ["key_round_1", "cursor_r1"]);
-    await pg.query("INSERT INTO cursor_store (stream_key, cursor) VALUES ($1, $2)", ["key_round_2", "cursor_r2"]);
+    await pg.query("INSERT INTO cursor_store (stream_key, cursor) VALUES ($1, $2)", [
+      "key_round_1",
+      "cursor_r1",
+    ]);
+    await pg.query("INSERT INTO cursor_store (stream_key, cursor) VALUES ($1, $2)", [
+      "key_round_2",
+      "cursor_r2",
+    ]);
 
     const dumped = await execCli("cursor dump");
 
@@ -111,7 +128,9 @@ if (!isIntegrationTest) {
 
     await execCli("cursor restore", dumped);
 
-    const { rows } = await pg.query("SELECT stream_key, cursor FROM cursor_store ORDER BY stream_key");
+    const { rows } = await pg.query(
+      "SELECT stream_key, cursor FROM cursor_store ORDER BY stream_key",
+    );
     expect(rows).toHaveLength(2);
     expect(rows[0]).toEqual({ stream_key: "key_round_1", cursor: "cursor_r1" });
     expect(rows[1]).toEqual({ stream_key: "key_round_2", cursor: "cursor_r2" });
@@ -122,7 +141,9 @@ if (!isIntegrationTest) {
 
     await expect(execCli("cursor restore", input)).rejects.toThrow();
 
-    const { rows } = await pg.query("SELECT COUNT(*) FROM cursor_store WHERE stream_key = $1", ["key_bad"]);
+    const { rows } = await pg.query("SELECT COUNT(*) FROM cursor_store WHERE stream_key = $1", [
+      "key_bad",
+    ]);
     expect(rows[0].count).toBe("0");
   });
 }

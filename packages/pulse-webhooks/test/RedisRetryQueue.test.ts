@@ -1,11 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { NormalizedEvent } from "@orbital-stellar/pulse-core";
-import {
-  RedisRetryQueue,
-  type RedisLike,
-  type RetryRecord,
-} from "../src/index.js";
+import { RedisRetryQueue, type RedisLike, type RetryRecord } from "../src/index.js";
 
 type SortedSetMember = {
   score: number;
@@ -39,12 +35,9 @@ class MockRedis implements RedisLike {
   ): string[] {
     const minScore = this.parseScore(min);
     const maxScore = this.parseScore(max);
-    const limitIndex = args.findIndex(
-      (arg) => String(arg).toUpperCase() === "LIMIT",
-    );
+    const limitIndex = args.findIndex((arg) => String(arg).toUpperCase() === "LIMIT");
     const offset = limitIndex >= 0 ? Number(args[limitIndex + 1] ?? 0) : 0;
-    const count =
-      limitIndex >= 0 ? Number(args[limitIndex + 2] ?? Infinity) : Infinity;
+    const count = limitIndex >= 0 ? Number(args[limitIndex + 2] ?? Infinity) : Infinity;
 
     return [...(this.sets.get(key) ?? [])]
       .filter((entry) => entry.score >= minScore && entry.score <= maxScore)
@@ -185,9 +178,7 @@ describe("RedisRetryQueue", () => {
     await payments.enqueue(retryRecord({ id: "payments-retry" }));
 
     expect(await audits.dequeue(1_000)).toBeNull();
-    expect(await payments.dequeue(1_000)).toEqual(
-      retryRecord({ id: "payments-retry" }),
-    );
+    expect(await payments.dequeue(1_000)).toEqual(retryRecord({ id: "payments-retry" }));
   });
 
   it("re-emerges dequeued records after visibility timeout when not acked", async () => {
