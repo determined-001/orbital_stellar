@@ -11,9 +11,13 @@
       "name": "transfer",
       "doc": "Transfer `amount` AQUA from `from` to `to`. Requires authorization from `from`.",
       "params": [
-        { "name": "from",   "type": "Address", "doc": "Source account or contract address." },
-        { "name": "to",     "type": "Address", "doc": "Destination account or contract address." },
-        { "name": "amount", "type": "i128",    "doc": "Amount in AQUA base units (7 decimal places; 1 AQUA = 10,000,000)." }
+        { "name": "from", "type": "Address", "doc": "Source account or contract address." },
+        { "name": "to", "type": "Address", "doc": "Destination account or contract address." },
+        {
+          "name": "amount",
+          "type": "i128",
+          "doc": "Amount in AQUA base units (7 decimal places; 1 AQUA = 10,000,000)."
+        }
       ],
       "outputs": []
     },
@@ -22,9 +26,9 @@
       "doc": "Transfer `amount` AQUA from `from` to `to` using a pre-approved allowance. Requires authorization from `spender`.",
       "params": [
         { "name": "spender", "type": "Address", "doc": "Address that was granted the allowance." },
-        { "name": "from",    "type": "Address", "doc": "Source account whose allowance is consumed." },
-        { "name": "to",      "type": "Address", "doc": "Destination account or contract address." },
-        { "name": "amount",  "type": "i128",    "doc": "Amount in AQUA base units." }
+        { "name": "from", "type": "Address", "doc": "Source account whose allowance is consumed." },
+        { "name": "to", "type": "Address", "doc": "Destination account or contract address." },
+        { "name": "amount", "type": "i128", "doc": "Amount in AQUA base units." }
       ],
       "outputs": []
     },
@@ -32,10 +36,18 @@
       "name": "approve",
       "doc": "Approve `spender` to transfer up to `amount` AQUA from the caller's balance.",
       "params": [
-        { "name": "from",              "type": "Address", "doc": "Token owner granting the allowance." },
-        { "name": "spender",           "type": "Address", "doc": "Address being granted the allowance." },
-        { "name": "amount",            "type": "i128",    "doc": "Maximum transferable amount in AQUA base units." },
-        { "name": "expiration_ledger", "type": "u32",     "doc": "Ledger sequence number at which the allowance expires." }
+        { "name": "from", "type": "Address", "doc": "Token owner granting the allowance." },
+        { "name": "spender", "type": "Address", "doc": "Address being granted the allowance." },
+        {
+          "name": "amount",
+          "type": "i128",
+          "doc": "Maximum transferable amount in AQUA base units."
+        },
+        {
+          "name": "expiration_ledger",
+          "type": "u32",
+          "doc": "Ledger sequence number at which the allowance expires."
+        }
       ],
       "outputs": []
     },
@@ -43,12 +55,10 @@
       "name": "allowance",
       "doc": "Return the remaining allowance that `spender` may transfer from `from`.",
       "params": [
-        { "name": "from",    "type": "Address", "doc": "Token owner." },
+        { "name": "from", "type": "Address", "doc": "Token owner." },
         { "name": "spender", "type": "Address", "doc": "Approved spender." }
       ],
-      "outputs": [
-        { "type": "i128", "doc": "Remaining allowance in AQUA base units." }
-      ]
+      "outputs": [{ "type": "i128", "doc": "Remaining allowance in AQUA base units." }]
     },
     {
       "name": "balance",
@@ -56,48 +66,38 @@
       "params": [
         { "name": "id", "type": "Address", "doc": "Account or contract address to query." }
       ],
-      "outputs": [
-        { "type": "i128", "doc": "Balance in AQUA base units." }
-      ]
+      "outputs": [{ "type": "i128", "doc": "Balance in AQUA base units." }]
     },
     {
       "name": "decimals",
       "doc": "Return the number of decimal places. Always 7 for Stellar-native AQUA.",
       "params": [],
-      "outputs": [
-        { "type": "u32", "doc": "Always 7." }
-      ]
+      "outputs": [{ "type": "u32", "doc": "Always 7." }]
     },
     {
       "name": "name",
       "doc": "Return the token name.",
       "params": [],
-      "outputs": [
-        { "type": "String", "doc": "Always 'Aquarius'." }
-      ]
+      "outputs": [{ "type": "String", "doc": "Always 'Aquarius'." }]
     },
     {
       "name": "symbol",
       "doc": "Return the token symbol.",
       "params": [],
-      "outputs": [
-        { "type": "String", "doc": "Always 'AQUA'." }
-      ]
+      "outputs": [{ "type": "String", "doc": "Always 'AQUA'." }]
     },
     {
       "name": "total_supply",
       "doc": "Return the total AQUA supply currently in circulation on Stellar.",
       "params": [],
-      "outputs": [
-        { "type": "i128", "doc": "Total supply in AQUA base units." }
-      ]
+      "outputs": [{ "type": "i128", "doc": "Total supply in AQUA base units." }]
     },
     {
       "name": "mint",
       "doc": "Mint `amount` AQUA to `to`. Requires admin (Aquarius issuer) authorization.",
       "params": [
-        { "name": "to",     "type": "Address", "doc": "Recipient of the newly minted AQUA." },
-        { "name": "amount", "type": "i128",    "doc": "Amount to mint in AQUA base units." }
+        { "name": "to", "type": "Address", "doc": "Recipient of the newly minted AQUA." },
+        { "name": "amount", "type": "i128", "doc": "Amount to mint in AQUA base units." }
       ],
       "outputs": []
     },
@@ -105,8 +105,8 @@
       "name": "burn",
       "doc": "Burn `amount` AQUA from `from`. Requires authorization from `from`.",
       "params": [
-        { "name": "from",   "type": "Address", "doc": "Account whose AQUA is burned." },
-        { "name": "amount", "type": "i128",    "doc": "Amount to burn in AQUA base units." }
+        { "name": "from", "type": "Address", "doc": "Account whose AQUA is burned." },
+        { "name": "amount", "type": "i128", "doc": "Amount to burn in AQUA base units." }
       ],
       "outputs": []
     },
@@ -115,8 +115,8 @@
       "doc": "Burn `amount` AQUA from `from` using a pre-approved allowance.",
       "params": [
         { "name": "spender", "type": "Address", "doc": "Address consuming the allowance." },
-        { "name": "from",    "type": "Address", "doc": "Account whose AQUA is burned." },
-        { "name": "amount",  "type": "i128",    "doc": "Amount to burn in AQUA base units." }
+        { "name": "from", "type": "Address", "doc": "Account whose AQUA is burned." },
+        { "name": "amount", "type": "i128", "doc": "Amount to burn in AQUA base units." }
       ],
       "outputs": []
     },
@@ -124,8 +124,8 @@
       "name": "clawback",
       "doc": "Clawback `amount` AQUA from `from`. Only callable by the admin on assets with clawback enabled.",
       "params": [
-        { "name": "from",   "type": "Address", "doc": "Account from which AQUA is clawed back." },
-        { "name": "amount", "type": "i128",    "doc": "Amount to clawback in AQUA base units." }
+        { "name": "from", "type": "Address", "doc": "Account from which AQUA is clawed back." },
+        { "name": "amount", "type": "i128", "doc": "Amount to clawback in AQUA base units." }
       ],
       "outputs": []
     },
@@ -133,20 +133,20 @@
       "name": "set_authorized",
       "doc": "Set the authorization flag for `id`. Requires admin authorization.",
       "params": [
-        { "name": "id",        "type": "Address", "doc": "Account whose authorization flag is being set." },
-        { "name": "authorize", "type": "bool",    "doc": "True to authorize, false to deauthorize." }
+        {
+          "name": "id",
+          "type": "Address",
+          "doc": "Account whose authorization flag is being set."
+        },
+        { "name": "authorize", "type": "bool", "doc": "True to authorize, false to deauthorize." }
       ],
       "outputs": []
     },
     {
       "name": "authorized",
       "doc": "Return whether `id` is authorized to hold and transfer AQUA.",
-      "params": [
-        { "name": "id", "type": "Address", "doc": "Account to query." }
-      ],
-      "outputs": [
-        { "type": "bool", "doc": "True if authorized." }
-      ]
+      "params": [{ "name": "id", "type": "Address", "doc": "Account to query." }],
+      "outputs": [{ "type": "bool", "doc": "True if authorized." }]
     },
     {
       "name": "set_admin",
@@ -160,9 +160,7 @@
       "name": "admin",
       "doc": "Return the current admin address.",
       "params": [],
-      "outputs": [
-        { "type": "Address", "doc": "Current admin address (Aquarius issuer account)." }
-      ]
+      "outputs": [{ "type": "Address", "doc": "Current admin address (Aquarius issuer account)." }]
     }
   ]
 }

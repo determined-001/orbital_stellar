@@ -33,23 +33,23 @@ function getEventSourceUrl({ serverUrl, address, token }: ConnectionKey): string
 
 function notifySubscribers(
   entry: ConnectionEntry,
-  notify: (subscriber: ConnectionSubscriber) => void
+  notify: (subscriber: ConnectionSubscriber) => void,
 ) {
   for (const subscriber of [...entry.subscribers]) {
     notify(subscriber);
   }
 }
 
-export function acquireEventConnection(
-  key: ConnectionKey,
-  subscriber: ConnectionSubscriber
-) {
+export function acquireEventConnection(key: ConnectionKey, subscriber: ConnectionSubscriber) {
   const poolKey = getConnectionKey(key);
   let entry = pool.get(poolKey);
 
   if (!entry) {
     const newEntry: ConnectionEntry = {
-      source: new EventSource(getEventSourceUrl(key), key.withCredentials ? { withCredentials: true } : undefined),
+      source: new EventSource(
+        getEventSourceUrl(key),
+        key.withCredentials ? { withCredentials: true } : undefined,
+      ),
       subscribers: new Set(),
       connected: false,
     };

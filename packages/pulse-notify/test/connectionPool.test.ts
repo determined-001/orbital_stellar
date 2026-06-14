@@ -53,7 +53,7 @@ describe("connectionPool", () => {
         onEvent: (event) => eventsA.push(event.type),
         onParseError: () => undefined,
         onError: () => undefined,
-      }
+      },
     );
 
     const b = acquireEventConnection(
@@ -63,7 +63,7 @@ describe("connectionPool", () => {
         onEvent: (event) => eventsB.push(event.type),
         onParseError: () => undefined,
         onError: () => undefined,
-      }
+      },
     );
 
     assert.equal(MockEventSource.instances.length, 1);
@@ -91,7 +91,7 @@ describe("connectionPool", () => {
         onEvent: () => undefined,
         onParseError: () => undefined,
         onError: () => undefined,
-      }
+      },
     );
 
     const b = acquireEventConnection(
@@ -101,7 +101,7 @@ describe("connectionPool", () => {
         onEvent: () => undefined,
         onParseError: () => undefined,
         onError: () => undefined,
-      }
+      },
     );
 
     a.unsubscribe();
@@ -121,7 +121,7 @@ describe("connectionPool", () => {
         onEvent: () => undefined,
         onParseError: () => undefined,
         onError: () => undefined,
-      }
+      },
     );
 
     acquireEventConnection(
@@ -131,7 +131,7 @@ describe("connectionPool", () => {
         onEvent: () => undefined,
         onParseError: () => undefined,
         onError: () => undefined,
-      }
+      },
     );
 
     assert.equal(MockEventSource.instances.length, 2);

@@ -41,7 +41,14 @@ class FakeInnerStore extends CursorStore {
 }
 
 // Exclude prototype-poisoning keys
-const PROTO_KEYS = ["__proto__", "constructor", "prototype", "toString", "valueOf", "hasOwnProperty"];
+const PROTO_KEYS = [
+  "__proto__",
+  "constructor",
+  "prototype",
+  "toString",
+  "valueOf",
+  "hasOwnProperty",
+];
 const safeKey = fc.string({ minLength: 1 }).filter((k) => !PROTO_KEYS.includes(k));
 
 // ---------------------------------------------------------------------------
@@ -59,7 +66,7 @@ describe("CoalescingStore PBT", () => {
           fc.integer({ max: -1 }),
           fc.constant(NaN),
           fc.constant(Infinity),
-          fc.constant(-Infinity)
+          fc.constant(-Infinity),
         ),
         (intervalMs) => {
           let threw = false;
@@ -70,9 +77,9 @@ describe("CoalescingStore PBT", () => {
             threw = e instanceof RangeError;
           }
           return threw;
-        }
+        },
       ),
-      { numRuns: 100 }
+      { numRuns: 100 },
     );
   });
 
@@ -84,20 +91,16 @@ describe("CoalescingStore PBT", () => {
 
   it("Property 2: set buffers without touching InnerStore", async () => {
     await fc.assert(
-      fc.asyncProperty(
-        safeKey,
-        fc.string({ minLength: 1 }),
-        async (streamKey, cursor) => {
-          const inner = new FakeInnerStore();
-          const store = coalesceCursorStore(inner, { intervalMs: 10_000 });
+      fc.asyncProperty(safeKey, fc.string({ minLength: 1 }), async (streamKey, cursor) => {
+        const inner = new FakeInnerStore();
+        const store = coalesceCursorStore(inner, { intervalMs: 10_000 });
 
-          await store.set(streamKey, cursor);
+        await store.set(streamKey, cursor);
 
-          store.dispose();
-          return inner.setManyCalls.length === 0 && inner.getCalls.length === 0;
-        }
-      ),
-      { numRuns: 100 }
+        store.dispose();
+        return inner.setManyCalls.length === 0 && inner.getCalls.length === 0;
+      }),
+      { numRuns: 100 },
     );
   });
 
@@ -123,16 +126,19 @@ describe("CoalescingStore PBT", () => {
           const lastCursor = cursors[cursors.length - 1]!;
 
           const bufferedValue = await store.get(streamKey);
-          if (bufferedValue !== lastCursor) { store.dispose(); return false; }
+          if (bufferedValue !== lastCursor) {
+            store.dispose();
+            return false;
+          }
 
           await store.flush();
           store.dispose();
 
           const flushedValue = inner.setManyCalls[0]?.[streamKey];
           return flushedValue === lastCursor;
-        }
+        },
       ),
-      { numRuns: 100 }
+      { numRuns: 100 },
     );
   });
 
@@ -154,9 +160,9 @@ describe("CoalescingStore PBT", () => {
 
           store.dispose();
           return inner.setManyCalls.length === 0;
-        }
+        },
       ),
-      { numRuns: 100 }
+      { numRuns: 100 },
     );
   });
 
@@ -178,21 +184,27 @@ describe("CoalescingStore PBT", () => {
           await store.flush();
 
           // Exactly one setMany call
-          if (inner.setManyCalls.length !== 1) { store.dispose(); return false; }
+          if (inner.setManyCalls.length !== 1) {
+            store.dispose();
+            return false;
+          }
 
           // All entries present in the call
           const call = inner.setManyCalls[0]!;
           for (const [k, v] of Object.entries(entries)) {
-            if (call[k] !== v) { store.dispose(); return false; }
+            if (call[k] !== v) {
+              store.dispose();
+              return false;
+            }
           }
 
           // Buffer is empty — second flush produces no additional call
           await store.flush();
           store.dispose();
           return inner.setManyCalls.length === 1;
-        }
+        },
       ),
-      { numRuns: 100 }
+      { numRuns: 100 },
     );
   });
 
@@ -204,21 +216,17 @@ describe("CoalescingStore PBT", () => {
 
   it("Property 6: get serves buffered values without delegating to InnerStore", async () => {
     await fc.assert(
-      fc.asyncProperty(
-        safeKey,
-        fc.string({ minLength: 1 }),
-        async (streamKey, cursor) => {
-          const inner = new FakeInnerStore();
-          const store = coalesceCursorStore(inner, { intervalMs: 10_000 });
+      fc.asyncProperty(safeKey, fc.string({ minLength: 1 }), async (streamKey, cursor) => {
+        const inner = new FakeInnerStore();
+        const store = coalesceCursorStore(inner, { intervalMs: 10_000 });
 
-          await store.set(streamKey, cursor);
-          const result = await store.get(streamKey);
+        await store.set(streamKey, cursor);
+        const result = await store.get(streamKey);
 
-          store.dispose();
-          return result === cursor && inner.getCalls.length === 0;
-        }
-      ),
-      { numRuns: 100 }
+        store.dispose();
+        return result === cursor && inner.getCalls.length === 0;
+      }),
+      { numRuns: 100 },
     );
   });
 
@@ -230,21 +238,17 @@ describe("CoalescingStore PBT", () => {
 
   it("Property 7: get delegates to InnerStore for keys absent from buffer", async () => {
     await fc.assert(
-      fc.asyncProperty(
-        safeKey,
-        fc.string({ minLength: 1 }),
-        async (streamKey, cursor) => {
-          const inner = new FakeInnerStore();
-          inner.store.set(streamKey, cursor);
-          const store = coalesceCursorStore(inner, { intervalMs: 10_000 });
+      fc.asyncProperty(safeKey, fc.string({ minLength: 1 }), async (streamKey, cursor) => {
+        const inner = new FakeInnerStore();
+        inner.store.set(streamKey, cursor);
+        const store = coalesceCursorStore(inner, { intervalMs: 10_000 });
 
-          const result = await store.get(streamKey);
+        const result = await store.get(streamKey);
 
-          store.dispose();
-          return result === cursor && inner.getCalls.includes(streamKey);
-        }
-      ),
-      { numRuns: 100 }
+        store.dispose();
+        return result === cursor && inner.getCalls.includes(streamKey);
+      }),
+      { numRuns: 100 },
     );
   });
 
@@ -290,9 +294,9 @@ describe("CoalescingStore PBT", () => {
             if (delegatedKeys.includes(k)) return false;
           }
           return true;
-        }
+        },
       ),
-      { numRuns: 100 }
+      { numRuns: 100 },
     );
   });
 
@@ -333,9 +337,9 @@ describe("CoalescingStore PBT", () => {
             if (writes[0] !== entries[key]) return false;
           }
           return true;
-        }
+        },
       ),
-      { numRuns: 100 }
+      { numRuns: 100 },
     );
   });
 });

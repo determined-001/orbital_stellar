@@ -11,7 +11,9 @@ describe("EventEngine network drift detection", () => {
 
   it("throws NetworkMismatchError when cached Soroban RPC passphrase differs from configured network", () => {
     // Cache a mismatched passphrase (simulate RPC pointing to mainnet while engine configured for testnet)
-    SorobanRpcClient.setCachedNetwork({ passphrase: "Public Global Stellar Network ; September 2015" });
+    SorobanRpcClient.setCachedNetwork({
+      passphrase: "Public Global Stellar Network ; September 2015",
+    });
 
     const engine = new EventEngine({ network: "testnet" });
 

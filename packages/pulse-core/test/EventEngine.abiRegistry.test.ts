@@ -134,7 +134,7 @@ describe("EventEngine — ABI registry integration", () => {
     expect(received[0]!.decodedData).toBeUndefined();
     expect(warnSpy).toHaveBeenCalledWith(
       expect.stringContaining("ABI registry lookup failed"),
-      expect.objectContaining({ contractId: "CABC1234" })
+      expect.objectContaining({ contractId: "CABC1234" }),
     );
   });
 

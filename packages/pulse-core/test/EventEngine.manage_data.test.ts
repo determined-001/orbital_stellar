@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { EventEngine } from "../src/EventEngine.js";
 import type { DataEvent } from "../src/index.js";
 
@@ -31,19 +31,17 @@ function buildEngine(): {
   // feed fake records into it without a live SSE connection.
   let capturedOnMessage: ((record: unknown) => void) | null = null;
 
-  const originalOperations = (engine as any).server.operations.bind(
-    (engine as any).server
-  );
+  const originalOperations = (engine as any).server.operations.bind((engine as any).server);
 
   vi.spyOn((engine as any).server, "operations").mockImplementation(() => {
     const builder = originalOperations();
     vi.spyOn(builder, "cursor").mockReturnValue(builder);
-    vi.spyOn(builder, "stream").mockImplementation(
-      ((callbacks: { onmessage: (r: unknown) => void }) => {
-        capturedOnMessage = callbacks.onmessage;
-        return () => {};
-      }) as any
-    );
+    vi.spyOn(builder, "stream").mockImplementation(((callbacks: {
+      onmessage: (r: unknown) => void;
+    }) => {
+      capturedOnMessage = callbacks.onmessage;
+      return () => {};
+    }) as any);
     return builder;
   });
 

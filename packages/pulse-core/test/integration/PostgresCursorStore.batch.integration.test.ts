@@ -19,7 +19,6 @@ describe("PostgresCursorStore batch integration tests", () => {
   const connectionString =
     process.env.PG_TEST_URL || "postgres://postgres:postgres@localhost:5432/postgres";
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let pool: any;
   let store: PostgresCursorStore;
 
@@ -92,10 +91,9 @@ describe("PostgresCursorStore batch integration tests", () => {
     expect(result["batch-test-upsert-2"]).toBe("fresh-cursor");
 
     // Verify no duplicate rows were created
-    const countRes = await pool.query(
-      "SELECT COUNT(*) FROM cursor_store WHERE stream_key = $1",
-      ["batch-test-upsert-1"]
-    );
+    const countRes = await pool.query("SELECT COUNT(*) FROM cursor_store WHERE stream_key = $1", [
+      "batch-test-upsert-1",
+    ]);
     expect(parseInt(countRes.rows[0].count, 10)).toBe(1);
   });
 });

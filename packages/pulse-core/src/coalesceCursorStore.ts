@@ -162,11 +162,11 @@ export class CoalescingStore extends CursorStore {
  */
 export function coalesceCursorStore(
   inner: CursorStore,
-  options: CoalescingStoreOptions
+  options: CoalescingStoreOptions,
 ): CoalescingStore {
   if (!Number.isFinite(options.intervalMs) || options.intervalMs <= 0) {
     throw new RangeError(
-      `coalesceCursorStore: intervalMs must be a positive finite number, got ${options.intervalMs}`
+      `coalesceCursorStore: intervalMs must be a positive finite number, got ${options.intervalMs}`,
     );
   }
   return new CoalescingStore(inner, options.intervalMs);

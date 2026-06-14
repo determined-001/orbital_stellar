@@ -1,5 +1,3 @@
-import type { ContractSubscriptionFilter } from "./index.js";
-
 /**
  * Validates a list of contract subscription filters according to Stellar RPC constraints:
  * - filters.length ≤ 5
@@ -9,9 +7,7 @@ import type { ContractSubscriptionFilter } from "./index.js";
  * @param filters - The filters to validate
  * @returns null if valid, or an array of validation error messages if invalid
  */
-export function validateContractFilters(
-  filters: unknown
-): string[] | null {
+export function validateContractFilters(filters: unknown): string[] | null {
   const errors: string[] = [];
 
   // Check if filters is defined and is an array
@@ -21,9 +17,7 @@ export function validateContractFilters(
 
   // Check filters.length ≤ 5
   if (filters.length > 5) {
-    errors.push(
-      `Filters array length must be ≤ 5, but got ${filters.length}`
-    );
+    errors.push(`Filters array length must be ≤ 5, but got ${filters.length}`);
   }
 
   // Validate each filter object
@@ -44,9 +38,7 @@ export function validateContractFilters(
         typeof filterObj.type !== "string" ||
         !["contract.invoked", "contract.emitted"].includes(filterObj.type)
       ) {
-        errors.push(
-          `Filter[${i}].type must be "contract.invoked" or "contract.emitted"`
-        );
+        errors.push(`Filter[${i}].type must be "contract.invoked" or "contract.emitted"`);
       }
     }
 
@@ -57,16 +49,14 @@ export function validateContractFilters(
       } else {
         if (filterObj.contractIds.length > 5) {
           errors.push(
-            `Filter[${i}].contractIds length must be ≤ 5, but got ${filterObj.contractIds.length}`
+            `Filter[${i}].contractIds length must be ≤ 5, but got ${filterObj.contractIds.length}`,
           );
         }
 
         for (let j = 0; j < filterObj.contractIds.length; j++) {
           const contractId = filterObj.contractIds[j];
           if (typeof contractId !== "string") {
-            errors.push(
-              `Filter[${i}].contractIds[${j}] must be a string`
-            );
+            errors.push(`Filter[${i}].contractIds[${j}] must be a string`);
           }
         }
       }
@@ -83,9 +73,7 @@ export function validateContractFilters(
 
           // Topic can be null (wildcard) or string
           if (topic !== null && typeof topic !== "string") {
-            errors.push(
-              `Filter[${i}].topicFilters[${j}] must be null or a string`
-            );
+            errors.push(`Filter[${i}].topicFilters[${j}] must be null or a string`);
             continue;
           }
 
@@ -95,7 +83,7 @@ export function validateContractFilters(
               // Check if it looks like base64-encoded XDR scval
               if (!isValidBase64XdrScval(topic)) {
                 errors.push(
-                  `Filter[${i}].topicFilters[${j}] must be '*', '**', or a base64-encoded XDR scval, but got '${topic}'`
+                  `Filter[${i}].topicFilters[${j}] must be '*', '**', or a base64-encoded XDR scval, but got '${topic}'`,
                 );
               }
             }

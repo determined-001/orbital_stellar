@@ -3,6 +3,9 @@
   "version": "0.1.0",
   "description": "EventEngine for Stellar — Horizon subscription, event normalization, reconnection, and rate-limit handling.",
   "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
