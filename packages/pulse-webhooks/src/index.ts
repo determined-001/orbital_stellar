@@ -195,6 +195,7 @@ export class WebhookDelivery {
           clearTimeout(newestTimer);
           this.retryTimers.delete(newestTimer);
           this.config.metrics?.recordTerminal(newest.url, "dropped");
+          this.dlq.add(newest.url, newest.event, "retry_cap_exceeded", 0);
           this.watcher.emit("webhook.dropped", {
             ...newest.event,
             raw: {
