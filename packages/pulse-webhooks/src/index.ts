@@ -29,7 +29,10 @@ export type {
   PgLike,
 } from "./PostgresDeadLetterStore.js";
 export type { RedisLike, RedisRetryQueueOptions } from "./RedisRetryQueue.js";
-export type { PgLike as PgLikeRetryQueue, PostgresRetryQueueOptions } from "./PostgresRetryQueue.js";
+export type {
+  PgLike as PgLikeRetryQueue,
+  PostgresRetryQueueOptions,
+} from "./PostgresRetryQueue.js";
 export type { RetryQueue, RetryRecord } from "./RetryQueue.js";
 export type {
   Span,

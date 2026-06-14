@@ -9,7 +9,7 @@ class MockPg implements PgLike {
 
   async query<T = any>(text: string, params: any[] = []): Promise<{ rows: T[] }> {
     // Add small artificial delay to simulate network/db latency and force async overlap
-    await new Promise(resolve => setTimeout(resolve, Math.random() * 5));
+    await new Promise((resolve) => setTimeout(resolve, Math.random() * 5));
 
     this.queryCount++;
     const normalizedQuery = text.replace(/\s+/g, " ").trim();
@@ -32,14 +32,17 @@ class MockPg implements PgLike {
     // 2. DELETE query
     if (normalizedQuery.includes("DELETE FROM")) {
       const [id] = params;
-      this.rows = this.rows.filter(r => r.id !== id);
+      this.rows = this.rows.filter((r) => r.id !== id);
       return { rows: [] };
     }
 
     // 3. UPDATE query (fail retry)
-    if (normalizedQuery.includes("UPDATE") && normalizedQuery.includes("SET attempt = attempt + 1")) {
+    if (
+      normalizedQuery.includes("UPDATE") &&
+      normalizedQuery.includes("SET attempt = attempt + 1")
+    ) {
       const [id, nextAttemptAt] = params;
-      const row = this.rows.find(r => r.id === id);
+      const row = this.rows.find((r) => r.id === id);
       if (row) {
         row.attempt += 1;
         row.next_attempt_at = nextAttemptAt;
@@ -49,13 +52,16 @@ class MockPg implements PgLike {
     }
 
     // 4. DEQUEUE CTE query (Select, lock and lease)
-    if (normalizedQuery.includes("WITH next_jobs") || normalizedQuery.includes("FOR UPDATE SKIP LOCKED")) {
+    if (
+      normalizedQuery.includes("WITH next_jobs") ||
+      normalizedQuery.includes("FOR UPDATE SKIP LOCKED")
+    ) {
       const [limit, lockedUntil] = params;
       const now = new Date();
 
       // Find eligible jobs: next_attempt_at <= now AND (locked_until is null OR locked_until < now)
       const eligible = this.rows
-        .filter(r => {
+        .filter((r) => {
           const isDue = new Date(r.next_attempt_at) <= now;
           const isNotLocked = !r.locked_until || new Date(r.locked_until) < now;
           return isDue && isNotLocked;
@@ -85,7 +91,12 @@ describe("PostgresRetryQueue", () => {
 
   it("should enqueue a job correctly", async () => {
     const nextAttempt = new Date();
-    await queue.enqueue("https://example.com/webhook", { type: "payment.received" }, 1, nextAttempt);
+    await queue.enqueue(
+      "https://example.com/webhook",
+      { type: "payment.received" },
+      1,
+      nextAttempt,
+    );
 
     expect(pg.rows.length).toBe(1);
     expect(pg.rows[0].url).toBe("https://example.com/webhook");
@@ -106,12 +117,12 @@ describe("PostgresRetryQueue", () => {
     expect(jobs[0].url).toBe("https://example.com/webhook1");
 
     // The dequeued job should have its locked_until set in the db
-    const row1 = pg.rows.find(r => r.id === jobs[0].id);
+    const row1 = pg.rows.find((r) => r.id === jobs[0].id);
     expect(row1.locked_until).toBeInstanceOf(Date);
     expect(row1.locked_until.getTime()).toBeGreaterThan(Date.now());
 
     // The other job remains unlocked
-    const row2 = pg.rows.find(r => r.id !== jobs[0].id);
+    const row2 = pg.rows.find((r) => r.id !== jobs[0].id);
     expect(row2.locked_until).toBeNull();
 
     // Dequeueing again should only return the remaining unlocked job
@@ -177,8 +188,8 @@ describe("PostgresRetryQueue", () => {
     await Promise.all(consumers);
 
     // Verify exactly-once dequeueing behavior across all concurrent consumers
-    const allDequeuedIds = dequeuedJobs.flat().map(j => j.id);
-    
+    const allDequeuedIds = dequeuedJobs.flat().map((j) => j.id);
+
     // We expect exactly 50 total dequeued jobs
     expect(allDequeuedIds.length).toBe(numJobs);
 

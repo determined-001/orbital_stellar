@@ -137,7 +137,7 @@ describe("WebhookDelivery with MemoryRetryQueue integration", () => {
       };
 
       watcher.emit("*", testEvent);
-      await new Promise(resolve => setTimeout(resolve, 100));
+      await new Promise((resolve) => setTimeout(resolve, 100));
 
       expect(enqueueSpy).toHaveBeenCalledTimes(1);
       const [record] = enqueueSpy.mock.calls[0] as [RetryRecord];

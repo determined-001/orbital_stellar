@@ -27,7 +27,7 @@ export class MemoryRetryQueue implements RetryQueue {
 
   async dequeue(nowMs?: number): Promise<RetryRecord | null> {
     const cutoff = nowMs ?? Date.now();
-    const idx = this.queue.findIndex(r => r.nextRetryAt <= cutoff);
+    const idx = this.queue.findIndex((r) => r.nextRetryAt <= cutoff);
     if (idx === -1) return null;
     return this.queue.splice(idx, 1)[0] ?? null;
   }

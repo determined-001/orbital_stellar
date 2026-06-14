@@ -11,9 +11,9 @@ export interface PostgresRetryQueueOptions {
 
 /**
  * PostgresRetryQueue — A high-performance Postgres-backed retry queue
- * 
+ *
  * DESIGN & MULTI-CONSUMER BEHAVIOR:
- * 
+ *
  * 1. Safe Multi-Consumer Dequeue:
  *    The dequeue operation utilizes the `SELECT ... FOR UPDATE SKIP LOCKED` query pattern.
  *    In a multi-threaded or multi-server setup where multiple consumers/workers query the database
@@ -22,7 +22,7 @@ export interface PostgresRetryQueueOptions {
  *    - `SKIP LOCKED` instructs Postgres to skip any rows that are already locked by other transactions.
  *    - This guarantees that no two consumers can dequeue or lease the same record simultaneously,
  *      resulting in strict exactly-once processing per lease.
- * 
+ *
  * 2. Atomic Lock Leases (CTE):
  *    To minimize database round-trips and maximize throughput, the selection, locking, and leasing
  *    occur in a single atomic SQL transaction using a Common Table Expression (CTE):
@@ -30,7 +30,7 @@ export interface PostgresRetryQueueOptions {
  *    - Lock them with `FOR UPDATE SKIP LOCKED`.
  *    - Update their `locked_until` lease timestamp to protect them from other workers.
  *    - Return the leased jobs immediately to the worker.
- * 
+ *
  * 3. Crash Recovery & Visibility Timeout:
  *    Each dequeued job is leased for `leaseDurationMs` (setting `locked_until`). If a worker
  *    successfully processes the job, it calls `complete(id)`, deleting the record.
@@ -56,7 +56,7 @@ export class PostgresRetryQueue implements RetryQueue {
     recordOrUrl: RetryRecord | string,
     event?: any,
     attempt?: number,
-    nextAttemptAt?: Date
+    nextAttemptAt?: Date,
   ): Promise<void> {
     if (typeof recordOrUrl === "object" && recordOrUrl !== null) {
       // New RetryQueue interface signature
@@ -137,7 +137,7 @@ export class PostgresRetryQueue implements RetryQueue {
         RETURNING id, url, event, attempt
       `;
       const result = await this.pg.query(queryText, [limit, lockedUntil]);
-      return result.rows.map(row => ({
+      return result.rows.map((row) => ({
         id: row.id,
         url: row.url,
         event: typeof row.event === "string" ? JSON.parse(row.event) : row.event,
