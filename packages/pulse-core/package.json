@@ -36,7 +36,7 @@
     "bench:soroban-throughput": "tsx bench/soroban-throughput.ts"
   },
   "dependencies": {
-    "@stellar/stellar-sdk": "^15.0.1",
+    "@stellar/stellar-sdk": "^16.0.0",
     "yargs": "^17.7.2"
   },
   "devDependencies": {
