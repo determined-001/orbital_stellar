@@ -16,7 +16,7 @@
     "marked": "^18.0.2",
     "next": "^16.2.6",
     "react": "^19.2.5",
-    "react-dom": "^19.2.5"
+    "react-dom": "^19.2.7"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.3.0",
