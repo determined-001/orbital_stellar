@@ -39,7 +39,7 @@
     "@vitest/coverage-v8": "^4.1.7",
     "jsdom": "^29.1.1",
     "react": "^19.2.5",
-    "react-dom": "^19.2.5",
+    "react-dom": "^19.2.7",
     "size-limit": "^11.0.0",
     "tsx": "^4.0.0",
     "vitest": "^4.1.7"
