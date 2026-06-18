@@ -1,5 +1,23 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { EngineAlreadyStartedError } from "../src/errors.js";
+import type {
+  NormalizedEvent,
+  RawHorizonPayment,
+  RawHorizonSetOptions,
+  RawHorizonCreateAccount,
+  RawHorizonChangeTrust,
+  RawHorizonAccountMerge,
+  RawHorizonManageSellOffer,
+  RawHorizonManageBuyOffer,
+  RawHorizonBumpSequence,
+  RawHorizonManageData,
+  RawHorizonCreateClaimableBalance,
+  RawHorizonClaimClaimableBalance,
+  RawHorizonLiquidityPoolDeposit,
+  RawHorizonLiquidityPoolWithdraw,
+  RawHorizonAllowTrust,
+  RawHorizonSetTrustLineFlags,
+} from "../src/index.js";
 
 type StreamHandlers = {
   onmessage: (record: unknown) => void;
@@ -2150,6 +2168,90 @@ describe("pulse-core EventEngine", () => {
           lastEventAt: "2026-03-26T20:00:00.000Z",
         },
       },
+    });
+  });
+
+  describe("Type level tests - event.raw narrowing", () => {
+    it("narrows event.raw successfully using an exhaustive switch", () => {
+      const checkEvent = (event: NormalizedEvent) => {
+        switch (event.type) {
+          case "payment.received":
+          case "payment.sent":
+          case "payment.self": {
+            const raw: RawHorizonPayment | undefined = event.raw;
+            expect(raw).toBeUndefined();
+            break;
+          }
+          case "account.options_changed": {
+            const raw: RawHorizonSetOptions | undefined = event.raw;
+            break;
+          }
+          case "account.created": {
+            const raw: RawHorizonCreateAccount | undefined = event.raw;
+            break;
+          }
+          case "trustline.added":
+          case "trustline.removed":
+          case "trustline.updated": {
+            const raw: RawHorizonChangeTrust | undefined = event.raw;
+            break;
+          }
+          case "account.merged": {
+            const raw: RawHorizonAccountMerge | undefined = event.raw;
+            break;
+          }
+          case "offer.created":
+          case "offer.updated":
+          case "offer.deleted": {
+            const raw: RawHorizonManageSellOffer | RawHorizonManageBuyOffer | undefined = event.raw;
+            break;
+          }
+          case "account.bump_sequence": {
+            const raw: RawHorizonBumpSequence | undefined = event.raw;
+            break;
+          }
+          case "data.set":
+          case "data.cleared": {
+            const raw: RawHorizonManageData | undefined = event.raw;
+            break;
+          }
+          case "claimable.created": {
+            const raw: RawHorizonCreateClaimableBalance | undefined = event.raw;
+            break;
+          }
+          case "claimable.claimed": {
+            const raw: RawHorizonClaimClaimableBalance | undefined = event.raw;
+            break;
+          }
+          case "lp.deposited": {
+            const raw: RawHorizonLiquidityPoolDeposit | undefined = event.raw;
+            break;
+          }
+          case "lp.withdrawn": {
+            const raw: RawHorizonLiquidityPoolWithdraw | undefined = event.raw;
+            break;
+          }
+          case "trustline.authorized":
+          case "trustline.deauthorized": {
+            const raw: RawHorizonAllowTrust | RawHorizonSetTrustLineFlags | undefined = event.raw;
+            break;
+          }
+          case "contract.emitted": {
+            const raw = event.raw;
+            break;
+          }
+          case "contract.invoked": {
+            const raw = event.raw;
+            break;
+          }
+          default: {
+            const _exhaustiveCheck: never = event;
+            break;
+          }
+        }
+      };
+
+      expect(checkEvent).toBeDefined();
     });
   });
 });
