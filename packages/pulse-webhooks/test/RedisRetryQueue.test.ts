@@ -164,6 +164,35 @@ describe("RedisRetryQueue", () => {
     expect(await afterRestart.dequeue(1_500)).toEqual(inFlightRetry);
   });
 
+  it("reclaims in-flight retries after a queue instance restart", async () => {
+    const redis = new MockRedis();
+    const beforeRestart = new RedisRetryQueue(redis, {
+      keyPrefix: "orbital:test",
+      queueName: "restart",
+      visibilityTimeoutMs: 500,
+    });
+    const inFlightRetry = retryRecord({
+      id: "in-flight",
+      attempt: 3,
+      nextRetryAt: 1_500,
+    });
+
+    await beforeRestart.enqueue(inFlightRetry);
+    expect(await beforeRestart.dequeue(1_500)).toEqual(inFlightRetry);
+
+    const afterRestart = new RedisRetryQueue(redis, {
+      keyPrefix: "orbital:test",
+      queueName: "restart",
+      visibilityTimeoutMs: 500,
+    });
+
+    expect(await afterRestart.dequeue(1_999)).toBeNull();
+    expect(await afterRestart.dequeue(2_000)).toEqual({
+      ...inFlightRetry,
+      nextRetryAt: 2_000,
+    });
+  });
+
   it("keeps different queue names isolated under the same prefix", async () => {
     const redis = new MockRedis();
     const payments = new RedisRetryQueue(redis, {

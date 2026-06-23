@@ -179,6 +179,28 @@ watcher.on("webhook.dropped", (event) => {
 });
 ```
 
+## Durable Retry Queue Adapter
+
+`RedisRetryQueue` implements the exported `RetryQueue` interface using a Redis-compatible sorted set API. Pass a client that provides `zadd`, `zrangebyscore`, `zrevrange`, `zrem`, and `zcard`; this package does not bundle a Redis client.
+
+```ts
+import { RedisRetryQueue } from "@orbital-stellar/pulse-webhooks";
+
+const retryQueue = new RedisRetryQueue(redisClient, {
+  keyPrefix: "orbital:pulse-webhooks",
+  queueName: "payments",
+});
+```
+
+The key convention is:
+
+| Purpose | Key |
+| ------- | --- |
+| Scheduled retries | `<keyPrefix>:retry-queue:<queueName>` |
+| Dequeued but unacked retries | `<keyPrefix>:retry-queue:<queueName>:in-flight` |
+
+The default prefix is `orbital:pulse-webhooks` and the default queue name is `default`. The sorted-set score is the next retry timestamp in Unix milliseconds. Dequeued records move to the `:in-flight` set until `ack()` removes them, `nack()` requeues them with a new delay, or the visibility timeout expires and a later `dequeue()` reclaims them.
+
 ## Delivery contract
 
 - **Request method:** `POST`
