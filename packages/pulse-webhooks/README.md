@@ -138,15 +138,16 @@ Uses `crypto.timingSafeEqual` under the hood — do not roll your own comparison
 
 | Option        | Type     | Default   | Description                                                    |
 | ------------- | -------- | --------- | -------------------------------------------------------------- |
-| `maxAgeMs`    | `number` | `300_000` | Reject signatures older than this many milliseconds            |
-| `clockSkewMs` | `number` | `30_000`  | Clock-skew allowance for sender/receiver time differences      |
-| `nowMs`       | `number` | `Date.now()` | Override current time (useful in tests)                     |
+| `maxAgeMs`    | `number`        | `300_000`    | Reject signatures older than this many milliseconds                            |
+| `clockSkewMs` | `number`        | `30_000`     | Clock-skew allowance for sender/receiver time differences                      |
+| `nowMs`       | `number`        | `Date.now()` | Override current time (useful in tests)                                        |
+| `version`     | `"v1" \| "v2"` | `"v1"`       | Signature-version selector; `v2` is a reserved placeholder for the future `x-orbital-signature-v2` format |
 
 ### `verifyWebhookEdge(payload, signature, secret, timestamp, options?)` → `Promise<NormalizedEvent | null>`
 
 Edge-compatible version of `verifyWebhook` using Web Crypto API. Works in Cloudflare Workers, Deno, and browsers. Returns a Promise that resolves to the parsed event on success, `null` on any failure (including signatures outside the replay window).
 
-Uses constant-time comparison and Web Crypto for HMAC-SHA256 verification. Accepts the same `options` as `verifyWebhook` (`maxAgeMs`, `clockSkewMs`, `nowMs`).
+Uses constant-time comparison and Web Crypto for HMAC-SHA256 verification. Accepts the same `options` as `verifyWebhook` (`maxAgeMs`, `clockSkewMs`, `nowMs`, `version`).
 
 ### Failure events
 

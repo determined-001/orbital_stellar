@@ -56,6 +56,9 @@ export async function verifyWebhookEdgeRaw(
   timestamp: string,
   options: VerifyWebhookOptions = {},
 ): Promise<boolean> {
+  const version = options.version ?? "v1";
+  if (version !== "v1" && version !== "v2") return false;
+
   if (!/^\d+$/.test(timestamp)) return false;
 
   const timestampMs = Number(timestamp);
@@ -74,6 +77,8 @@ export async function verifyWebhookEdgeRaw(
   }
 
   try {
+    // `v2` is reserved for a future x-orbital-signature-v2 format. Until that
+    // format exists, it intentionally uses the v1 verification path.
     const keyData = new TextEncoder().encode(secret);
     const key = await crypto.subtle.importKey(
       "raw",

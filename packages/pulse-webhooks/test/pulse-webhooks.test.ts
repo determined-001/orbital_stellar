@@ -962,6 +962,18 @@ describe("pulse-webhooks verifyWebhookEdgeRaw", () => {
     expect(result).toBe(true);
   });
 
+  it("fails closed for unsupported signature versions", async () => {
+    const payload = JSON.stringify(deliveryEvent);
+    const timestamp = "1714176000000";
+    const signature = signWebhookPayload("top-secret", payload, timestamp);
+
+    const result = await verifyWebhookEdgeRaw(payload, signature, "top-secret", timestamp, {
+      version: "v3",
+    } as never);
+
+    expect(result).toBe(false);
+  });
+
   it("returns false when timestamp is missing or invalid", async () => {
     const payload = JSON.stringify(deliveryEvent);
     const signature = signWebhookPayload("top-secret", payload, "1714176000000");
