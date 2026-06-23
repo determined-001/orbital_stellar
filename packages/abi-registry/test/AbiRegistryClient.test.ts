@@ -133,22 +133,73 @@ describe("AbiRegistryClient", () => {
   });
 
   describe("getSpec", () => {
-    it("delegates to getSpecs and returns the single result", async () => {
+    it("fetches a single spec from GET /specs/:id and returns the typed result", async () => {
       const spec = makeSpec("CONTRACT_Z");
-      mockFetch(() => new Response(JSON.stringify({ CONTRACT_Z: spec }), { status: 200 }));
+      mockFetch(() => new Response(JSON.stringify(spec), { status: 200 }));
 
       const client = new AbiRegistryClient({ baseUrl: "https://abi.example.com" });
       const result = await client.getSpec("CONTRACT_Z");
 
       expect(result).toEqual(spec);
-      expect(fetch).toHaveBeenCalledTimes(1);
+      expect(fetch).toHaveBeenCalledWith(
+        "https://abi.example.com/specs/CONTRACT_Z",
+        expect.objectContaining({ method: "GET" }),
+      );
     });
 
-    it("returns null when the contract is not found", async () => {
-      mockFetch(() => new Response(JSON.stringify({ CONTRACT_Z: null }), { status: 200 }));
+    it("returns null when the contract is not found with 404", async () => {
+      mockFetch(() => new Response(null, { status: 404 }));
 
       const client = new AbiRegistryClient({ baseUrl: "https://abi.example.com" });
       expect(await client.getSpec("CONTRACT_Z")).toBeNull();
+    });
+
+    it("uses an injected transport when provided", async () => {
+      const spec = makeSpec("CONTRACT_TRANSPORT");
+      const transport = vi
+        .fn()
+        .mockResolvedValue(new Response(JSON.stringify(spec), { status: 200 }));
+
+      const client = new AbiRegistryClient({
+        baseUrl: "https://abi.example.com",
+        transport,
+      });
+
+      const result = await client.getSpec("CONTRACT_TRANSPORT");
+
+      expect(result).toEqual(spec);
+      expect(transport).toHaveBeenCalledTimes(1);
+      expect(transport).toHaveBeenCalledWith(
+        "https://abi.example.com/specs/CONTRACT_TRANSPORT",
+        expect.anything(),
+      );
+    });
+
+    it("expires cached specs after the configured TTL", async () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(0);
+
+      const spec = makeSpec("CONTRACT_TTL");
+      const transport = vi
+        .fn()
+        .mockResolvedValueOnce(new Response(JSON.stringify(spec), { status: 200 }))
+        .mockResolvedValueOnce(new Response(JSON.stringify(spec), { status: 200 }));
+
+      const client = new AbiRegistryClient({
+        baseUrl: "https://abi.example.com",
+        cacheTtlMs: 1_000,
+        transport,
+      });
+
+      expect(await client.getSpec("CONTRACT_TTL")).toEqual(spec);
+      expect(await client.getSpec("CONTRACT_TTL")).toEqual(spec);
+      expect(transport).toHaveBeenCalledTimes(1);
+
+      vi.advanceTimersByTime(1_001);
+      expect(await client.getSpec("CONTRACT_TTL")).toEqual(spec);
+      expect(transport).toHaveBeenCalledTimes(2);
+
+      vi.useRealTimers();
     });
   });
 
