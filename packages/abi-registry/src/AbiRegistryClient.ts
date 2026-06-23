@@ -22,9 +22,15 @@
 export const REGISTRY_SPEC_VERSION = 1;
 
 import { LruCache } from "./LruCache.js";
-import type { AbiRegistryClientConfig, ContractSpec } from "./types.js";
+import type { AbiRegistryClientConfig, AbiRegistryClientTransport, ContractSpec } from "./types.js";
 
 const DEFAULT_MAX_CACHE_SIZE = 512;
+const DEFAULT_CACHE_TTL_MS = 5 * 60 * 1000;
+
+type CacheEntry = {
+  value: ContractSpec | null;
+  expiresAt: number;
+};
 
 /**
  * HTTP client for the Orbital ABI Registry API.
@@ -39,17 +45,44 @@ const DEFAULT_MAX_CACHE_SIZE = 512;
  */
 export class AbiRegistryClient {
   private readonly baseUrl: string;
-  private readonly cache: LruCache<string, ContractSpec | null>;
+  private readonly transport: AbiRegistryClientTransport;
+  private readonly cache: LruCache<string, CacheEntry>;
+  private readonly ttlMs: number;
 
   constructor(config: AbiRegistryClientConfig) {
     this.baseUrl = config.baseUrl.replace(/\/$/, "");
+    this.transport = config.transport ?? fetch.bind(globalThis);
+    this.ttlMs = config.cacheTtlMs ?? DEFAULT_CACHE_TTL_MS;
     this.cache = new LruCache(config.maxCacheSize ?? DEFAULT_MAX_CACHE_SIZE);
   }
 
   /** Fetch a single contract spec (cached). */
   async getSpec(contractId: string): Promise<ContractSpec | null> {
-    const results = await this.getSpecs([contractId]);
-    return results[contractId] ?? null;
+    const cached = this.getCached(contractId);
+    if (cached !== undefined) return cached;
+
+    const response = await this.transport(
+      `${this.baseUrl}/specs/${encodeURIComponent(contractId)}`,
+      {
+        method: "GET",
+        headers: {
+          Accept: `application/vnd.orbital.abi-registry+json; version=${REGISTRY_SPEC_VERSION}`,
+        },
+      },
+    );
+
+    if (response.status === 404) {
+      this.setCache(contractId, null);
+      return null;
+    }
+
+    if (!response.ok) {
+      throw new Error(`ABI registry responded with ${response.status} for contract spec fetch`);
+    }
+
+    const spec = (await response.json()) as ContractSpec;
+    this.setCache(contractId, spec);
+    return spec;
   }
 
   /**
@@ -63,8 +96,9 @@ export class AbiRegistryClient {
     const uncached: string[] = [];
 
     for (const id of contractIds) {
-      if (this.cache.has(id)) {
-        result[id] = this.cache.get(id) ?? null;
+      const cached = this.getCached(id);
+      if (cached !== undefined) {
+        result[id] = cached;
       } else {
         uncached.push(id);
       }
@@ -76,18 +110,35 @@ export class AbiRegistryClient {
 
     for (const id of uncached) {
       const spec = fetched[id] ?? null;
-      this.cache.set(id, spec);
+      this.setCache(id, spec);
       result[id] = spec;
     }
 
     return result;
   }
 
+  private getCached(contractId: string): ContractSpec | null | undefined {
+    const entry = this.cache.get(contractId);
+    if (!entry) return undefined;
+    if (Date.now() > entry.expiresAt) {
+      this.cache.delete(contractId);
+      return undefined;
+    }
+    return entry.value;
+  }
+
+  private setCache(contractId: string, value: ContractSpec | null): void {
+    this.cache.set(contractId, {
+      value,
+      expiresAt: Date.now() + this.ttlMs,
+    });
+  }
+
   /**
    * POST /specs with the full list of IDs — one round-trip regardless of batch size.
    */
   private async fetchBatch(contractIds: string[]): Promise<Record<string, ContractSpec | null>> {
-    const response = await fetch(`${this.baseUrl}/specs`, {
+    const response = await this.transport(`${this.baseUrl}/specs`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
