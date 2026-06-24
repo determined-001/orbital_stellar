@@ -213,9 +213,9 @@ The harness subscribes `N` contract watchers with exact `contractIds` filters, s
 
 | Contract subscriptions (`N`) | RPC events | Routed events | Duration (ms) | Events/sec | Subscribed heap (MB) | Post-replay heap (MB) | Post-replay RSS (MB) |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| 1,000 | 1,000 | 2,000 | 473.32 | 4,225.49 | 18.80 | 18.79 | 122.21 |
-| 5,000 | 1,000 | 2,000 | 2,362.72 | 846.48 | 23.19 | 22.56 | 127.73 |
-| 10,000 | 1,000 | 2,000 | 5,290.83 | 378.01 | 28.56 | 27.30 | 130.18 |
+| 1,000 | 1,000 | 2,000 | 243.86 | 8,201.55 | 19.75 | 19.75 | 120.75 |
+| 5,000 | 1,000 | 2,000 | 1,036.03 | 1,930.45 | 24.11 | 23.48 | 126.32 |
+| 10,000 | 1,000 | 2,000 | 2,884.87 | 693.27 | 29.48 | 28.21 | 166.00 |
 
 Each matching contract subscription receives both the typed event and the `*` wildcard event. Results vary by CPU, Node version, and runtime load; rerun locally to compare changes over time.
 
