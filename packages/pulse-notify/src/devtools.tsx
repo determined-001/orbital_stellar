@@ -1,173 +1,159 @@
-import { useState, useEffect } from "react";
-import { __devtoolsGetConnections, __devtoolsSubscribe } from "./connectionPool.js";
+import { useEffect, useMemo, useState } from "react";
+import {
+  __getConnectionPoolSnapshot,
+  type ConnectionPoolDebugEntry,
+} from "./connectionPool.js";
+import {
+  __getSuspenseConnectionSnapshot,
+  type SuspenseConnectionDebugEntry,
+} from "./useStellarEventSuspense.js";
 
-export type DevToolsConnection = ReturnType<
-  typeof __devtoolsGetConnections
->[number];
+function formatTimestamp(timestamp: string | null): string {
+  return timestamp ?? "—";
+}
 
-/**
- * OrbitalDevTools — React DevTools panel for monitoring active EventSource connections.
- *
- * Displays all active hooks and their connection state in real-time.
- * Dev-only component — tree-shakable in production builds.
- *
- * @example
- * ```tsx
- * import { __OrbitalDevTools } from "@orbital/pulse-notify";
- *
- * export function App() {
- *   return (
- *     <>
- *       <YourApp />
- *       {process.env.NODE_ENV === "development" && <__OrbitalDevTools />}
- *     </>
- *   );
- * }
- * ```
- */
-export function __OrbitalDevTools() {
-  const [connections, setConnections] = useState<DevToolsConnection[]>([]);
+function formatToken(token: string | undefined): string {
+  return token ? "yes" : "no";
+}
+
+function connectionUrlDisplay(url: string): string {
+  return url.replace(/([?&])token=[^&]+/, "$1token=***");
+}
+
+function useDevToolsSnapshot() {
+  const [snapshot, setSnapshot] = useState(() => ({
+    connections: __getConnectionPoolSnapshot(),
+    suspenseConnections: __getSuspenseConnectionSnapshot(),
+  }));
 
   useEffect(() => {
-    // Initial snapshot
-    setConnections(__devtoolsGetConnections());
+    const interval = window.setInterval(() => {
+      setSnapshot({
+        connections: __getConnectionPoolSnapshot(),
+        suspenseConnections: __getSuspenseConnectionSnapshot(),
+      });
+    }, 500);
 
-    // Subscribe to updates
-    const unsubscribe = __devtoolsSubscribe(() => {
-      setConnections(__devtoolsGetConnections());
-    });
-
-    return unsubscribe;
+    return () => window.clearInterval(interval);
   }, []);
 
-  return (
-    <div
-      style={{
-        position: "fixed",
-        bottom: 0,
-        right: 0,
-        width: "500px",
-        maxHeight: "400px",
-        backgroundColor: "#1e1e1e",
-        color: "#e0e0e0",
-        border: "1px solid #333",
-        borderRadius: "4px 4px 0 0",
-        fontFamily: "monospace",
-        fontSize: "12px",
-        zIndex: 999999,
-        overflow: "hidden",
-        display: "flex",
-        flexDirection: "column",
-        boxShadow: "0 -2px 8px rgba(0, 0, 0, 0.3)",
-      }}
-    >
-      {/* Header */}
-      <div
-        style={{
-          padding: "8px 12px",
-          backgroundColor: "#2d2d2d",
-          borderBottom: "1px solid #444",
-          fontWeight: "bold",
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-        }}
-      >
-        <span>🛰️ Orbital EventSource Connections ({connections.length})</span>
-        <span style={{ fontSize: "10px", color: "#888" }}>
-          {connections.reduce((sum, conn) => sum + conn.subscriberCount, 0)}{" "}
-          subscribers
-        </span>
-      </div>
-
-      {/* Connection List */}
-      <div
-        style={{
-          flex: 1,
-          overflowY: "auto",
-          padding: "8px",
-        }}
-      >
-        {connections.length === 0 ? (
-          <div style={{ padding: "20px 8px", textAlign: "center", color: "#888" }}>
-            No active connections
-          </div>
-        ) : (
-          connections.map((conn) => (
-            <ConnectionItem key={conn.key} connection={conn} />
-          ))
-        )}
-      </div>
-    </div>
-  );
+  return snapshot;
 }
 
-function ConnectionItem({ connection }: { connection: DevToolsConnection }) {
-  const lastEventText = connection.lastEventAt
-    ? formatTimestamp(connection.lastEventAt)
-    : "—";
+export function DevToolsPanel() {
+  const { connections, suspenseConnections } = useDevToolsSnapshot();
+
+  const summary = useMemo(
+    () => ({
+      eventHooks: connections.length,
+      suspenseHooks: suspenseConnections.length,
+      total: connections.length + suspenseConnections.length,
+    }),
+    [connections.length, suspenseConnections.length]
+  );
 
   return (
-    <div
+    <section
       style={{
-        marginBottom: "8px",
-        padding: "8px",
-        backgroundColor: "#252525",
-        border: `1px solid ${connection.connected ? "#22c55e" : "#ef4444"}`,
-        borderRadius: "3px",
+        fontFamily: "system-ui, sans-serif",
+        fontSize: "0.9rem",
+        lineHeight: 1.5,
+        color: "var(--devtools-foreground, #111)",
+        background: "var(--devtools-background, #f8fafc)",
+        border: "1px solid var(--devtools-border, #d1d5db)",
+        borderRadius: 12,
+        padding: 16,
+        margin: 16,
       }}
     >
-      {/* Status badge and address */}
-      <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "4px" }}>
-        <span
-          style={{
-            display: "inline-block",
-            width: "8px",
-            height: "8px",
-            borderRadius: "50%",
-            backgroundColor: connection.connected ? "#22c55e" : "#ef4444",
-            flexShrink: 0,
-          }}
-        />
-        <span style={{ fontWeight: "bold", color: "#60a5fa" }}>
-          {connection.address}
-        </span>
-        <span style={{ color: "#888", fontSize: "11px" }}>
-          ({connection.subscriberCount} subscriber{connection.subscriberCount !== 1 ? "s" : ""})
-        </span>
-      </div>
+      <h2 style={{ margin: "0 0 12px", fontSize: "1rem" }}>Pulse Notify DevTools</h2>
+      <p style={{ margin: "0 0 16px", color: "#475569" }}>
+        Active hooks: {summary.total} ({summary.eventHooks} event hooks, {summary.suspenseHooks} suspense hooks)
+      </p>
 
-      {/* Server URL */}
-      <div style={{ fontSize: "11px", color: "#888", marginBottom: "4px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-        Server: {connection.serverUrl}
-      </div>
+      <div style={{ display: "grid", gap: 20 }}>
+        <div>
+          <h3 style={{ margin: "0 0 8px", fontSize: "0.95rem" }}>useStellarEvent connections</h3>
+          {connections.length === 0 ? (
+            <p style={{ margin: 0, color: "#64748b" }}>No active event-hook connections.</p>
+          ) : (
+            <div style={{ overflowX: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                <thead>
+                  <tr>
+                    <th style={{ textAlign: "left", padding: "6px 8px", borderBottom: "1px solid #e2e8f0" }}>Address</th>
+                    <th style={{ textAlign: "left", padding: "6px 8px", borderBottom: "1px solid #e2e8f0" }}>Connected</th>
+                    <th style={{ textAlign: "left", padding: "6px 8px", borderBottom: "1px solid #e2e8f0" }}>Last event</th>
+                    <th style={{ textAlign: "left", padding: "6px 8px", borderBottom: "1px solid #e2e8f0" }}>Subscribers</th>
+                    <th style={{ textAlign: "left", padding: "6px 8px", borderBottom: "1px solid #e2e8f0" }}>URL</th>
+                    <th style={{ textAlign: "left", padding: "6px 8px", borderBottom: "1px solid #e2e8f0" }}>Token</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {connections.map((entry) => (
+                    <tr key={`${entry.serverUrl}:${entry.address}:${String(entry.token)}`}>
+                      <td style={{ padding: "8px", borderBottom: "1px solid #e2e8f0" }}>{entry.address}</td>
+                      <td style={{ padding: "8px", borderBottom: "1px solid #e2e8f0" }}>
+                        {entry.connected ? "yes" : "no"}
+                      </td>
+                      <td style={{ padding: "8px", borderBottom: "1px solid #e2e8f0" }}>
+                        {formatTimestamp(entry.lastEventAt)}
+                      </td>
+                      <td style={{ padding: "8px", borderBottom: "1px solid #e2e8f0" }}>
+                        {entry.subscriberCount}
+                      </td>
+                      <td style={{ padding: "8px", borderBottom: "1px solid #e2e8f0" }} title={entry.url}>
+                        {connectionUrlDisplay(entry.url)}
+                      </td>
+                      <td style={{ padding: "8px", borderBottom: "1px solid #e2e8f0" }}>
+                        {formatToken(entry.token)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
 
-      {/* Last event timestamp */}
-      <div style={{ fontSize: "11px", color: "#888" }}>
-        Last event: {lastEventText}
+        <div>
+          <h3 style={{ margin: "0 0 8px", fontSize: "0.95rem" }}>useStellarEventSuspense connections</h3>
+          {suspenseConnections.length === 0 ? (
+            <p style={{ margin: 0, color: "#64748b" }}>No active suspense connections.</p>
+          ) : (
+            <div style={{ overflowX: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                <thead>
+                  <tr>
+                    <th style={{ textAlign: "left", padding: "6px 8px", borderBottom: "1px solid #e2e8f0" }}>Address</th>
+                    <th style={{ textAlign: "left", padding: "6px 8px", borderBottom: "1px solid #e2e8f0" }}>State</th>
+                    <th style={{ textAlign: "left", padding: "6px 8px", borderBottom: "1px solid #e2e8f0" }}>Last event</th>
+                    <th style={{ textAlign: "left", padding: "6px 8px", borderBottom: "1px solid #e2e8f0" }}>Refs</th>
+                    <th style={{ textAlign: "left", padding: "6px 8px", borderBottom: "1px solid #e2e8f0" }}>Event key</th>
+                    <th style={{ textAlign: "left", padding: "6px 8px", borderBottom: "1px solid #e2e8f0" }}>URL</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {suspenseConnections.map((entry) => (
+                    <tr key={`${entry.serverUrl}:${entry.address}:${entry.eventKey}:${String(entry.token)}`}>
+                      <td style={{ padding: "8px", borderBottom: "1px solid #e2e8f0" }}>{entry.address}</td>
+                      <td style={{ padding: "8px", borderBottom: "1px solid #e2e8f0" }}>{entry.status}</td>
+                      <td style={{ padding: "8px", borderBottom: "1px solid #e2e8f0" }}>
+                        {formatTimestamp(entry.lastEventAt)}
+                      </td>
+                      <td style={{ padding: "8px", borderBottom: "1px solid #e2e8f0" }}>{entry.refCount}</td>
+                      <td style={{ padding: "8px", borderBottom: "1px solid #e2e8f0" }}>{entry.eventKey}</td>
+                      <td style={{ padding: "8px", borderBottom: "1px solid #e2e8f0" }} title={entry.url}>
+                        {connectionUrlDisplay(entry.url)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
       </div>
-    </div>
+    </section>
   );
-}
-
-function formatTimestamp(timestamp: number): string {
-  const now = Date.now();
-  const diff = now - timestamp;
-
-  if (diff < 1000) {
-    return "just now";
-  }
-  if (diff < 60000) {
-    return `${Math.floor(diff / 1000)}s ago`;
-  }
-  if (diff < 3600000) {
-    return `${Math.floor(diff / 60000)}m ago`;
-  }
-
-  const date = new Date(timestamp);
-  return date.toLocaleTimeString(undefined, {
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  });
 }

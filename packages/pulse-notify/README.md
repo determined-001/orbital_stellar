@@ -77,6 +77,38 @@ Shorthand for payments received. Equivalent to `useStellarEvent(serverUrl, addre
 
 Shorthand for all events on an address. Equivalent to `useStellarEvent(serverUrl, address, { event: "*" })`.
 
+### `<StellarConnectionStatus serverUrl address />`
+
+Small client-side status indicator for places that need connection health but do not need to wire `connected` and `error` state by hand.
+
+```tsx
+"use client";
+import { StellarConnectionStatus } from "@orbital/pulse-notify";
+
+export function HeaderConnection({ address }: { address: string }) {
+  return (
+    <StellarConnectionStatus
+      serverUrl={process.env.NEXT_PUBLIC_ORBITAL_URL!}
+      address={address}
+    />
+  );
+}
+```
+
+The indicator owns its `EventSource` lifecycle and sets `data-status` to `connecting`, `connected`, or `error`. It also adds state classes such as `stellar-connection-status--connected`.
+
+Customize the built-in styles with CSS custom properties:
+
+```css
+.stellar-connection-status {
+  --stellar-connection-status-background: color-mix(in srgb, currentColor 10%, transparent);
+  --stellar-connection-status-padding: 0.35rem 0.65rem;
+  --stellar-connection-status-connected-color: #16a34a;
+  --stellar-connection-status-error-color: #dc2626;
+  --stellar-connection-status-dot-size: 0.55rem;
+}
+```
+
 ## Return shape
 
 ```ts
@@ -209,6 +241,16 @@ useStellarEvent(
 ```
 
 **Server-only tokens** (secrets) must never ship to the browser. Use a per-user short-lived token issued by your backend.
+
+### Cookie-based auth (`withCredentials`)
+
+Same-origin `httpOnly` cookies travel automatically with SSE when `withCredentials: true` is set.
+
+```tsx
+useStellarEvent(serverUrl, address, { withCredentials: true });
+```
+
+If the server is cross-origin, it must respond with `Access-Control-Allow-Credentials: true` and an explicit `Access-Control-Allow-Origin` value — not `*`.
 
 ## Server-side rendering
 

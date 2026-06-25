@@ -47,5 +47,9 @@ export interface RetryQueue {
   /**
    * Get the total number of records in the queue (both ready and pending).
    */
+  dequeue(nowMs?: number): Promise<RetryRecord | null>;
+  ack(recordId: string): Promise<void>;
+  nack(recordId: string, requeueDelayMs: number): Promise<void>;
+  evictNewest(): Promise<RetryRecord | null>;
   size(): Promise<number>;
 }
