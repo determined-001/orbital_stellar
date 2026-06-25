@@ -1,4 +1,4 @@
-import type { NormalizedEvent } from "./types";
+import type { NormalizedEvent } from "@orbital-stellar/pulse-core";
 
 /**
  * A record representing a webhook delivery retry scheduled for a future time.
@@ -32,12 +32,23 @@ export interface RetryQueue {
    * Remove and return the next record whose nextRetryAt <= now, or null if no records are ready.
    * Records whose nextRetryAt is in the future remain in the queue.
    */
-  dequeue(): Promise<RetryRecord | null>;
+  dequeue(nowMs?: number): Promise<RetryRecord | null>;
 
   /**
-   * Mark a record as processed, removing it from the queue.
+   * Mark a record as processed, removing it from the queue or in-flight set.
    */
   ack(recordId: string): Promise<void>;
+
+  /**
+   * Requeue a dequeued record after the provided delay.
+   */
+  nack(recordId: string, requeueDelayMs: number): Promise<void>;
+
+  /**
+   * Evict the newest scheduled retry, where "newest" means the record with the
+   * latest nextRetryAt.
+   */
+  evictNewest(): Promise<RetryRecord | null>;
 
   /**
    * Clear all records from the queue.
@@ -47,9 +58,5 @@ export interface RetryQueue {
   /**
    * Get the total number of records in the queue (both ready and pending).
    */
-  dequeue(nowMs?: number): Promise<RetryRecord | null>;
-  ack(recordId: string): Promise<void>;
-  nack(recordId: string, requeueDelayMs: number): Promise<void>;
-  evictNewest(): Promise<RetryRecord | null>;
   size(): Promise<number>;
 }

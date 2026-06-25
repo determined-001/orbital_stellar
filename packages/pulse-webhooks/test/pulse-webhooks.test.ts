@@ -468,12 +468,6 @@ describe("pulse-webhooks WebhookDelivery", () => {
 
     const hook1Attempt2 = deliveryLog.find((d) => d.url.includes("hook1") && d.attempt === 2);
     const hook2Attempt2 = deliveryLog.find((d) => d.url.includes("hook2") && d.attempt === 2);
-    const allCalls = setTimeoutSpy.mock.calls.filter(
-      (call: any[]) => call[1] !== 10000,
-    );
-    const allCalls = setTimeoutSpy.mock.calls.filter((call: any[]) => call[1] !== 10000);
-    expect(allCalls.length).toBe(1);
-
     expect(hook1Attempt2).toBeDefined(); // hook1 retry executed
     expect(hook2Attempt2).toBeUndefined(); // hook2 retry not yet executed
 
@@ -497,7 +491,7 @@ describe("pulse-webhooks WebhookDelivery", () => {
       url: "https://example.com/hook",
       secret: "top-secret",
       retries: 2,
-      random: () => 30_000, // Force 30-second jitter
+      backoff: () => 30_000,
     });
 
     watcher.emit("*", deliveryEvent);
@@ -515,11 +509,6 @@ describe("pulse-webhooks WebhookDelivery", () => {
     // Advance 100ms more (30 seconds total) - retry should execute
     vi.advanceTimersByTime(100);
     await flushAsyncWork();
-    const allCallsAfterRetry = setTimeoutSpy.mock.calls.filter(
-      (call: any[]) => call[1] !== 10000,
-    );
-    const allCallsAfterRetry = setTimeoutSpy.mock.calls.filter((call: any[]) => call[1] !== 10000);
-    expect(allCallsAfterRetry.length).toBe(2);
 
     expect(fetchMock).toHaveBeenCalledTimes(2); // Initial + 1 retry
   });

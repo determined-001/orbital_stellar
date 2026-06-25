@@ -123,6 +123,30 @@ export class RedisRetryQueue implements RetryQueue {
     return this.parseRecord(member);
   }
 
+  async clear(): Promise<void> {
+    const queuedMembers = await this.client.zrangebyscore(
+      this.key,
+      "-inf",
+      "+inf",
+      "LIMIT",
+      0,
+      Number.MAX_SAFE_INTEGER,
+    );
+    const inFlightMembers = await this.client.zrangebyscore(
+      this.inFlightKey,
+      "-inf",
+      "+inf",
+      "LIMIT",
+      0,
+      Number.MAX_SAFE_INTEGER,
+    );
+
+    await Promise.all([
+      ...queuedMembers.map((member) => this.client.zrem(this.key, member)),
+      ...inFlightMembers.map((member) => this.client.zrem(this.inFlightKey, member)),
+    ]);
+  }
+
   async size(): Promise<number> {
     return Number(await this.client.zcard(this.key));
   }
