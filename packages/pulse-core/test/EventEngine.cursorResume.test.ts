@@ -78,14 +78,13 @@ class FakeSorobanRpc {
   public startCursors: Array<string | undefined> = [];
   public events: Array<{ id: string; pagingToken: string; topic: string[]; value: unknown }> = [];
 
-  async getEvents(startCursor: string | undefined, limit: number): Promise<{ events: typeof this.events }> {
-    void limit;
+  async getEvents(startCursor: string | undefined, _limit: number, _signal?: AbortSignal): Promise<{ events: any[] }> {
     this.startCursors.push(startCursor);
     return { events: this.events };
   }
 }
 
-describe("EventEngine cursor resume", () => {
+describe("EventEngine cursor resume (#296)", () => {
   beforeEach(() => {
     streamInstances.length = 0;
     vi.restoreAllMocks();
@@ -115,6 +114,7 @@ describe("EventEngine cursor resume", () => {
     watcher2.on("payment.sent", (evt) => received2.push(evt));
 
     engine2.start();
+
     expect(latestStream().cursor).toBe("horizon:testnet");
 
     latestStream().handlers.onmessage(makePaymentRecord({ paging_token: "11" }));
@@ -130,7 +130,7 @@ describe("EventEngine cursor resume", () => {
     ];
 
     const subscriber1 = new SorobanSubscriber({
-      rpc: fakeRpc1,
+      rpc: fakeRpc1 as any,
       cursorStore,
       streamKey: "soroban:testnet",
       onEvent: async () => {},
@@ -147,7 +147,7 @@ describe("EventEngine cursor resume", () => {
     ];
 
     const subscriber2 = new SorobanSubscriber({
-      rpc: fakeRpc2,
+      rpc: fakeRpc2 as any,
       cursorStore,
       streamKey: "soroban:testnet",
       onEvent: async () => {},
@@ -166,7 +166,7 @@ describe("EventEngine cursor resume", () => {
       async get() {
         return null;
       },
-      async set(streamKey: string, cursor: string) {
+      async set() {
         throw new Error("cursor persist failed");
       },
       async getAll() {
