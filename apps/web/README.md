@@ -1,4 +1,4 @@
-# @orbital/web
+# @orbital-stellar/web
 
 **The public Orbital site** — landing page, documentation, and live testnet demos. Built with Next.js 16, Tailwind CSS, and Framer Motion. Also hosts the marketing-demo API routes (`/api/events/[address]`, `/api/webhook-sample`) that power the on-page sandbox.
 

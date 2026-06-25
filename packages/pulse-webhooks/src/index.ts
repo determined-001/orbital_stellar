@@ -1,4 +1,4 @@
-import type { NormalizedEvent, Watcher, WatcherNotification } from "@orbital/pulse-core";
+import type { NormalizedEvent, Watcher, WatcherNotification } from "@orbital-stellar/pulse-core";
 import { createHmac, timingSafeEqual } from "crypto";
 
 import type { VerifyWebhookOptions, WebhookConfig } from "./types.js";
@@ -9,19 +9,38 @@ export { verifyWebhookEdge } from "./edge.js";
 export type { VerifyWebhookOptions, WebhookConfig } from "./types.js";
 export type { RetryQueue, RetryRecord } from "./RetryQueue.js";
 import { DeadLetterStore } from "./MemoryDeadLetterStore.js";
+import { exponentialJittered } from "./backoff.js";
+import type { BackoffStrategy } from "./backoff.js";
 import type { Tracer, VerifyWebhookOptions, WebhookConfig } from "./types.js";
 import { DEFAULT_MAX_AGE_MS, DEFAULT_CLOCK_SKEW_MS } from "./types.js";
 export { DeadLetterStore } from "./MemoryDeadLetterStore.js";
 export { NOOP_WEBHOOK_METRICS, CountingWebhookMetrics } from "./metrics.js";
-export type { WebhookMetrics } from "./types.js";
+export type { WebhookAttemptStatus, WebhookMetrics, WebhookTerminalOutcome } from "./types.js";
+export { exponentialJittered, linear, cappedExponential, constant } from "./backoff.js";
+export type { BackoffStrategy } from "./backoff.js";
 export { PostgresDeadLetterStore } from "./PostgresDeadLetterStore.js";
 export { RedisRetryQueue } from "./RedisRetryQueue.js";
 export { verifyWebhookEdge, verifyWebhookEdgeRaw } from "./edge.js";
-export type { DeadLetterEntry, DeadLetterFilter as MemoryDeadLetterFilter } from "./MemoryDeadLetterStore.js";
-export type { DeadLetterFilter, DeadLetterInput, DeadLetterRecord, PgLike } from "./PostgresDeadLetterStore.js";
+export type {
+  DeadLetterEntry,
+  DeadLetterFilter as MemoryDeadLetterFilter,
+  DeliveryHealth,
+} from "./MemoryDeadLetterStore.js";
+export type {
+  DeadLetterFilter,
+  DeadLetterInput,
+  DeadLetterRecord,
+  PgLike,
+} from "./PostgresDeadLetterStore.js";
 export type { RedisLike, RedisRetryQueueOptions } from "./RedisRetryQueue.js";
 export type { RetryQueue, RetryRecord } from "./RetryQueue.js";
-export type { Span, Tracer, VerifierSignatureVersion, VerifyWebhookOptions, WebhookConfig } from "./types.js";
+export type {
+  Span,
+  Tracer,
+  VerifierSignatureVersion,
+  VerifyWebhookOptions,
+  WebhookConfig,
+} from "./types.js";
 
 /**
  * Payload for the `raw` field of a `webhook.failed` event.
@@ -35,6 +54,8 @@ export type WebhookFailureRaw = {
   attempts: number;
   /** The original event that we tried to deliver. */
   originalEvent: NormalizedEvent;
+  /** ID of the dead-letter store entry recorded for this terminal failure. */
+  dlqId: string;
 };
 
 /**
@@ -51,10 +72,15 @@ export type WebhookDroppedRaw = {
   originalEvent: NormalizedEvent;
 };
 
-type ResolvedWebhookConfig = Omit<Required<WebhookConfig>, "url" | "tracer" | "urlValidator"> & {
+type ResolvedWebhookConfig = Omit<
+  Required<WebhookConfig>,
+  "url" | "tracer" | "urlValidator" | "metrics" | "backoff"
+> & {
   urls: string[];
+  backoff: BackoffStrategy;
   tracer?: Tracer;
   urlValidator?: WebhookConfig["urlValidator"];
+  metrics?: WebhookConfig["metrics"];
 };
 
 export class WebhookDelivery {
@@ -64,7 +90,8 @@ export class WebhookDelivery {
   private queueProcessingInterval: ReturnType<typeof setInterval> | null = null;
   private dlq: DeadLetterStore;
   // Map of timer -> event so we can evict the newest entry when the cap is hit.
-  private retryTimers: Map<ReturnType<typeof setTimeout>, { event: NormalizedEvent; url: string }> = new Map();
+  private retryTimers: Map<ReturnType<typeof setTimeout>, { event: NormalizedEvent; url: string }> =
+    new Map();
 
   constructor(watcher: Watcher, config: WebhookConfig) {
     this.watcher = watcher;
@@ -74,6 +101,7 @@ export class WebhookDelivery {
       deliveryTimeoutMs: 10000,
       maxConcurrentRetries: 100,
       random: Math.random,
+      backoff: exponentialJittered,
       ...config,
       tracer: config.tracer,
       urls: Array.isArray(config.url) ? [...config.url] : [config.url],
@@ -105,18 +133,12 @@ export class WebhookDelivery {
     return this.dlq;
   }
 
-  private async deliverToUrl(
-    event: NormalizedEvent,
-    url: string,
-    attempt = 1,
-  ): Promise<void> {
+  private async deliverToUrl(event: NormalizedEvent, url: string, attempt = 1): Promise<void> {
     if (this.watcher.stopped) return;
 
     let customValidationError: string | null = null;
     try {
-      customValidationError = this.config.urlValidator
-        ? await this.config.urlValidator(url)
-        : null;
+      customValidationError = this.config.urlValidator ? await this.config.urlValidator(url) : null;
     } catch (err) {
       if (this.watcher.stopped) return;
 
@@ -164,15 +186,22 @@ export class WebhookDelivery {
 
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
+      const successMs = Date.now() - startMs;
       span?.setAttribute("webhook.status", res.status);
-      span?.setAttribute("webhook.latency_ms", Date.now() - startMs);
+      span?.setAttribute("webhook.latency_ms", successMs);
+      this.config.metrics?.recordAttempt(url, attempt, successMs, "success");
+      this.config.metrics?.recordTerminal(url, "success");
+      this.dlq.recordSuccess(url);
     } catch (err) {
-      span?.setAttribute("webhook.latency_ms", Date.now() - startMs);
+      const failureMs = Date.now() - startMs;
+      span?.setAttribute("webhook.latency_ms", failureMs);
       span?.setAttribute("webhook.error", this.getErrorMessage(err));
 
       if (this.watcher.stopped) return;
 
       const errorMessage = this.getErrorMessage(err);
+      this.config.metrics?.recordAttempt(url, attempt, failureMs, "failure");
+      this.dlq.recordFailure(url);
 
       if (attempt < this.config.retries) {
         // Schedule retry using the queue with nextRetryAt timing
@@ -222,6 +251,8 @@ export class WebhookDelivery {
           const newest = this.retryTimers.get(newestTimer)!;
           clearTimeout(newestTimer);
           this.retryTimers.delete(newestTimer);
+          this.config.metrics?.recordTerminal(newest.url, "dropped");
+          this.dlq.add(newest.url, newest.event, "retry_cap_exceeded", 0);
           this.watcher.emit("webhook.dropped", {
             ...newest.event,
             raw: {
@@ -232,6 +263,13 @@ export class WebhookDelivery {
             } satisfies WebhookDroppedRaw,
           } as unknown as NormalizedEvent);
         }
+
+        const delay = this.config.backoff(attempt, this.config.random);
+        const retryTimer = setTimeout(() => {
+          this.retryTimers.delete(retryTimer);
+          void this.deliverToUrl(event, url, attempt + 1);
+        }, delay);
+        this.retryTimers.set(retryTimer, { event, url });
       } else {
         this.watcher.emit("webhook.failed", {
           ...event,
@@ -259,7 +297,12 @@ export class WebhookDelivery {
 
   private extractTraceId(event: NormalizedEvent): string | undefined {
     const raw = event.raw;
-    if (raw !== null && typeof raw === "object" && "traceId" in raw && typeof (raw as Record<string, unknown>).traceId === "string") {
+    if (
+      raw !== null &&
+      typeof raw === "object" &&
+      "traceId" in raw &&
+      typeof (raw as Record<string, unknown>).traceId === "string"
+    ) {
       return (raw as Record<string, string>).traceId;
     }
     return undefined;
@@ -271,6 +314,10 @@ export class WebhookDelivery {
     errorMessage: string,
     attempt: number,
   ): void {
+    // Persist the dead-lettered event before announcing the terminal failure so
+    // `webhook.failed` consumers can correlate via `dlqId`.
+    const dlqId = this.dlq.add(url, event, errorMessage, attempt);
+    this.config.metrics?.recordTerminal(url, "failure");
     this.watcher.emit("webhook.failed", {
       ...event,
       raw: {
@@ -278,6 +325,7 @@ export class WebhookDelivery {
         url,
         attempts: attempt,
         originalEvent: event,
+        dlqId,
       } satisfies WebhookFailureRaw,
     } as unknown as NormalizedEvent);
   }
@@ -325,9 +373,7 @@ export class WebhookDelivery {
   private sign(payload: string, timestamp: string): string {
     const signedPayload = `${timestamp}.${payload}`;
 
-    return createHmac("sha256", this.config.secret)
-      .update(signedPayload)
-      .digest("hex");
+    return createHmac("sha256", this.config.secret).update(signedPayload).digest("hex");
   }
 }
 
@@ -393,9 +439,7 @@ export function verifyWebhookRaw(
   if (timestampMs > nowMs + clockSkewMs) return false;
   if (timestampMs < nowMs - maxAgeMs - clockSkewMs) return false;
 
-  const expected = createHmac("sha256", secret)
-    .update(`${timestamp}.${payload}`)
-    .digest("hex");
+  const expected = createHmac("sha256", secret).update(`${timestamp}.${payload}`).digest("hex");
 
   const expectedBuffer = Buffer.from(expected, "hex");
   const signatureBuffer = Buffer.from(signature, "hex");

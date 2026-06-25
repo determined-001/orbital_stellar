@@ -7,7 +7,7 @@ assignees: ''
 ---
 
 **Package / area**
-Which package or app is affected? (e.g. `@orbital/pulse-core`, `@orbital/pulse-webhooks`, `@orbital/pulse-notify`, `apps/web`)
+Which package or app is affected? (e.g. `@orbital-stellar/pulse-core`, `@orbital-stellar/pulse-webhooks`, `@orbital-stellar/pulse-notify`, `apps/web`)
 
 **Describe the bug**
 A clear description of what is wrong and what you expected to happen instead.

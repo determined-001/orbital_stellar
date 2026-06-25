@@ -1,4 +1,4 @@
-import { StrKey } from "@orbital/pulse-core";
+import { StrKey } from "@orbital-stellar/pulse-core";
 import { getEngine } from "@/lib/engine";
 import {
   DEMO_LIMITS,

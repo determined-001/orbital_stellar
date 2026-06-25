@@ -21,8 +21,8 @@ export class HorizonStreamError extends Error {
       error instanceof Error
         ? error.message
         : typeof error === "string"
-        ? error
-        : "[pulse-core] Horizon SSE stream error"
+          ? error
+          : "[pulse-core] Horizon SSE stream error",
     );
     this.name = "HorizonStreamError";
 
@@ -57,7 +57,46 @@ export class EngineAlreadyStartedError extends Error {
 
 export class NetworkMismatchError extends Error {
   constructor(expected: string, actual: string) {
-    super(`[pulse-core] Soroban RPC network mismatch: expected passphrase "${expected}", got "${actual}"`);
+    super(
+      `[pulse-core] Soroban RPC network mismatch: expected passphrase "${expected}", got "${actual}"`,
+    );
     this.name = "NetworkMismatchError";
   }
+}
+
+export type SorobanRpcErrorCode =
+  | "network"
+  | "rate_limit"
+  | "auth"
+  | "invalid_request"
+  | "server"
+  | "unknown";
+
+export type SorobanRpcErrorOptions = {
+  code: SorobanRpcErrorCode;
+  retryable: boolean;
+  status?: number;
+  cause?: unknown;
+};
+
+export class SorobanRpcError extends Error {
+  readonly code: SorobanRpcErrorCode;
+  readonly retryable: boolean;
+  readonly status?: number;
+  override readonly cause?: unknown;
+
+  constructor(message: string, options: SorobanRpcErrorOptions) {
+    super(message);
+    this.name = "SorobanRpcError";
+    this.code = options.code;
+    this.retryable = options.retryable;
+    if (options.status !== undefined) {
+      this.status = options.status;
+    }
+    this.cause = options.cause;
+  }
+}
+
+export function isSorobanRpcError(error: unknown): error is SorobanRpcError {
+  return error instanceof SorobanRpcError;
 }

@@ -14,13 +14,13 @@ Install only the packages you need — each is independently usable.
 
 ```bash
 # Event engine — required by everything else
-pnpm add @orbital/pulse-core
+pnpm add @orbital-stellar/pulse-core
 
 # Webhook delivery (optional)
-pnpm add @orbital/pulse-webhooks
+pnpm add @orbital-stellar/pulse-webhooks
 
 # React hooks (optional)
-pnpm add @orbital/pulse-notify react
+pnpm add @orbital-stellar/pulse-notify react
 ```
 
 ## TypeScript
@@ -39,7 +39,7 @@ The event union (`NormalizedEvent`) is a discriminated union — `switch` on `ev
 
 ## Edge runtimes
 
-`@orbital/pulse-webhooks` exports two verifiers:
+`@orbital-stellar/pulse-webhooks` exports two verifiers:
 
 - **`verifyWebhook`** — Node.js (`crypto` module)
 - **`verifyWebhookEdge`** — Web Crypto API; works in Cloudflare Workers, Vercel Edge, Deno, and browsers
@@ -48,7 +48,7 @@ Pick the one that matches your runtime. The signing side (`WebhookDelivery`) req
 
 ## React
 
-`@orbital/pulse-notify` is browser-only — it uses `EventSource`, which doesn't exist in Node. In Next.js App Router, mark consuming components with `"use client"`. In Remix or Vite SSR, gate the hook behind a client-only boundary.
+`@orbital-stellar/pulse-notify` is browser-only — it uses `EventSource`, which doesn't exist in Node. In Next.js App Router, mark consuming components with `"use client"`. In Remix or Vite SSR, gate the hook behind a client-only boundary.
 
 ## Trying the reference composition (optional)
 

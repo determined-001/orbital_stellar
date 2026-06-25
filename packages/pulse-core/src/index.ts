@@ -1,44 +1,60 @@
 import { CursorStore } from "./CursorStore.js";
+import type { StellarAmount } from "./amount.js";
+import type { AccountAddress, MuxedAddress, ContractAddress } from "./address.js";
+
 export { SorobanRpcClient } from "./SorobanRpcClient.js";
 export type { SorobanRpcClientOptions } from "./SorobanRpcClient.js";
 export { EventEngine } from "./EventEngine.js";
 export { SorobanSubscriber } from "./SorobanSubscriber.js";
-export { validateContractFilters } from "./contractFilters.js";
-export { Watcher } from "./Watcher.js";
 export type {
   SorobanSubscriberOptions,
+  ReconnectingPayload,
   SorobanRpc,
   SorobanEvent,
   CursorStore as SorobanCursorStore,
 } from "./SorobanSubscriber.js";
+
+export { validateContractFilters } from "./contractFilters.js";
+export { Watcher } from "./Watcher.js";
+export type { StellarAmount } from "./amount.js";
+export type { AccountAddress, MuxedAddress, ContractAddress } from "./address.js";
 export { EngineAlreadyStartedError, HorizonStreamError } from "./errors.js";
 export { StrKey } from "@stellar/stellar-sdk";
 export { CursorStore } from "./CursorStore.js";
-export { PostgresCursorStore, PgLike } from "./PostgresCursorStore.js";
+export { MemoryCursorStore } from "./MemoryCursorStore.js";
+export { FileCursorStore } from "./FileCursorStore.js";
+export { PostgresCursorStore } from "./PostgresCursorStore.js";
+export type { PgLike } from "./PostgresCursorStore.js";
+export { RedisCursorStore } from "./RedisCursorStore.js";
+export { S3CursorStore } from "./S3CursorStore.js";
 export { cacheCursorStore } from "./cacheCursorStore.js";
+export { coalesceCursorStore, CoalescingStore } from "./coalesceCursorStore.js";
+export type { CoalescingStoreOptions } from "./coalesceCursorStore.js";
 export { migrateCursors } from "./migrateCursors.js";
 export type { MigrateCursorsResult } from "./migrateCursors.js";
-export { evaluatePredicate, normalizeClaimPredicate, isClaimPredicateType } from "./claimPredicate.js";
-export type { ClaimPredicate } from "./claimPredicate.js";
-export type { StellarAmount } from "./amount.js";
-export { toBigInt } from "./amount.js";
-export {
-  isAccountAddress,
-  isMuxedAddress,
-  isContractAddress,
-  isStellarAddress,
-  toAccountAddress,
-  toMuxedAddress,
-  toContractAddress,
-} from "./address.js";
-export type {
-  AccountAddress,
-  MuxedAddress,
-  ContractAddress,
-  StellarAddress,
-} from "./address.js";
 
-import type { AccountAddress, ContractAddress, MuxedAddress } from "./address.js";
+export { isEventType } from "./eventTypeGuard.js";
+export * from "./raw-horizon.js";
+export * from "./raw-soroban.js";
+import type { RawSorobanEvent } from "./raw-soroban.js";
+
+import {
+  RawHorizonPayment,
+  RawHorizonSetOptions,
+  RawHorizonCreateAccount,
+  RawHorizonManageSellOffer,
+  RawHorizonManageBuyOffer,
+  RawHorizonBumpSequence,
+  RawHorizonManageData,
+  RawHorizonChangeTrust,
+  RawHorizonAccountMerge,
+  RawHorizonCreateClaimableBalance,
+  RawHorizonClaimClaimableBalance,
+  RawHorizonLiquidityPoolDeposit,
+  RawHorizonLiquidityPoolWithdraw,
+  RawHorizonAllowTrust,
+  RawHorizonSetTrustLineFlags,
+} from "./raw-horizon.js";
 
 /** The Stellar network to connect to. */
 export type Network = "mainnet" | "testnet";
@@ -53,8 +69,8 @@ export type SourceStatus = {
 export type EngineStatus = {
   running: boolean;
   watcherCount: number;
-  lastEventAt: string | null;
   contractWatcherCount?: number;
+  lastEventAt: string | null;
   reconnectAttempt: number;
   pausedSources?: ("horizon" | "soroban")[];
   sources: {
@@ -70,25 +86,17 @@ export const NETWORK_PASSPHRASES = {
 } as const satisfies Record<Network, string>;
 
 /** Event types for payment-related events (received, sent, or self-payment). */
-export type PaymentEventType =
-  | "payment.received"
-  | "payment.sent"
-  | "payment.self";
+export type PaymentEventType = "payment.received" | "payment.sent" | "payment.self";
 /** Event type for account options changes. */
 export type AccountOptionsEventType = "account.options_changed";
 export type LiquidityPoolEventType = "lp.deposited" | "lp.withdrawn";
-export type TrustAuthEventType =
-  | "trustline.authorized"
-  | "trustline.deauthorized";
+export type TrustAuthEventType = "trustline.authorized" | "trustline.deauthorized";
 /** Event type for account creation. */
 export type AccountEventType = "account.created";
 export type ClaimableCreatedEventType = "claimable.created";
 export type ClaimableClaimedEventType = "claimable.claimed";
 /** Event types for trustline lifecycle events (added, removed, or limit updated). */
-export type TrustlineEventType =
-  | "trustline.added"
-  | "trustline.removed"
-  | "trustline.updated";
+export type TrustlineEventType = "trustline.added" | "trustline.removed" | "trustline.updated";
 /** Event type for account merges (one account merged into another). */
 export type AccountMergeEventType = "account.merged";
 /** Notification types emitted by the EventEngine during reconnection. */
@@ -100,10 +108,7 @@ export type WatcherNotificationType =
   | "engine.cursor_store_unhealthy"
   | "engine.cursor_expired";
 
-export type OfferEventType =
-  | "offer.created"
-  | "offer.updated"
-  | "offer.deleted";
+export type OfferEventType = "offer.created" | "offer.updated" | "offer.deleted";
 export type BumpSequenceEventType = "account.bump_sequence";
 export type DataEventType = "data.set" | "data.cleared";
 
@@ -157,7 +162,7 @@ export type PaymentEvent = {
   /** ISO 8601 timestamp of the payment. */
   timestamp: string;
   /** The original raw record from the Horizon API. */
-  raw: unknown;
+  raw?: RawHorizonPayment;
 };
 
 /**
@@ -173,7 +178,7 @@ export type AccountOptionsEvent = {
   /** ISO 8601 timestamp of the options change. */
   timestamp: string;
   /** The original raw record from the Horizon API. */
-  raw: unknown;
+  raw?: RawHorizonSetOptions;
 };
 
 export type OfferEvent = {
@@ -185,7 +190,7 @@ export type OfferEvent = {
   amount: StellarAmount;
   price: string;
   timestamp: string;
-  raw: unknown;
+  raw?: RawHorizonManageSellOffer | RawHorizonManageBuyOffer;
 };
 
 export type BumpSequenceEvent = {
@@ -193,7 +198,7 @@ export type BumpSequenceEvent = {
   source: AccountAddress;
   bump_to: string;
   timestamp: string;
-  raw: unknown;
+  raw?: RawHorizonBumpSequence;
 };
 
 export type ClaimableBalanceClaimant = {
@@ -209,7 +214,7 @@ export type ClaimableCreatedEvent = {
   asset: string;
   amount: StellarAmount;
   timestamp: string;
-  raw: unknown;
+  raw?: RawHorizonCreateClaimableBalance;
 };
 
 export type ClaimableClaimedEvent = {
@@ -217,7 +222,7 @@ export type ClaimableClaimedEvent = {
   claimant: AccountAddress;
   balanceId: string;
   timestamp: string;
-  raw: unknown;
+  raw?: RawHorizonClaimClaimableBalance;
 };
 
 export type DataEvent = {
@@ -229,7 +234,7 @@ export type DataEvent = {
   /** The decoded bytes of `value` as a Uint8Array, or null when `value` is null or invalid base64. */
   decoded: Uint8Array | null;
   timestamp: string;
-  raw: unknown;
+  raw?: RawHorizonManageData;
 };
 
 export type LiquidityPoolReserve = {
@@ -244,7 +249,7 @@ export type LiquidityPoolDepositEvent = {
   reserves_deposited: LiquidityPoolReserve[];
   shares_received: string;
   timestamp: string;
-  raw: unknown;
+  raw?: RawHorizonLiquidityPoolDeposit;
 };
 
 export type LiquidityPoolWithdrawEvent = {
@@ -254,7 +259,7 @@ export type LiquidityPoolWithdrawEvent = {
   reserves_received: LiquidityPoolReserve[];
   shares_redeemed: string;
   timestamp: string;
-  raw: unknown;
+  raw?: RawHorizonLiquidityPoolWithdraw;
 };
 
 export type TrustAuthEvent = {
@@ -265,7 +270,7 @@ export type TrustAuthEvent = {
   timestamp: string;
   /** The original Horizon operation type ("allow_trust" or "set_trust_line_flags"). */
   operation: string;
-  raw: unknown;
+  raw?: RawHorizonAllowTrust | RawHorizonSetTrustLineFlags;
 };
 
 /**
@@ -283,7 +288,7 @@ export type AccountCreatedEvent = {
   /** ISO 8601 timestamp of the account creation. */
   timestamp: string;
   /** The original raw record from the Horizon API. */
-  raw: unknown;
+  raw?: RawHorizonCreateAccount;
 };
 
 /**
@@ -301,7 +306,7 @@ export type TrustlineEvent = {
   /** ISO 8601 timestamp of the trustline change. */
   timestamp: string;
   /** The original raw record from the Horizon API. */
-  raw: unknown;
+  raw?: RawHorizonChangeTrust;
 };
 
 /**
@@ -317,7 +322,7 @@ export type AccountMergeEvent = {
   /** ISO 8601 timestamp of the merge. */
   timestamp: string;
   /** The original raw record from the Horizon API. */
-  raw: unknown;
+  raw?: RawHorizonAccountMerge;
 };
 
 /**
@@ -328,14 +333,19 @@ export type AccountMergeEvent = {
  * namespace export:
  *
  * ```ts
- * import type { events } from "@orbital/pulse-core";
+ * import type { events } from "@orbital-stellar/pulse-core";
  * type Payment = events.PaymentEvent;
  * type AccountCreated = events.AccountCreatedEvent;
  * ```
  *
  * @see {@link events} for the full list of narrower per-event types.
+ *
+ * Every event exposes a lazy, cached `timestampDate` getter derived from
+ * `event.timestamp`.  The Date is parsed on first access and memoised;
+ * subsequent accesses return the same instance.  The property is
+ * **non-enumerable** so `JSON.stringify` output is unaffected.
  */
-export type NormalizedEvent =
+export type NormalizedEvent = (
   | PaymentEvent
   | AccountOptionsEvent
   | AccountCreatedEvent
@@ -350,7 +360,11 @@ export type NormalizedEvent =
   | LiquidityPoolWithdrawEvent
   | TrustAuthEvent
   | ContractInvokedEvent
-  | ContractEmittedEvent;
+  | ContractEmittedEvent
+) & {
+  /** Lazy, cached `Date` derived from `event.timestamp`. Non-enumerable; does not appear in JSON.stringify output. */
+  readonly timestampDate: Date;
+};
 
 /**
  * A notification emitted by the EventEngine during reconnection attempts.
@@ -369,12 +383,14 @@ export type WatcherNotification = {
   attempt: number;
   /** The delay in milliseconds before the next reconnection attempt (for "engine.reconnecting" events). */
   delayMs?: number;
+  /** The cursor position at the time of failure (for "engine.reconnecting" events). */
+  cursor?: string;
+  /** The source that triggered this notification. */
+  source?: "horizon" | "soroban";
   /** ISO 8601 timestamp of when this notification was emitted. */
   emittedAt: string;
   /** The cursor value that was expired or lost, if applicable. */
   lostCursor?: string;
-  /** The source engine that encountered the expired cursor. */
-  source?: "horizon" | "soroban";
 };
 
 /**
@@ -399,26 +415,13 @@ export interface Logger {
   info(message: string, meta?: Record<string, unknown>): void;
   warn(message: string, meta?: Record<string, unknown>): void;
   error(message: string, meta?: Record<string, unknown>): void;
-}
-
-/**
- * Core configuration for initializing the EventEngine.
- *
- * @example
- * const config: CoreConfig = {
- *   network: "testnet",
- *   reconnect: { initialDelayMs: 2000, maxRetries: 5 }
- * };
- */
-export interface Logger {
-  info(message: string, meta?: Record<string, unknown>): void;
-  warn(message: string, meta?: Record<string, unknown>): void;
-  error(message: string, meta?: Record<string, unknown>): void;
+  /** Optional verbose channel for per-request / per-event diagnostics. */
+  debug?(message: string, meta?: Record<string, unknown>): void;
 }
 
 /**
  * Minimal interface for an ABI registry client.
- * Satisfied by `AbiRegistryClient` from `@orbital/abi-registry`, or any
+ * Satisfied by `AbiRegistryClient` from `@orbital-stellar/abi-registry`, or any
  * object with a compatible `getSpec` method (useful for testing).
  */
 export interface AbiRegistryClientLike {
@@ -439,6 +442,8 @@ export type CoreConfig = {
   streamKey?: string;
   /** Number of consecutive cursor store failures before marking it unhealthy. Defaults to 5. */
   cursorFailureThreshold?: number;
+  /** Optional ABI registry client used to enrich `contract.emitted` events with `decodedData`. */
+  abiRegistry?: AbiRegistryClientLike;
   /** Soroban RPC configuration. */
   soroban?: {
     /** Pagination limit for RPC `getEvents` calls. Must be 1–10,000. Defaults to 100. */
@@ -491,14 +496,16 @@ export type ContractInvokedEvent = {
   function: string;
   /** Ordered list of arguments passed to the function. */
   args: unknown[];
-  /** The ledger sequence number where the invocation occurred. */
-  ledger: number;
-  /** The transaction hash of the transaction containing this invocation. */
-  txHash: string;
+  /** The ledger sequence number where the invocation occurred, when available. */
+  ledger?: number;
+  /** The transaction hash of the transaction containing this invocation, when available. */
+  txHash?: string;
   /** ISO 8601 timestamp of the invocation. */
   timestamp: string;
   /** The original raw record from the Soroban API. */
-  raw: unknown;
+  raw?: RawSorobanEvent;
+  decodedData?: unknown;
+  inSuccessfulContractCall?: boolean;
 };
 
 /**
@@ -517,9 +524,17 @@ export type ContractEmittedEvent = {
    * decode error, or when no registry is configured.
    */
   decodedData?: unknown;
+  /** Ledger sequence number where the event was emitted, when available. */
+  ledger?: number;
+  /** Unique event identifier from the Soroban RPC, when available. */
+  eventId?: string;
+  /** Transaction hash containing this event, when available. */
+  txHash?: string;
+  /** Whether the emitting contract call succeeded, when available. */
+  inSuccessfulContractCall?: boolean;
   timestamp: string;
   /** The original raw record from the Soroban API. */
-  raw: unknown;
+  raw?: RawSorobanEvent;
 };
 
 export type ContractEvent = ContractInvokedEvent | ContractEmittedEvent;
@@ -560,7 +575,7 @@ export type ContractSubscribeOptions = {
  * @see {@link events} for the full list of narrower per-event types.
  *
  * @example
- * import type { events } from "@orbital/pulse-core";
+ * import type { events } from "@orbital-stellar/pulse-core";
  * function handlePayment(e: events.PaymentEvent) { ... }
  */
 export * as events from "./events.js";

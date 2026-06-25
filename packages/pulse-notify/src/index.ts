@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
-import type { NormalizedEvent } from "@orbital/pulse-core";
+import type { NormalizedEvent, PaymentEvent } from "@orbital-stellar/pulse-core";
 import { acquireEventConnection } from "./connectionPool.js";
+import { acquireWsConnection } from "./wsTransport.js";
 export { useStellarEventSuspense } from "./useStellarEventSuspense.js";
 
 export type UseEventConfig<T extends NormalizedEvent = NormalizedEvent> = {
@@ -17,6 +18,8 @@ export type UseEventConfig<T extends NormalizedEvent = NormalizedEvent> = {
   withCredentials?: boolean;
   /** Side-effect callback fired for every incoming event, before filter is applied */
   onEvent?: (event: NormalizedEvent) => void;
+  /** Transport to use. Defaults to 'sse'. */
+  transport?: "sse" | "websocket";
 };
 
 export type EventState<T extends NormalizedEvent = NormalizedEvent> = {
@@ -27,7 +30,7 @@ export type EventState<T extends NormalizedEvent = NormalizedEvent> = {
 };
 
 export function useStellarEvent<T extends NormalizedEvent = NormalizedEvent>(
-  config: UseEventConfig<T>
+  config: UseEventConfig<T>,
 ): EventState<T>;
 export function useStellarEvent<T extends NormalizedEvent = NormalizedEvent>(
   serverUrl: string,
@@ -35,7 +38,7 @@ export function useStellarEvent<T extends NormalizedEvent = NormalizedEvent>(
   options?: Pick<
     UseEventConfig<T>,
     "event" | "token" | "initialEvent" | "filter" | "withCredentials" | "onEvent"
-  >
+  >,
 ): EventState<T>;
 export function useStellarEvent<T extends NormalizedEvent = NormalizedEvent>(
   configOrUrl: UseEventConfig<T> | string,
@@ -43,36 +46,22 @@ export function useStellarEvent<T extends NormalizedEvent = NormalizedEvent>(
   options?: Pick<
     UseEventConfig<T>,
     "event" | "token" | "initialEvent" | "filter" | "withCredentials" | "onEvent"
-  >
+  >,
 ): EventState<T> {
-  const serverUrl =
-    typeof configOrUrl === "string" ? configOrUrl : configOrUrl.serverUrl;
-  const addr =
-    typeof configOrUrl === "string" ? address! : configOrUrl.address;
+  const serverUrl = typeof configOrUrl === "string" ? configOrUrl : configOrUrl.serverUrl;
+  const addr = typeof configOrUrl === "string" ? address! : configOrUrl.address;
   const eventType: string | string[] =
-    typeof configOrUrl === "string"
-      ? options?.event ?? "*"
-      : configOrUrl.event ?? "*";
-  const token =
-    typeof configOrUrl === "string"
-      ? options?.token
-      : configOrUrl.token;
+    typeof configOrUrl === "string" ? (options?.event ?? "*") : (configOrUrl.event ?? "*");
+  const token = typeof configOrUrl === "string" ? options?.token : configOrUrl.token;
   const initialEvent: T | null =
-    (typeof configOrUrl === "string"
-      ? options?.initialEvent
-      : configOrUrl.initialEvent) ?? null;
-  const filter =
-    typeof configOrUrl === "string" ? options?.filter : configOrUrl.filter;
+    (typeof configOrUrl === "string" ? options?.initialEvent : configOrUrl.initialEvent) ?? null;
+  const filter = typeof configOrUrl === "string" ? options?.filter : configOrUrl.filter;
   const withCredentials =
-    typeof configOrUrl === "string"
-      ? options?.withCredentials
-      : configOrUrl.withCredentials;
-  const onEvent =
-    typeof configOrUrl === "string" ? options?.onEvent : configOrUrl.onEvent;
+    typeof configOrUrl === "string" ? options?.withCredentials : configOrUrl.withCredentials;
+  const onEvent = typeof configOrUrl === "string" ? options?.onEvent : configOrUrl.onEvent;
+  const transport = typeof configOrUrl === "string" ? "sse" : (configOrUrl.transport ?? "sse");
 
-  const eventKey = Array.isArray(eventType)
-    ? [...eventType].sort().join(",")
-    : eventType;
+  const eventKey = Array.isArray(eventType) ? [...eventType].sort().join(",") : eventType;
 
   const filterRef = useRef(filter);
   useEffect(() => {
@@ -92,8 +81,9 @@ export function useStellarEvent<T extends NormalizedEvent = NormalizedEvent>(
   });
 
   useEffect(() => {
-    const connection = acquireEventConnection(
-      { serverUrl, address: addr, token, withCredentials },
+    const acquire = transport === "websocket" ? acquireWsConnection : acquireEventConnection;
+    const connection = acquire(
+      { serverUrl, address: addr, token, ...(transport === "sse" ? { withCredentials } : {}) },
       {
         onOpen: () => {
           setState((prev) => ({ ...prev, connected: true, error: null }));
@@ -110,7 +100,11 @@ export function useStellarEvent<T extends NormalizedEvent = NormalizedEvent>(
           if (!allowed) return;
           if (filterRef.current && !filterRef.current(incoming)) return;
 
-          setState((prev) => ({ ...prev, event: incoming as T, lastEventAt: incoming.timestamp ?? null }));
+          setState((prev) => ({
+            ...prev,
+            event: incoming as T,
+            lastEventAt: incoming.timestamp ?? null,
+          }));
         },
         onParseError: () => {
           setState((prev) => ({ ...prev, error: "Failed to parse event" }));
@@ -122,7 +116,7 @@ export function useStellarEvent<T extends NormalizedEvent = NormalizedEvent>(
             error: "Connection lost — retrying...",
           }));
         },
-      }
+      },
     );
 
     if (connection.connected) {
@@ -134,12 +128,15 @@ export function useStellarEvent<T extends NormalizedEvent = NormalizedEvent>(
     };
     // ✅ eventKey is a serialised string — stable even when the caller passes
     // an array literal, which would otherwise be a new reference every render.
-  }, [serverUrl, addr, eventKey, token, withCredentials]);
+  }, [serverUrl, addr, eventKey, token, withCredentials, transport]);
 
   return state;
 }
 
-export type PaymentEvent = Extract<NormalizedEvent, { type: "payment.received" }>;
+// Re-export pulse-core's PaymentEvent. (It cannot be derived via
+// `Extract<NormalizedEvent, ...>` because NormalizedEvent is an intersection
+// with `{ timestampDate }`, over which Extract does not distribute.)
+export type { PaymentEvent };
 
 /**
  * Converts a Stellar decimal amount string (e.g. "12.3456789") to stroops
@@ -153,7 +150,7 @@ function amountToStroop(amount: string): bigint | null {
   const [whole, frac = ""] = amount.split(".");
   const fracPadded = frac.slice(0, 7).padEnd(7, "0");
   try {
-    return BigInt(whole) * 10_000_000n + BigInt(fracPadded);
+    return BigInt(whole ?? "0") * 10_000_000n + BigInt(fracPadded);
   } catch {
     return null;
   }
@@ -166,29 +163,32 @@ export function useStellarPayment(
     initialEvent?: PaymentEvent | null;
     filter?: (event: NormalizedEvent) => boolean;
     withCredentials?: boolean;
-  }
+  },
 ) {
-  const base = useStellarEvent<PaymentEvent>(serverUrl, address, {
+  const base = useStellarEvent(serverUrl, address, {
     event: "payment.received",
-    initialEvent: options?.initialEvent,
+    initialEvent: (options?.initialEvent ?? undefined) as NormalizedEvent | undefined,
     filter: options?.filter,
     withCredentials: options?.withCredentials,
   });
+  // The "payment.received" stream only ever delivers PaymentEvents; narrow the
+  // generic NormalizedEvent so we can read `amount`.
+  const paymentEvent = (base.event ?? null) as PaymentEvent | null;
   const amountStroop: bigint | null =
-    base.event?.amount != null ? amountToStroop(base.event.amount) : null;
-  return { ...base, amountStroop };
+    paymentEvent?.amount != null ? amountToStroop(paymentEvent.amount) : null;
+  return { ...base, event: paymentEvent, amountStroop };
 }
 
-export function useStellarActivity(
+export function useStellarActivity<T extends NormalizedEvent = NormalizedEvent>(
   serverUrl: string,
   address: string,
   options?: {
-    initialEvent?: NormalizedEvent | null;
+    initialEvent?: T | null;
     filter?: (event: NormalizedEvent) => boolean;
     withCredentials?: boolean;
-  }
-) {
-  return useStellarEvent(serverUrl, address, {
+  },
+): EventState<T> {
+  return useStellarEvent<T>(serverUrl, address, {
     event: "*",
     initialEvent: options?.initialEvent,
     filter: options?.filter,
@@ -220,7 +220,7 @@ export type HistoryState<T extends NormalizedEvent = NormalizedEvent> = EventSta
 export function useStellarHistory<T extends NormalizedEvent = NormalizedEvent>(
   serverUrl: string,
   address: string,
-  options?: UseHistoryOptions
+  options?: UseHistoryOptions,
 ): HistoryState<T> {
   const [history, setHistory] = useState<T[]>([]);
   const capacity = options?.capacity ?? 100;

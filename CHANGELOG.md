@@ -5,8 +5,8 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-This file rolls up changes across the public packages: `@orbital/pulse-core`,
-`@orbital/pulse-webhooks`, and `@orbital/pulse-notify`. Per-package changelogs
+This file rolls up changes across the public packages: `@orbital-stellar/pulse-core`,
+`@orbital-stellar/pulse-webhooks`, and `@orbital-stellar/pulse-notify`. Per-package changelogs
 live in each package directory.
 
 ## [Unreleased]
@@ -30,10 +30,10 @@ in Phase 1 (Q2–Q3 2026).
 
 ### Added
 
-- `@orbital/pulse-core`: `EventEngine` — Horizon SSE subscription with AWS
+- `@orbital-stellar/pulse-core`: `EventEngine` — Horizon SSE subscription with AWS
   Full-Jitter exponential backoff, automatic reconnection, and a per-address
   `Watcher` pub/sub model built on Node's `EventEmitter`.
-- `@orbital/pulse-core`: full classic operation taxonomy normalized into a
+- `@orbital-stellar/pulse-core`: full classic operation taxonomy normalized into a
   typed `NormalizedEvent` discriminated union:
   - Payments: `payment.received`, `payment.sent`, `payment.self`
   - Accounts: `account.created`, `account.merged`, `account.options_changed`,
@@ -44,55 +44,55 @@ in Phase 1 (Q2–Q3 2026).
   - Claimable balances: `claimable.created`, `claimable.claimed`
   - Liquidity pools: `lp.deposited`, `lp.withdrawn`
   - Data entries: `data.set`, `data.cleared`
-- `@orbital/pulse-core`: lifecycle notifications — `engine.reconnecting`,
+- `@orbital-stellar/pulse-core`: lifecycle notifications — `engine.reconnecting`,
   `engine.reconnected`, `engine.rate_limited` (with parsed `Retry-After`),
   and `engine.stopped`.
-- `@orbital/pulse-core`: `CoreConfig.horizonUrl` override for self-hosted
+- `@orbital-stellar/pulse-core`: `CoreConfig.horizonUrl` override for self-hosted
   Horizon nodes, regional mirrors, and futurenet.
-- `@orbital/pulse-core`: `EventEngine.unsubscribeAll()` to drain watchers
+- `@orbital-stellar/pulse-core`: `EventEngine.unsubscribeAll()` to drain watchers
   without closing the SSE stream.
-- `@orbital/pulse-core`: optional `filter` predicate on
+- `@orbital-stellar/pulse-core`: optional `filter` predicate on
   `EventEngine.subscribe()` for per-watcher event suppression.
-- `@orbital/pulse-webhooks`: `WebhookDelivery` with HMAC-SHA256 signing
+- `@orbital-stellar/pulse-webhooks`: `WebhookDelivery` with HMAC-SHA256 signing
   (`x-orbital-signature`, `x-orbital-timestamp`, `x-orbital-attempt`),
   exponential-backoff retry with jitter, per-attempt `AbortController`
   timeout, and a concurrent-retry cap.
-- `@orbital/pulse-webhooks`: `verifyWebhook` (Node `crypto`, timing-safe
+- `@orbital-stellar/pulse-webhooks`: `verifyWebhook` (Node `crypto`, timing-safe
   comparison) and `verifyWebhookEdge` (Web Crypto) for Cloudflare Workers,
   Vercel Edge, Deno, and browsers.
-- `@orbital/pulse-notify`: `useStellarEvent<T>` with generic type narrowing,
+- `@orbital-stellar/pulse-notify`: `useStellarEvent<T>` with generic type narrowing,
   positional and config-object call signatures, and stable dep-array keys
   for array event allowlists.
-- `@orbital/pulse-notify`: `useStellarPayment` and `useStellarActivity`
+- `@orbital-stellar/pulse-notify`: `useStellarPayment` and `useStellarActivity`
   convenience hooks.
-- `@orbital/pulse-core`: testnet + mainnet network selectors via
+- `@orbital-stellar/pulse-core`: testnet + mainnet network selectors via
   `network: "mainnet" | "testnet"`.
 
 ### Changed
 
-- `@orbital/pulse-core`: `EventEngine.start()` now returns a boolean
+- `@orbital-stellar/pulse-core`: `EventEngine.start()` now returns a boolean
   (`true` on a fresh start, `false` if the engine was already running). Pass
   `{ strict: true }` to throw `EngineAlreadyStartedError` instead.
-- `@orbital/pulse-core`: `WatcherNotification.timestamp` renamed to
+- `@orbital-stellar/pulse-core`: `WatcherNotification.timestamp` renamed to
   `emittedAt` to distinguish it from the on-chain `created_at` timestamp
   used in operation events.
-- `@orbital/pulse-core`: self-payments where `from === to` now emit a single
+- `@orbital-stellar/pulse-core`: self-payments where `from === to` now emit a single
   `payment.self` event instead of separate `payment.received` and
   `payment.sent` events.
 
 ### Fixed
 
-- `@orbital/pulse-webhooks`: cap concurrent retries to prevent unbounded
+- `@orbital-stellar/pulse-webhooks`: cap concurrent retries to prevent unbounded
   memory growth when consumer endpoints are unreachable.
-- `@orbital/pulse-core`: align reconnect attempt numbers across logs and
+- `@orbital-stellar/pulse-core`: align reconnect attempt numbers across logs and
   `engine.reconnecting` notifications.
-- `@orbital/pulse-core`: warn when listeners are added after `Watcher.stop()`.
+- `@orbital-stellar/pulse-core`: warn when listeners are added after `Watcher.stop()`.
 
 ### Security
 
-- `@orbital/pulse-webhooks`: timing-safe HMAC comparison via
+- `@orbital-stellar/pulse-webhooks`: timing-safe HMAC comparison via
   `crypto.timingSafeEqual` (Node) and constant-time XOR (Web Crypto).
-- `@orbital/pulse-webhooks`: SSRF hardening on delivery targets — private,
+- `@orbital-stellar/pulse-webhooks`: SSRF hardening on delivery targets — private,
   loopback, and link-local IP ranges are blocked by default, with DNS
   rebinding defense.
 - Strict TypeScript across all packages (`noUncheckedIndexedAccess`,

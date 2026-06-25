@@ -25,12 +25,7 @@ function validate(value: unknown, schema: SchemaNode, path: string): string[] {
   // type check
   if (schema.type) {
     const expected = schema.type as string;
-    const actual =
-      value === null
-        ? "null"
-        : Array.isArray(value)
-        ? "array"
-        : typeof value;
+    const actual = value === null ? "null" : Array.isArray(value) ? "array" : typeof value;
     if (actual !== expected) {
       errors.push(`${path}: expected ${expected}, got ${actual}`);
       return errors; // no point checking further constraints
@@ -38,21 +33,11 @@ function validate(value: unknown, schema: SchemaNode, path: string): string[] {
   }
 
   if (typeof value === "string") {
-    if (
-      typeof schema.minLength === "number" &&
-      value.length < schema.minLength
-    ) {
-      errors.push(
-        `${path}: length ${value.length} is less than minLength ${schema.minLength}`
-      );
+    if (typeof schema.minLength === "number" && value.length < schema.minLength) {
+      errors.push(`${path}: length ${value.length} is less than minLength ${schema.minLength}`);
     }
-    if (
-      typeof schema.maxLength === "number" &&
-      value.length > schema.maxLength
-    ) {
-      errors.push(
-        `${path}: length ${value.length} exceeds maxLength ${schema.maxLength}`
-      );
+    if (typeof schema.maxLength === "number" && value.length > schema.maxLength) {
+      errors.push(`${path}: length ${value.length} exceeds maxLength ${schema.maxLength}`);
     }
     if (schema.pattern) {
       const re = new RegExp(schema.pattern as string);
@@ -62,25 +47,18 @@ function validate(value: unknown, schema: SchemaNode, path: string): string[] {
     }
     if (Array.isArray(schema.enum) && !schema.enum.includes(value)) {
       errors.push(
-        `${path}: value "${value}" is not one of [${(schema.enum as string[]).join(", ")}]`
+        `${path}: value "${value}" is not one of [${(schema.enum as string[]).join(", ")}]`,
       );
     }
   }
 
   if (Array.isArray(value)) {
-    if (
-      typeof schema.minItems === "number" &&
-      value.length < schema.minItems
-    ) {
-      errors.push(
-        `${path}: array has ${value.length} items, minimum is ${schema.minItems}`
-      );
+    if (typeof schema.minItems === "number" && value.length < schema.minItems) {
+      errors.push(`${path}: array has ${value.length} items, minimum is ${schema.minItems}`);
     }
     if (schema.items) {
       for (let i = 0; i < value.length; i++) {
-        errors.push(
-          ...validate(value[i], schema.items as SchemaNode, `${path}[${i}]`)
-        );
+        errors.push(...validate(value[i], schema.items as SchemaNode, `${path}[${i}]`));
       }
     }
   }
@@ -107,7 +85,7 @@ function validate(value: unknown, schema: SchemaNode, path: string): string[] {
 
     if (schema.properties) {
       for (const [key, subSchema] of Object.entries(
-        schema.properties as Record<string, SchemaNode>
+        schema.properties as Record<string, SchemaNode>,
       )) {
         if (key in obj) {
           errors.push(...validate(obj[key], subSchema, `${path}.${key}`));
@@ -125,7 +103,7 @@ function loadSchema(): SchemaNode {
   if (!_schema) {
     const schemaPath = resolve(
       new URL(".", import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1"),
-      "../specs/well-known/schema.json"
+      "../specs/well-known/schema.json",
     );
     _schema = JSON.parse(readFileSync(schemaPath, "utf-8")) as SchemaNode;
   }
@@ -138,9 +116,7 @@ export class LocalFilePublisher implements RegistryPublisher {
     const schema = loadSchema();
     const errors = validate(spec, schema, "#");
     if (errors.length > 0) {
-      throw new Error(
-        `Spec validation failed:\n${errors.map((e) => `  - ${e}`).join("\n")}`
-      );
+      throw new Error(`Spec validation failed:\n${errors.map((e) => `  - ${e}`).join("\n")}`);
     }
 
     const obj = spec as Record<string, unknown>;
@@ -152,4 +128,4 @@ export class LocalFilePublisher implements RegistryPublisher {
       etag: `local-${Date.now()}`,
     };
   }
-}
+}

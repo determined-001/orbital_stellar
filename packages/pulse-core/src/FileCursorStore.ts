@@ -1,17 +1,20 @@
-import { promises as fsPromises, constants as fsConstants } from "fs";
-import fs from "fs";
+import { promises as fsPromises } from "fs";
 import path from "path";
 import { CursorStore } from "./CursorStore.js";
+import type { Logger } from "./index.js";
 
 function safeFilename(streamKey: string): string {
   return encodeURIComponent(streamKey) + ".json";
 }
 
-export class FileCursorStore implements CursorStore {
+export class FileCursorStore extends CursorStore {
   private readonly dir: string;
+  private readonly logger?: Logger;
 
-  constructor(dir: string) {
+  constructor(dir: string, logger?: Logger) {
+    super();
     this.dir = dir;
+    this.logger = logger;
   }
 
   private filePathFor(streamKey: string): string {
@@ -30,9 +33,10 @@ export class FileCursorStore implements CursorStore {
         const parsed = JSON.parse(data);
         if (parsed && typeof parsed.cursor === "string") return parsed.cursor;
         return null;
-      } catch (err) {
-        console.warn(
+      } catch {
+        this.logger?.warn(
           `FileCursorStore: failed to parse cursor file ${file}, treating as missing`,
+          { file },
         );
         return null;
       }
@@ -68,7 +72,7 @@ export class FileCursorStore implements CursorStore {
       const dirFd = await fsPromises.open(this.dir, "r");
       try {
         // Node's fsPromises doesn't expose fsync on DirHandle, so use fs.fsync with numeric fd
-        // @ts-ignore - access internal fd
+        // @ts-expect-error - access internal fd
         await fsPromises.fsync((dirFd as any).fd);
       } catch (_) {
         // ignore

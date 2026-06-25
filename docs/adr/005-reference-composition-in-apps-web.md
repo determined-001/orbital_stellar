@@ -80,7 +80,7 @@ Per [`docs/open-source-policy.md`](../open-source-policy.md), the production ans
 
 - The SDK public API is unchanged. No package code moved.
 - The webhook signing scheme, verification surface, and React hook API are independent of the reference-composition location.
-- The Cloud product's planned interface stays the same — it imports `@orbital/pulse-core` and `@orbital/pulse-webhooks`, layers a multi-tenant control plane on top, and ships that as a managed runtime.
+- The Cloud product's planned interface stays the same — it imports `@orbital-stellar/pulse-core` and `@orbital-stellar/pulse-webhooks`, layers a multi-tenant control plane on top, and ships that as a managed runtime.
 
 ---
 

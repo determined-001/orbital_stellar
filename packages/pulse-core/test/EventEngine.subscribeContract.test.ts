@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { EventEngine } from "../src/EventEngine.js";
-import type { ContractEmittedEvent, ContractInvokedEvent, ContractSubscriptionConfig } from "../src/index.js";
+import type { ContractSubscriptionConfig } from "../src/index.js";
 
 function buildEngine(log?: any): {
   engine: EventEngine;
@@ -70,7 +70,7 @@ describe("EventEngine.subscribeContract — filter predicate", () => {
 
     expect(handler).toHaveBeenCalledOnce();
     expect(handler).toHaveBeenCalledWith(
-      expect.objectContaining({ type: "contract.emitted", contractId: "CABC1234" })
+      expect.objectContaining({ type: "contract.emitted", contractId: "CABC1234" }),
     );
   });
 
@@ -102,8 +102,8 @@ describe("EventEngine.subscribeContract — filter predicate", () => {
 
     expect(handler).not.toHaveBeenCalled();
     expect(log.warn).toHaveBeenCalledWith(
-      "[pulse-core] subscribe() filter threw for address sub1 — treating as reject.",
-      filterError
+      "[pulse-core] subscribe() filter threw for address. Treating as reject.",
+      { address: "sub1", error: filterError },
     );
 
     // Verify engine continues to deliver to other watchers
@@ -122,7 +122,7 @@ describe("EventEngine.subscribeContract — filter predicate", () => {
 
     expect(second).toBe(first);
     expect(log.warn).toHaveBeenCalledWith(
-      "[pulse-core] subscribeContract() called for address sub1 which already has an active watcher — filter option ignored."
+      "[pulse-core] subscribeContract() called for address sub1 which already has an active watcher — filter option ignored.",
     );
   });
 
@@ -131,7 +131,7 @@ describe("EventEngine.subscribeContract — filter predicate", () => {
     engine.subscribeContract("sub1", {
       filter: () => true,
     });
-    
+
     expect((engine as any).filters.has("sub1")).toBe(true);
 
     engine.unsubscribeContract("sub1");
@@ -185,10 +185,7 @@ describe("EventEngine.awaitContractSubscriptionActive", () => {
   it("resolves immediately when no topics requested", async () => {
     const engine = new EventEngine({ network: "testnet" });
 
-    const p = engine.awaitContractSubscriptionActive(
-      { contractId: "C4" },
-      { timeoutMs: 1000 },
-    );
+    const p = engine.awaitContractSubscriptionActive({ contractId: "C4" }, { timeoutMs: 1000 });
 
     // Any poll for the contract should satisfy
     engine.notifyContractPolled("C4", ["whatever"]);
@@ -249,25 +246,21 @@ describe("engine.subscribeContract(config)", () => {
   it("throws synchronously when filters.length > 5", () => {
     const engine = makeEngine();
     const filters = Array.from({ length: 6 }, (_, i) => ({ contractIds: [`C${i}`] }));
-    expect(() => engine.subscribeContract({ filters })).toThrow(
-      /filters.*≤ 5/i
-    );
+    expect(() => engine.subscribeContract({ filters })).toThrow(/filters.*≤ 5/i);
   });
 
   it("throws synchronously when a filter's contractIds.length > 5", () => {
     const engine = makeEngine();
     const contractIds = ["C1", "C2", "C3", "C4", "C5", "C6"];
-    expect(() =>
-      engine.subscribeContract({ filters: [{ contractIds }] })
-    ).toThrow(/contractIds.*≤ 5/i);
+    expect(() => engine.subscribeContract({ filters: [{ contractIds }] })).toThrow(
+      /contractIds.*≤ 5/i,
+    );
   });
 
   it("accepts a filter with exactly 5 contractIds", () => {
     const engine = makeEngine();
     const contractIds = ["C1", "C2", "C3", "C4", "C5"];
-    expect(() =>
-      engine.subscribeContract({ filters: [{ contractIds }] })
-    ).not.toThrow();
+    expect(() => engine.subscribeContract({ filters: [{ contractIds }] })).not.toThrow();
   });
 
   it("accepts all optional ContractFilter fields", () => {
@@ -281,22 +274,18 @@ describe("engine.subscribeContract(config)", () => {
             topics: [["transfer"], ["GABC"]],
           },
         ],
-      })
+      }),
     ).not.toThrow();
   });
 
   it("accepts type 'system'", () => {
     const engine = makeEngine();
-    expect(() =>
-      engine.subscribeContract({ filters: [{ type: "system" }] })
-    ).not.toThrow();
+    expect(() => engine.subscribeContract({ filters: [{ type: "system" }] })).not.toThrow();
   });
 
   it("accepts type 'diagnostic'", () => {
     const engine = makeEngine();
-    expect(() =>
-      engine.subscribeContract({ filters: [{ type: "diagnostic" }] })
-    ).not.toThrow();
+    expect(() => engine.subscribeContract({ filters: [{ type: "diagnostic" }] })).not.toThrow();
   });
 
   it("does not interfere with the legacy string-id subscribeContract", () => {

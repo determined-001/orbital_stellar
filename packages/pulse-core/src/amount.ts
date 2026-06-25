@@ -1,6 +1,14 @@
 export type StellarAmount = string & { __brand: "StellarAmount" };
 
 /**
+ * Brand a raw amount string as a {@link StellarAmount}. This is the canonical
+ * way normalizers attach the brand to values coming off Horizon/RPC records.
+ */
+export function toStellarAmount(s: string): StellarAmount {
+  return s as StellarAmount;
+}
+
+/**
  * Convert a Stellar decimal amount string (e.g. "1.2345678") into
  * stroop-precision integer (amount * 10^7) as a bigint.
  *
@@ -17,6 +25,7 @@ export function toBigInt(amount: StellarAmount): bigint {
   if (abs === "") throw new Error("Invalid StellarAmount");
 
   const parts = abs.split(".");
+  if (parts.length > 2) throw new Error("Invalid StellarAmount");
   const whole = parts[0] || "0";
   const frac = parts[1] ?? "";
 

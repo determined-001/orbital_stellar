@@ -1,4 +1,4 @@
-import { EventEngine } from "@orbital/pulse-core";
+import { EventEngine } from "@orbital-stellar/pulse-core";
 import { getNetwork } from "./network";
 
 const g = globalThis as unknown as { __orbitalEngine?: EventEngine };

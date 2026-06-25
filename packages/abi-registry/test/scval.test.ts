@@ -10,14 +10,14 @@ describe("Soroban ScVal typed helpers", () => {
 
     expect(
       roundTripped.toXDR().equals(original.toXDR()),
-      `Failed round-trip with spec for ${original.switch().name}`
+      `Failed round-trip with spec for ${original.switch().name}`,
     ).toBe(true);
 
     if (checkInference) {
       const inferred = jsToScval(jsVal);
       expect(
         inferred.toXDR().equals(original.toXDR()),
-        `Failed round-trip with inferred spec for ${original.switch().name}`
+        `Failed round-trip with inferred spec for ${original.switch().name}`,
       ).toBe(true);
     }
   }
@@ -118,36 +118,31 @@ describe("Soroban ScVal typed helpers", () => {
     });
 
     it("handles Address", () => {
-      const accountAddr = Address.fromString("GAPMH4R4OLAAT4YSTPXUUEQYPPC3NB7P6A3W3YQIRIW33U3B4AW46HDY");
+      const accountAddr = Address.fromString(
+        "GAPMH4R4OLAAT4YSTPXUUEQYPPC3NB7P6A3W3YQIRIW33U3B4AW46HDY",
+      );
       assertRoundTrip(accountAddr.toScVal(), "address", true);
 
-      const contractAddr = Address.fromString("CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABSC4");
+      const contractAddr = Address.fromString(
+        "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABSC4",
+      );
       assertRoundTrip(contractAddr.toScVal(), "address", true);
     });
   });
 
   describe("Collections (Vec & Map)", () => {
     it("handles Vec", () => {
-      const original = xdr.ScVal.scvVec([
-        xdr.ScVal.scvU32(10),
-        xdr.ScVal.scvU32(20),
-      ]);
+      const original = xdr.ScVal.scvVec([xdr.ScVal.scvU32(10), xdr.ScVal.scvU32(20)]);
       assertRoundTrip(original, "Vec<u32>", false);
     });
 
     it("handles Vec of unambiguous elements", () => {
-      const original = xdr.ScVal.scvVec([
-        xdr.ScVal.scvString("a"),
-        xdr.ScVal.scvString("b"),
-      ]);
+      const original = xdr.ScVal.scvVec([xdr.ScVal.scvString("a"), xdr.ScVal.scvString("b")]);
       assertRoundTrip(original, "vec", true);
     });
 
     it("handles Vec with element spec", () => {
-      const original = xdr.ScVal.scvVec([
-        xdr.ScVal.scvSymbol("a"),
-        xdr.ScVal.scvSymbol("b"),
-      ]);
+      const original = xdr.ScVal.scvVec([xdr.ScVal.scvSymbol("a"), xdr.ScVal.scvSymbol("b")]);
       assertRoundTrip(original, "Vec<Symbol>", false);
     });
 
@@ -229,7 +224,9 @@ describe("Soroban ScVal typed helpers", () => {
         storage: [
           new xdr.ScMapEntry({
             key: xdr.ScVal.scvString("admin"),
-            val: Address.fromString("CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABSC4").toScVal(),
+            val: Address.fromString(
+              "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABSC4",
+            ).toScVal(),
           }),
         ],
       });

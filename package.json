@@ -1,18 +1,38 @@
 {
-  "name": "orbit-stellar",
+  "name": "orbital-stellar",
   "private": true,
   "version": "0.0.0",
+  "packageManager": "pnpm@10.22.0",
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "build": "pnpm -r --filter \"./packages/*\" run build",
     "test": "pnpm -r --if-present test",
-    "test:integration": "pnpm -r --if-present test:integration"
+    "test:integration": "pnpm -r --if-present test:integration",
+    "lint": "eslint packages",
+    "lint:fix": "eslint packages --fix",
+    "format": "node scripts/format-changed.mjs",
+    "format:all": "prettier --write \"packages/**/*.{ts,tsx,json}\"",
+    "format:check": "prettier --check \"packages/**/*.{ts,tsx,json}\"",
+    "prepare": "husky"
+  },
+  "lint-staged": {
+    "packages/**/*.{ts,tsx,json}": "prettier --write"
   },
   "devDependencies": {
-    "typescript": "^6.0.3"
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.5.0",
+    "eslint-config-prettier": "^10.1.8",
+    "husky": "^9.1.7",
+    "lint-staged": "^17.0.7",
+    "prettier": "^3.8.4",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.61.1"
   },
   "overrides": {
     "path-to-regexp": "0.1.13",
     "vite": "7.3.3",
-    "axios": ">=1.15.2"
+    "axios": "1.17.0"
   }
 }

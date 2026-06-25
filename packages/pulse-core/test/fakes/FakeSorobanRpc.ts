@@ -41,7 +41,7 @@ export class FakeSorobanRpc {
   async getEvents(
     startCursor: string | undefined,
     limit = 100,
-    signal?: AbortSignal
+    signal?: AbortSignal,
   ): Promise<{ events: FakeSorobanEvent[] }> {
     this.callCount++;
 

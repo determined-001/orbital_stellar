@@ -31,7 +31,7 @@ test("exactly one connection survives Strict Mode double-mount", () => {
     render(
       <StrictMode>
         <Subscriber />
-      </StrictMode>
+      </StrictMode>,
     );
   });
 

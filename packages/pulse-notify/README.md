@@ -1,9 +1,9 @@
-# @orbital/pulse-notify
+# @orbital-stellar/pulse-notify
 
 **React hooks for live Stellar events.** Drop a hook into any component and receive real-time payment, activity, or custom event streams from an Orbital server — with automatic reconnection and zero wiring.
 
 ```bash
-pnpm add @orbital/pulse-notify react
+pnpm add @orbital-stellar/pulse-notify react
 ```
 
 Requires React 18 or 19. Designed for Next.js App Router, Vite, Remix, and plain React apps.
@@ -18,7 +18,7 @@ You point the hook at your own Orbital server (self-hosted or managed) and pass 
 
 ```tsx
 "use client";
-import { useStellarPayment } from "@orbital/pulse-notify";
+import { useStellarPayment } from "@orbital-stellar/pulse-notify";
 
 export function LiveBalance({ address }: { address: string }) {
   const { event, connected, error } = useStellarPayment(
@@ -37,6 +37,84 @@ export function LiveBalance({ address }: { address: string }) {
   );
 }
 ```
+
+## Testing
+
+Install `msw` and an `EventSource` polyfill as devDependencies:
+
+```bash
+pnpm add -D msw
+# Node lacks EventSource, so provide one:
+pnpm add -D eventsource
+```
+
+This package's own `test/connectionPool.test.ts` shows the `EventSource` polyfill style used for hook tests.
+
+```ts
+import { http, HttpResponse } from "msw";
+import { setupServer } from "msw/node";
+import { renderHook, act } from "@testing-library/react";
+import { useStellarActivity } from "@orbital-stellar/pulse-notify";
+
+class MockEventSource {
+  static instances: MockEventSource[] = [];
+
+  onopen: (() => void) | null = null;
+  onmessage: ((event: { data: string }) => void) | null = null;
+  onerror: (() => void) | null = null;
+  closeCount = 0;
+
+  constructor(public url: string) {
+    MockEventSource.instances.push(this);
+    setTimeout(() => this.onopen?.(), 0);
+  }
+
+  close() {
+    this.closeCount += 1;
+  }
+
+  emit(event: unknown) {
+    this.onmessage?.({ data: JSON.stringify(event) });
+  }
+}
+
+globalThis.EventSource = MockEventSource as unknown as typeof EventSource;
+
+const server = setupServer(
+  http.get("https://events.example.com/events/:address", () => {
+    return new HttpResponse(null, {
+      status: 200,
+      headers: { "Content-Type": "text/event-stream" },
+    });
+  })
+);
+
+beforeAll(() => server.listen());
+afterEach(() => server.resetHandlers());
+afterAll(() => server.close());
+
+test("receives events from EventSource", async () => {
+  const { result, waitForNextUpdate } = renderHook(() =>
+    useStellarActivity("https://events.example.com", "GABC")
+  );
+
+  await waitForNextUpdate();
+
+  act(() => {
+    MockEventSource.instances[0]?.emit({
+      type: "payment.received",
+      amount: "10",
+      asset: "XLM",
+      from: "GB...",
+      timestamp: new Date().toISOString(),
+    });
+  });
+
+  expect(result.current.event?.type).toBe("payment.received");
+});
+```
+
+This pattern keeps tests fast and deterministic while still validating the hook's SSE wiring.
 
 ## Hooks
 
@@ -83,7 +161,7 @@ Small client-side status indicator for places that need connection health but do
 
 ```tsx
 "use client";
-import { StellarConnectionStatus } from "@orbital/pulse-notify";
+import { StellarConnectionStatus } from "@orbital-stellar/pulse-notify";
 
 export function HeaderConnection({ address }: { address: string }) {
   return (
@@ -124,8 +202,8 @@ type EventState<T extends NormalizedEvent = NormalizedEvent> = {
 `useStellarEvent` is generic — pass a narrower union as `T` to get full IDE support and avoid manual casts. Use TypeScript's `Extract` to pull specific event types out of `NormalizedEvent`:
 
 ```tsx
-import type { NormalizedEvent } from "@orbital/pulse-core";
-import { useStellarEvent } from "@orbital/pulse-notify";
+import type { NormalizedEvent } from "@orbital-stellar/pulse-core";
+import { useStellarEvent } from "@orbital-stellar/pulse-notify";
 
 type WalletEvents = Extract<
   NormalizedEvent,

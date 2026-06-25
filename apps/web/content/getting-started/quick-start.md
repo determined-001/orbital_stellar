@@ -10,7 +10,7 @@ This guide walks you through the three SDK packages with the smallest possible w
 The fastest path. Install `pulse-core`, instantiate `EventEngine`, subscribe to an address, handle events.
 
 ```ts
-import { EventEngine } from "@orbital/pulse-core";
+import { EventEngine } from "@orbital-stellar/pulse-core";
 
 const engine = new EventEngine({ network: "testnet" });
 engine.start();
@@ -40,8 +40,8 @@ Run it on testnet, send a test payment to that address from the [Stellar Laborat
 Want to push events to an HTTPS endpoint with signed retries? Layer `WebhookDelivery` on top of a watcher:
 
 ```ts
-import { EventEngine } from "@orbital/pulse-core";
-import { WebhookDelivery } from "@orbital/pulse-webhooks";
+import { EventEngine } from "@orbital-stellar/pulse-core";
+import { WebhookDelivery } from "@orbital-stellar/pulse-webhooks";
 
 const engine = new EventEngine({ network: "testnet" });
 engine.start();
@@ -59,7 +59,7 @@ new WebhookDelivery(watcher, {
 Verify on the receiver side:
 
 ```ts
-import { verifyWebhook } from "@orbital/pulse-webhooks";
+import { verifyWebhook } from "@orbital-stellar/pulse-webhooks";
 import express from "express";
 
 const app = express();
@@ -85,7 +85,7 @@ The React hooks open a browser `EventSource` connection to a backend that expose
 
 ```tsx
 "use client";
-import { useStellarPayment } from "@orbital/pulse-notify";
+import { useStellarPayment } from "@orbital-stellar/pulse-notify";
 
 export function LiveBalance({ address }: { address: string }) {
   const { event, connected, error } = useStellarPayment(

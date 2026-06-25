@@ -4,7 +4,7 @@
 |---|---|
 | **Status** | Accepted |
 | **Date** | 2026-05-29 |
-| **Affected** | `@orbital/pulse-webhooks` (`WebhookDelivery`, `verifyWebhook`, `verifyWebhookEdge`) |
+| **Affected** | `@orbital-stellar/pulse-webhooks` (`WebhookDelivery`, `verifyWebhook`, `verifyWebhookEdge`) |
 | **Supersedes** | — |
 
 ---

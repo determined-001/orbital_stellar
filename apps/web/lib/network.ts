@@ -1,4 +1,4 @@
-import type { Network } from "@orbital/pulse-core";
+import type { Network } from "@orbital-stellar/pulse-core";
 
 const VALID: readonly Network[] = ["mainnet", "testnet"] as const;
 

@@ -3,22 +3,14 @@ import type { RetryQueue, RetryRecord } from "./RetryQueue.js";
 type RedisValue = number | string;
 
 export type RedisLike = {
-  zadd(
-    key: string,
-    score: number,
-    member: string,
-  ): RedisValue | Promise<RedisValue>;
+  zadd(key: string, score: number, member: string): RedisValue | Promise<RedisValue>;
   zrangebyscore(
     key: string,
     min: RedisValue,
     max: RedisValue,
     ...args: RedisValue[]
   ): string[] | Promise<string[]>;
-  zrevrange(
-    key: string,
-    start: number,
-    stop: number,
-  ): string[] | Promise<string[]>;
+  zrevrange(key: string, start: number, stop: number): string[] | Promise<string[]>;
   zrem(key: string, member: string): RedisValue | Promise<RedisValue>;
   zcard(key: string): RedisValue | Promise<RedisValue>;
 };
@@ -48,10 +40,7 @@ export class RedisRetryQueue implements RetryQueue {
   constructor(client: RedisLike, options: RedisRetryQueueOptions = {}) {
     this.client = client;
     this.now = options.now ?? Date.now;
-    this.scanBatchSize = Math.max(
-      1,
-      Math.floor(options.scanBatchSize ?? DEFAULT_SCAN_BATCH_SIZE),
-    );
+    this.scanBatchSize = Math.max(1, Math.floor(options.scanBatchSize ?? DEFAULT_SCAN_BATCH_SIZE));
     this.visibilityTimeoutMs = Math.max(
       1,
       Math.floor(options.visibilityTimeoutMs ?? DEFAULT_VISIBILITY_TIMEOUT_MS),
@@ -115,9 +104,7 @@ export class RedisRetryQueue implements RetryQueue {
     const record = this.parseRecord(member);
     if (!record) return;
 
-    const delayMs = Number.isFinite(requeueDelayMs)
-      ? Math.max(0, Math.floor(requeueDelayMs))
-      : 0;
+    const delayMs = Number.isFinite(requeueDelayMs) ? Math.max(0, Math.floor(requeueDelayMs)) : 0;
     const nextRetryAt = this.now() + delayMs;
 
     await this.enqueue({

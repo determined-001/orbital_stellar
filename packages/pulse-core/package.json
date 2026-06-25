@@ -1,32 +1,53 @@
 {
-  "name": "@orbital/pulse-core",
-  "private": true,
+  "name": "@orbital-stellar/pulse-core",
+  "version": "0.1.0",
+  "description": "EventEngine for Stellar — Horizon subscription, event normalization, reconnection, and rate-limit handling.",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
   "type": "module",
-  "version": "0.0.0",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "bin": {
     "orbital": "./bin/orbital"
   },
+  "files": [
+    "dist",
+    "bin",
+    "README.md",
+    "LICENSE"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/determined-001/orbital_stellar.git",
+    "directory": "packages/pulse-core"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "test": "vitest run",
+    "test": "pnpm test:types && vitest run",
+    "test:types": "tsc --noEmit -p tsconfig.typetest.json",
     "test:coverage": "vitest run --coverage",
     "test:integration": "INTEGRATION_TESTS=true vitest run test/integration",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "bench:throughput": "tsx bench/throughput.ts"
+    "bench:throughput": "tsx bench/throughput.ts",
+    "bench:soroban-throughput": "tsx bench/soroban-throughput.ts"
   },
   "dependencies": {
     "@stellar/stellar-sdk": "^15.0.1",
-    "yargs": "^17.7.2"
+    "yargs": "^18.0.0"
   },
   "devDependencies": {
-    "@types/node": "^25.6.0",
+    "@types/node": "^25.9.3",
     "@types/pg": "^8.11.11",
-    "@vitest/coverage-v8": "^4.1.7",
+    "@vitest/coverage-v8": "^4.1.9",
+    "fast-check": "^4.8.0",
     "pg": "^8.11.5",
-    "tsx": "^4.21.0",
-    "vite": "^7.3.3",
-    "vitest": "^4.1.7"
+    "tsx": "^4.22.4",
+    "vite": "^8.0.16",
+    "vitest": "^4.1.9"
   }
 }

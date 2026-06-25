@@ -5,14 +5,14 @@ description: React hooks for subscribing to live Stellar events.
 
 ## Overview
 
-`@orbital/pulse-notify` opens a browser-native `EventSource` connection to a backend that exposes Orbital events as Server-Sent Events, subscribes to an address, and re-renders your component whenever a new event arrives.
+`@orbital-stellar/pulse-notify` opens a browser-native `EventSource` connection to a backend that exposes Orbital events as Server-Sent Events, subscribes to an address, and re-renders your component whenever a new event arrives.
 
-The hooks are intentionally thin — no global store, no custom cache, no peer dependency on a state manager. You point them at your own backend (built on `@orbital/pulse-core` — `apps/web` ships a copy-paste reference at `app/api/events/[address]/route.ts`) or at Orbital Cloud (in development), and pass the address you want to watch.
+The hooks are intentionally thin — no global store, no custom cache, no peer dependency on a state manager. You point them at your own backend (built on `@orbital-stellar/pulse-core` — `apps/web` ships a copy-paste reference at `app/api/events/[address]/route.ts`) or at Orbital Cloud (in development), and pass the address you want to watch.
 
 ## Installation
 
 ```bash
-pnpm add @orbital/pulse-notify react
+pnpm add @orbital-stellar/pulse-notify react
 ```
 
 **Peer dependency:** React 18 or 19. Designed for Next.js App Router, Vite, Remix, and plain React apps.
@@ -23,7 +23,7 @@ The base hook. Subscribes to one event type, an allowlist of types, or all event
 
 ```tsx
 "use client";
-import { useStellarEvent } from "@orbital/pulse-notify";
+import { useStellarEvent } from "@orbital-stellar/pulse-notify";
 
 // Single type
 const { event, connected, error } = useStellarEvent(
@@ -75,7 +75,7 @@ A [React Suspense](https://react.dev/reference/react/Suspense)-compatible hook. 
 ```tsx
 "use client";
 import { Suspense } from "react";
-import { useStellarEventSuspense } from "@orbital/pulse-notify";
+import { useStellarEventSuspense } from "@orbital-stellar/pulse-notify";
 
 // The component never receives null — it is suspended until data arrives.
 function LiveBalance({ address }: { address: string }) {
@@ -121,7 +121,7 @@ Uses the same connection pool as `useStellarEvent` — multiple hook instances w
 Convenience hook — only updates on `payment.received` events. Equivalent to `useStellarEvent(serverUrl, address, { event: "payment.received" })`.
 
 ```tsx
-import { useStellarPayment } from "@orbital/pulse-notify";
+import { useStellarPayment } from "@orbital-stellar/pulse-notify";
 
 function IncomingPayments({ address }: { address: string }) {
   const { event, connected } = useStellarPayment(
@@ -147,7 +147,7 @@ function IncomingPayments({ address }: { address: string }) {
 Convenience hook — updates on all events (`*`). Equivalent to `useStellarEvent(serverUrl, address, { event: "*" })`.
 
 ```tsx
-import { useStellarActivity } from "@orbital/pulse-notify";
+import { useStellarActivity } from "@orbital-stellar/pulse-notify";
 
 const { event, connected } = useStellarActivity(serverUrl, address);
 ```
@@ -158,7 +158,7 @@ Small status indicator that opens its own `EventSource` and renders connection h
 
 ```tsx
 "use client";
-import { StellarConnectionStatus } from "@orbital/pulse-notify";
+import { StellarConnectionStatus } from "@orbital-stellar/pulse-notify";
 
 <StellarConnectionStatus serverUrl={serverUrl} address={address} />;
 ```
@@ -178,8 +178,8 @@ The component sets `data-status` to `connecting`, `connected`, or `error`, and a
 Pass a narrower union as `T` to get full IDE support and avoid manual casts:
 
 ```tsx
-import type { NormalizedEvent } from "@orbital/pulse-core";
-import { useStellarEvent } from "@orbital/pulse-notify";
+import type { NormalizedEvent } from "@orbital-stellar/pulse-core";
+import { useStellarEvent } from "@orbital-stellar/pulse-notify";
 
 type WalletEvents = Extract<
   NormalizedEvent,

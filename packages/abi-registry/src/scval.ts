@@ -42,12 +42,11 @@ export function scvalToJs(scval: xdr.ScVal): any {
     return {
       type: "contractInstance",
       executable: executableType,
-      wasmHash: executableType === "contractExecutableWasm"
-        ? (executable.value() as any).toString("hex")
-        : undefined,
-      storage: instance.storage()
-        ? scvalToJs(xdr.ScVal.scvMap(instance.storage()!))
-        : null,
+      wasmHash:
+        executableType === "contractExecutableWasm"
+          ? (executable.value() as any).toString("hex")
+          : undefined,
+      storage: instance.storage() ? scvalToJs(xdr.ScVal.scvMap(instance.storage()!)) : null,
     };
   }
 
@@ -145,15 +144,19 @@ export function jsToScval(value: any, spec?: any): xdr.ScVal {
 
     case "error": {
       if (value && typeof value === "object") {
-        const errorType = value.errorType || (value.type === "contract" ? "sceContract" : "sceWasmVm");
+        const errorType =
+          value.errorType || (value.type === "contract" ? "sceContract" : "sceWasmVm");
         const code = value.code;
-        const errorCode = typeof code === "number" ? code : (xdr.ScErrorCode as any)[value.value]?.().value ?? 0;
+        const errorCode =
+          typeof code === "number" ? code : ((xdr.ScErrorCode as any)[value.value]?.().value ?? 0);
 
         let innerValue: any;
         if (errorType === "sceContract") {
           innerValue = Number(errorCode);
         } else {
-          innerValue = (xdr.ScErrorCode as any)._byValue[errorCode] || (xdr.ScErrorCode as any).scecArithDomain();
+          innerValue =
+            (xdr.ScErrorCode as any)._byValue[errorCode] ||
+            (xdr.ScErrorCode as any).scecArithDomain();
         }
 
         const scError = (xdr.ScError as any)[errorType](innerValue);
@@ -167,7 +170,9 @@ export function jsToScval(value: any, spec?: any): xdr.ScVal {
 
     case "ledgerkeynonce": {
       const nonceVal = value && typeof value === "object" ? value.nonce : value;
-      return xdr.ScVal.scvLedgerKeyNonce(new xdr.ScNonceKey({ nonce: new xdr.Int64(BigInt(nonceVal)) }));
+      return xdr.ScVal.scvLedgerKeyNonce(
+        new xdr.ScNonceKey({ nonce: new xdr.Int64(BigInt(nonceVal)) }),
+      );
     }
 
     case "contractinstance": {
@@ -183,10 +188,12 @@ export function jsToScval(value: any, spec?: any): xdr.ScVal {
           const scMap = jsToScval(value.storage, "map");
           storage = scMap.value();
         }
-        return xdr.ScVal.scvContractInstance(new xdr.ScContractInstance({
-          executable: exec,
-          storage,
-        }));
+        return xdr.ScVal.scvContractInstance(
+          new xdr.ScContractInstance({
+            executable: exec,
+            storage,
+          }),
+        );
       }
       throw new Error(`Unsupported contract instance value: ${value}`);
     }
@@ -248,7 +255,10 @@ export function jsToScval(value: any, spec?: any): xdr.ScVal {
 
     case "result": {
       // In Soroban, a result type is not a top-level ScVal, but we can treat it as void/val/error
-      if (value instanceof Error || (value && typeof value === "object" && value.type === "error")) {
+      if (
+        value instanceof Error ||
+        (value && typeof value === "object" && value.type === "error")
+      ) {
         return jsToScval(value, "error");
       }
       return jsToScval(value, specObj?.ok);
@@ -299,7 +309,11 @@ export function jsToScval(value: any, spec?: any): xdr.ScVal {
 
   if (typeof value === "object") {
     // Check if it is a preserved error
-    if (("type" in value && "code" in value) && (value.type === "contract" || value.type === "system")) {
+    if (
+      "type" in value &&
+      "code" in value &&
+      (value.type === "contract" || value.type === "system")
+    ) {
       return jsToScval(value, "error");
     }
     if (value.type === "ledgerKeyContractInstance") {

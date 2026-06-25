@@ -67,7 +67,7 @@ export type ClaimPredicate =
  */
 export function isClaimPredicateType<T extends ClaimPredicate["type"]>(
   predicate: ClaimPredicate,
-  type: T
+  type: T,
 ): predicate is Extract<ClaimPredicate, { type: T }> {
   return predicate.type === type;
 }
@@ -79,10 +79,7 @@ export function isClaimPredicateType<T extends ClaimPredicate["type"]>(
  * @param nowSeconds - Current time in UNIX seconds (from ledger close time)
  * @returns true if the predicate is satisfied, false otherwise
  */
-export function evaluatePredicate(
-  predicate: ClaimPredicate,
-  nowSeconds: number
-): boolean {
+export function evaluatePredicate(predicate: ClaimPredicate, nowSeconds: number): boolean {
   switch (predicate.type) {
     case "unconditional":
       return true;
@@ -91,20 +88,14 @@ export function evaluatePredicate(
       return !evaluatePredicate(predicate.predicate, nowSeconds);
 
     case "and":
-      return predicate.predicates.every((p) =>
-        evaluatePredicate(p, nowSeconds)
-      );
+      return predicate.predicates.every((p) => evaluatePredicate(p, nowSeconds));
 
     case "or":
-      return predicate.predicates.some((p) =>
-        evaluatePredicate(p, nowSeconds)
-      );
+      return predicate.predicates.some((p) => evaluatePredicate(p, nowSeconds));
 
     case "abs_before": {
       // Parse ISO8601 timestamp to UNIX seconds
-      const beforeSeconds = Math.floor(
-        new Date(predicate.timestamp).getTime() / 1000
-      );
+      const beforeSeconds = Math.floor(new Date(predicate.timestamp).getTime() / 1000);
       return nowSeconds < beforeSeconds;
     }
 
@@ -114,10 +105,11 @@ export function evaluatePredicate(
       return nowSeconds < beforeSeconds;
     }
 
-    default:
+    default: {
       // Exhaustiveness check - TypeScript will error if a case is missing
       const _exhaustive: never = predicate;
       return _exhaustive;
+    }
   }
 }
 
@@ -129,9 +121,7 @@ export function evaluatePredicate(
  * @returns Properly typed ClaimPredicate
  * @throws Error if predicate structure is invalid or ambiguous
  */
-export function normalizeClaimPredicate(
-  rawPredicate: Record<string, unknown>
-): ClaimPredicate {
+export function normalizeClaimPredicate(rawPredicate: Record<string, unknown>): ClaimPredicate {
   // Check for unconditional
   if (rawPredicate.unconditional === true) {
     return { type: "unconditional" };
@@ -141,9 +131,7 @@ export function normalizeClaimPredicate(
   if (rawPredicate.not !== undefined) {
     return {
       type: "not",
-      predicate: normalizeClaimPredicate(
-        rawPredicate.not as Record<string, unknown>
-      ),
+      predicate: normalizeClaimPredicate(rawPredicate.not as Record<string, unknown>),
     };
   }
 
@@ -152,7 +140,7 @@ export function normalizeClaimPredicate(
     return {
       type: "and",
       predicates: (rawPredicate.and as unknown[]).map((p) =>
-        normalizeClaimPredicate(p as Record<string, unknown>)
+        normalizeClaimPredicate(p as Record<string, unknown>),
       ),
     };
   }
@@ -162,7 +150,7 @@ export function normalizeClaimPredicate(
     return {
       type: "or",
       predicates: (rawPredicate.or as unknown[]).map((p) =>
-        normalizeClaimPredicate(p as Record<string, unknown>)
+        normalizeClaimPredicate(p as Record<string, unknown>),
       ),
     };
   }
@@ -183,7 +171,5 @@ export function normalizeClaimPredicate(
     };
   }
 
-  throw new Error(
-    `Invalid or ambiguous claim predicate: ${JSON.stringify(rawPredicate)}`
-  );
+  throw new Error(`Invalid or ambiguous claim predicate: ${JSON.stringify(rawPredicate)}`);
 }

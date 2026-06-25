@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import type { NormalizedEvent } from "@orbital/pulse-core";
+import type { NormalizedEvent } from "@orbital-stellar/pulse-core";
 import { acquireEventConnection } from "./connectionPool.js";
 import type { UseEventConfig } from "./index.js";
 
@@ -48,7 +48,7 @@ function buildResourceKey(
   serverUrl: string,
   address: string,
   eventKey: string,
-  token: string | undefined
+  token: string | undefined,
 ): string {
   return JSON.stringify([serverUrl, address, eventKey, token ?? ""]);
 }
@@ -58,14 +58,7 @@ function getOrCreateResource<T extends NormalizedEvent>(
   address: string,
   eventType: string | string[],
   token: string | undefined,
-  cacheKey: string,
-  eventKey: string
-): CacheEntry {
-  const base = `${serverUrl}/events/${address}`;
-  const url = token ? `${base}?token=${encodeURIComponent(token)}` : base;
-
-  const source = new EventSource(url);
-  resourceKey: string
+  resourceKey: string,
 ): ResourceEntry<T> {
   const existing = resourceCache.get(resourceKey);
   if (existing) return existing as ResourceEntry<T>;
@@ -173,7 +166,7 @@ function releaseEntry(cacheKey: string): void {
  * ```tsx
  * "use client";
  * import { Suspense } from "react";
- * import { useStellarEventSuspense } from "@orbital/pulse-notify";
+ * import { useStellarEventSuspense } from "@orbital-stellar/pulse-notify";
  *
  * function LiveBalance({ address }: { address: string }) {
  *   // Never returns null — component is suspended until data arrives.
@@ -215,54 +208,37 @@ function releaseEntry(cacheKey: string): void {
  * @param options   - Optional event type filter and API token.
  * @returns The most recent matching event. Never `null`.
  */
-export function useStellarEventSuspense<
-  T extends NormalizedEvent = NormalizedEvent,
->(
+export function useStellarEventSuspense<T extends NormalizedEvent = NormalizedEvent>(
   serverUrl: string,
   address: string,
-  options?: Pick<UseEventConfig, "event" | "token">
+  options?: Pick<UseEventConfig, "event" | "token">,
 ): T;
 
 /** Overload that accepts a single config object. */
-export function useStellarEventSuspense<
-  T extends NormalizedEvent = NormalizedEvent,
->(config: UseEventConfig): T;
+export function useStellarEventSuspense<T extends NormalizedEvent = NormalizedEvent>(
+  config: UseEventConfig,
+): T;
 
-export function useStellarEventSuspense<
-  T extends NormalizedEvent = NormalizedEvent,
->(
+export function useStellarEventSuspense<T extends NormalizedEvent = NormalizedEvent>(
   configOrUrl: UseEventConfig | string,
   address?: string,
-  options?: Pick<UseEventConfig, "event" | "token">
+  options?: Pick<UseEventConfig, "event" | "token">,
 ): T {
   // Normalise the two call signatures.
-  const serverUrl =
-    typeof configOrUrl === "string" ? configOrUrl : configOrUrl.serverUrl;
-  const addr =
-    typeof configOrUrl === "string" ? address! : configOrUrl.address;
+  const serverUrl = typeof configOrUrl === "string" ? configOrUrl : configOrUrl.serverUrl;
+  const addr = typeof configOrUrl === "string" ? address! : configOrUrl.address;
   const eventType: string | string[] =
-    typeof configOrUrl === "string"
-      ? options?.event ?? "*"
-      : configOrUrl.event ?? "*";
-  const token =
-    typeof configOrUrl === "string" ? options?.token : configOrUrl.token;
+    typeof configOrUrl === "string" ? (options?.event ?? "*") : (configOrUrl.event ?? "*");
+  const token = typeof configOrUrl === "string" ? options?.token : configOrUrl.token;
 
   // Stable string key — same strategy as useStellarEvent.
-  const eventKey = Array.isArray(eventType)
-    ? [...eventType].sort().join(",")
-    : eventType;
+  const eventKey = Array.isArray(eventType) ? [...eventType].sort().join(",") : eventType;
 
   const resourceKey = buildResourceKey(serverUrl, addr, eventKey, token);
 
   // Acquire or create the resource entry synchronously during render so the
   // thrown promise is available on the very first render pass.
-  const entry = getOrCreateResource<T>(
-    serverUrl,
-    addr,
-    eventType,
-    token,
-    resourceKey
-  );
+  const entry = getOrCreateResource<T>(serverUrl, addr, eventType, token, resourceKey);
 
   // Acquire / create the cache entry synchronously during render so the
   // thrown promise is available on the very first render.
@@ -284,9 +260,7 @@ export function useStellarEventSuspense<
 
   useEffect(() => {
     const currentKey = resourceKey;
-    const currentEntry = resourceCache.get(currentKey) as
-      | ResourceEntry<T>
-      | undefined;
+    const currentEntry = resourceCache.get(currentKey) as ResourceEntry<T> | undefined;
 
     if (!currentEntry) return;
 
@@ -322,7 +296,7 @@ export function useStellarEventSuspense<
         onError: () => {
           // Connection error — stay suspended; browser will reconnect.
         },
-      }
+      },
     );
 
     // If the connection was already open when we subscribed (e.g. shared pool
@@ -341,7 +315,6 @@ export function useStellarEventSuspense<
       }
       resourceKeyRef.current = null;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [resourceKey]);
 
   // --- Suspense protocol ---

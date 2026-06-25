@@ -1,7 +1,8 @@
 import { createHmac } from "crypto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { Watcher } from "@orbital/pulse-core";
+import { Watcher } from "@orbital-stellar/pulse-core";
+import type { WebhookMetrics } from "../src/index.js";
 import {
   DeadLetterStore,
   verifyWebhook,
@@ -26,14 +27,8 @@ async function flushAsyncWork(): Promise<void> {
   await Promise.resolve();
 }
 
-function signWebhookPayload(
-  secret: string,
-  payload: string,
-  timestamp: string,
-): string {
-  return createHmac("sha256", secret)
-    .update(`${timestamp}.${payload}`)
-    .digest("hex");
+function signWebhookPayload(secret: string, payload: string, timestamp: string): string {
+  return createHmac("sha256", secret).update(`${timestamp}.${payload}`).digest("hex");
 }
 
 describe("pulse-webhooks WebhookDelivery", () => {
@@ -102,6 +97,85 @@ describe("pulse-webhooks WebhookDelivery", () => {
     );
   });
 
+  it("records each webhook attempt and terminal success outcome", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200 });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const metrics: WebhookMetrics = {
+      recordAttempt: vi.fn(),
+      recordTerminal: vi.fn(),
+    };
+
+    const watcher = new Watcher("GABC");
+    new WebhookDelivery(watcher, {
+      url: "https://prod.example.com/webhooks/stellar",
+      secret: "top-secret",
+      metrics,
+    });
+
+    watcher.emit("*", deliveryEvent);
+    await flushAsyncWork();
+
+    expect(metrics.recordAttempt).toHaveBeenCalledTimes(1);
+    expect(metrics.recordAttempt).toHaveBeenCalledWith(
+      "https://prod.example.com/webhooks/stellar",
+      1,
+      expect.any(Number),
+      "success",
+    );
+    expect(metrics.recordTerminal).toHaveBeenCalledTimes(1);
+    expect(metrics.recordTerminal).toHaveBeenCalledWith(
+      "https://prod.example.com/webhooks/stellar",
+      "success",
+    );
+  });
+
+  it("records all attempts and terminal failure when final delivery fails", async () => {
+    const fetchMock = vi.fn().mockRejectedValue(new Error("network down"));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const metrics: WebhookMetrics = {
+      recordAttempt: vi.fn(),
+      recordTerminal: vi.fn(),
+    };
+
+    const watcher = new Watcher("GABC");
+    new WebhookDelivery(watcher, {
+      url: "https://prod.example.com/webhooks/stellar",
+      secret: "top-secret",
+      retries: 2,
+      random: () => 0,
+      metrics,
+    });
+
+    watcher.emit("*", deliveryEvent);
+    await flushAsyncWork();
+
+    vi.advanceTimersByTime(0);
+    await flushAsyncWork();
+
+    expect(metrics.recordAttempt).toHaveBeenCalledTimes(2);
+    expect(metrics.recordAttempt).toHaveBeenNthCalledWith(
+      1,
+      "https://prod.example.com/webhooks/stellar",
+      1,
+      expect.any(Number),
+      "failure",
+    );
+    expect(metrics.recordAttempt).toHaveBeenNthCalledWith(
+      2,
+      "https://prod.example.com/webhooks/stellar",
+      2,
+      expect.any(Number),
+      "failure",
+    );
+    expect(metrics.recordTerminal).toHaveBeenCalledTimes(1);
+    expect(metrics.recordTerminal).toHaveBeenCalledWith(
+      "https://prod.example.com/webhooks/stellar",
+      "failure",
+    );
+  });
+
   it("rejects URL when custom urlValidator blocks an otherwise allowed URL without retrying", async () => {
     const allowedUrl = "https://prod.example.com/webhooks/stellar";
     const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200 });
@@ -114,8 +188,7 @@ describe("pulse-webhooks WebhookDelivery", () => {
     new WebhookDelivery(watcher, {
       url: allowedUrl,
       secret: "top-secret",
-      urlValidator: async (url) =>
-        url === allowedUrl ? "blocked by custom validator" : null,
+      urlValidator: async (url) => (url === allowedUrl ? "blocked by custom validator" : null),
     });
 
     watcher.emit("*", deliveryEvent);
@@ -166,10 +239,7 @@ describe("pulse-webhooks WebhookDelivery", () => {
     await flushAsyncWork();
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(fetchMock).toHaveBeenCalledWith(
-      failedUrl,
-      expect.objectContaining({ method: "POST" }),
-    );
+    expect(fetchMock).toHaveBeenCalledWith(failedUrl, expect.objectContaining({ method: "POST" }));
     expect(fetchMock).toHaveBeenCalledWith(
       successfulUrl,
       expect.objectContaining({ method: "POST" }),
@@ -401,6 +471,7 @@ describe("pulse-webhooks WebhookDelivery", () => {
     const allCalls = setTimeoutSpy.mock.calls.filter(
       (call: any[]) => call[1] !== 10000,
     );
+    const allCalls = setTimeoutSpy.mock.calls.filter((call: any[]) => call[1] !== 10000);
     expect(allCalls.length).toBe(1);
 
     expect(hook1Attempt2).toBeDefined(); // hook1 retry executed
@@ -447,9 +518,94 @@ describe("pulse-webhooks WebhookDelivery", () => {
     const allCallsAfterRetry = setTimeoutSpy.mock.calls.filter(
       (call: any[]) => call[1] !== 10000,
     );
+    const allCallsAfterRetry = setTimeoutSpy.mock.calls.filter((call: any[]) => call[1] !== 10000);
     expect(allCallsAfterRetry.length).toBe(2);
 
     expect(fetchMock).toHaveBeenCalledTimes(2); // Initial + 1 retry
+  });
+
+  describe("backoff strategies", () => {
+    it("uses exponentialJittered strategy (default) with deterministic RNG", async () => {
+      const { exponentialJittered } = await import("../src/backoff.js");
+
+      const rngValue = 0.5;
+      const fixedRandom = () => rngValue;
+
+      expect(exponentialJittered(1, fixedRandom)).toBe(500); // 2^0 * 1000 * 0.5 = 500
+      expect(exponentialJittered(2, fixedRandom)).toBe(1000); // 2^1 * 1000 * 0.5 = 1000
+      expect(exponentialJittered(3, fixedRandom)).toBe(2000); // 2^2 * 1000 * 0.5 = 2000
+      expect(exponentialJittered(4, fixedRandom)).toBe(4000); // 2^3 * 1000 * 0.5 = 4000
+    });
+
+    it("uses linear strategy with deterministic RNG", async () => {
+      const { linear } = await import("../src/backoff.js");
+
+      const rngValue = 0.5;
+      const fixedRandom = () => rngValue;
+
+      expect(linear(1, fixedRandom)).toBe(500); // 1 * 1000 * 0.5 = 500
+      expect(linear(2, fixedRandom)).toBe(1000); // 2 * 1000 * 0.5 = 1000
+      expect(linear(3, fixedRandom)).toBe(1500); // 3 * 1000 * 0.5 = 1500
+      expect(linear(4, fixedRandom)).toBe(2000); // 4 * 1000 * 0.5 = 2000
+    });
+
+    it("uses cappedExponential strategy with deterministic RNG", async () => {
+      const { cappedExponential } = await import("../src/backoff.js");
+
+      const rngValue = 0.5;
+      const fixedRandom = () => rngValue;
+
+      expect(cappedExponential(1, fixedRandom)).toBe(500); // min(2^0 * 1000, 30000) * 0.5 = 500
+      expect(cappedExponential(2, fixedRandom)).toBe(1000); // min(2^1 * 1000, 30000) * 0.5 = 1000
+      expect(cappedExponential(3, fixedRandom)).toBe(2000); // min(2^2 * 1000, 30000) * 0.5 = 2000
+      expect(cappedExponential(4, fixedRandom)).toBe(4000); // min(2^3 * 1000, 30000) * 0.5 = 4000
+      expect(cappedExponential(5, fixedRandom)).toBe(8000); // min(2^4 * 1000, 30000) * 0.5 = 8000
+      expect(cappedExponential(6, fixedRandom)).toBe(15000); // min(2^5 * 1000, 30000) * 0.5 = 15000
+      expect(cappedExponential(7, fixedRandom)).toBe(15000); // min(2^6 * 1000, 30000) * 0.5 = 15000 (capped)
+    });
+
+    it("uses constant strategy with deterministic RNG", async () => {
+      const { constant } = await import("../src/backoff.js");
+
+      const rngValue = 0.5;
+      const fixedRandom = () => rngValue;
+
+      expect(constant(1, fixedRandom)).toBe(500); // 1000 * 0.5 = 500
+      expect(constant(2, fixedRandom)).toBe(500); // 1000 * 0.5 = 500
+      expect(constant(3, fixedRandom)).toBe(500); // 1000 * 0.5 = 500
+      expect(constant(4, fixedRandom)).toBe(500); // 1000 * 0.5 = 500
+    });
+
+    it("accepts custom backoff strategy in WebhookConfig", async () => {
+      const fetchMock = vi.fn().mockRejectedValue(new Error("network down"));
+      vi.stubGlobal("fetch", fetchMock);
+
+      const rngValue = 0.75;
+      const fixedRandom = () => rngValue;
+
+      const customStrategy: (attempt: number, rng: () => number) => number = (attempt, rng) => {
+        return Math.floor(rng() * 5000); // constant 5000ms max delay
+      };
+
+      const setTimeoutSpy = vi.spyOn(globalThis, "setTimeout");
+
+      const watcher = new Watcher("GABC");
+      new WebhookDelivery(watcher, {
+        url: "https://example.com/webhooks/stellar",
+        secret: "top-secret",
+        retries: 2,
+        random: fixedRandom,
+        backoff: customStrategy,
+      });
+
+      watcher.emit("*", deliveryEvent);
+      await flushAsyncWork();
+
+      const timeoutCalls = setTimeoutSpy.mock.calls.filter((call: any[]) => call[1] !== 10000);
+
+      // Custom strategy should produce 5000 * 0.75 = 3750ms delay
+      expect(timeoutCalls[0][1]).toBe(3750);
+    });
   });
 });
 
@@ -483,10 +639,13 @@ describe("pulse-webhooks WebhookDelivery tracer", () => {
     await flushAsyncWork();
 
     expect(tracer.startSpan).toHaveBeenCalledTimes(1);
-    expect(tracer.startSpan).toHaveBeenCalledWith("webhook.delivery", expect.objectContaining({
-      "webhook.url": "https://example.com/hook",
-      "webhook.attempt": 1,
-    }));
+    expect(tracer.startSpan).toHaveBeenCalledWith(
+      "webhook.delivery",
+      expect.objectContaining({
+        "webhook.url": "https://example.com/hook",
+        "webhook.attempt": 1,
+      }),
+    );
     expect(span.setAttribute).toHaveBeenCalledWith("webhook.status", 200);
     expect(span.setAttribute).toHaveBeenCalledWith("webhook.latency_ms", expect.any(Number));
     expect(span.end).toHaveBeenCalledTimes(1);
@@ -521,10 +680,14 @@ describe("pulse-webhooks WebhookDelivery tracer", () => {
     await flushAsyncWork();
 
     expect(tracer.startSpan).toHaveBeenCalledTimes(2);
-    expect(tracer.startSpan).toHaveBeenNthCalledWith(2, "webhook.delivery", expect.objectContaining({
-      "webhook.url": "https://example.com/hook",
-      "webhook.attempt": 2,
-    }));
+    expect(tracer.startSpan).toHaveBeenNthCalledWith(
+      2,
+      "webhook.delivery",
+      expect.objectContaining({
+        "webhook.url": "https://example.com/hook",
+        "webhook.attempt": 2,
+      }),
+    );
     expect(span.end).toHaveBeenCalledTimes(2);
   });
 
@@ -550,9 +713,12 @@ describe("pulse-webhooks WebhookDelivery tracer", () => {
     watcher.emit("*", eventWithTrace);
     await flushAsyncWork();
 
-    expect(tracer.startSpan).toHaveBeenCalledWith("webhook.delivery", expect.objectContaining({
-      "webhook.parent_trace_id": "abc123",
-    }));
+    expect(tracer.startSpan).toHaveBeenCalledWith(
+      "webhook.delivery",
+      expect.objectContaining({
+        "webhook.parent_trace_id": "abc123",
+      }),
+    );
   });
 
   it("does not include parent_trace_id when event.raw has no traceId", async () => {
@@ -634,16 +800,10 @@ describe("pulse-webhooks verifyWebhook", () => {
 
   it("returns null when timestamp is missing or invalid", () => {
     const payload = JSON.stringify(deliveryEvent);
-    const signature = signWebhookPayload(
-      "top-secret",
-      payload,
-      "1714176000000",
-    );
+    const signature = signWebhookPayload("top-secret", payload, "1714176000000");
 
     expect(verifyWebhook(payload, signature, "top-secret", "")).toBeNull();
-    expect(
-      verifyWebhook(payload, signature, "top-secret", "not-a-number"),
-    ).toBeNull();
+    expect(verifyWebhook(payload, signature, "top-secret", "not-a-number")).toBeNull();
   });
 
   it("returns null when signature does not match timestamped payload", () => {
@@ -651,15 +811,9 @@ describe("pulse-webhooks verifyWebhook", () => {
     const timestamp = "1714176000000";
     const signature = signWebhookPayload("top-secret", payload, timestamp);
 
-    expect(
-      verifyWebhook(payload, signature, "wrong-secret", timestamp),
-    ).toBeNull();
-    expect(
-      verifyWebhook(`${payload}x`, signature, "top-secret", timestamp),
-    ).toBeNull();
-    expect(
-      verifyWebhook(payload, signature, "top-secret", "1714176000001"),
-    ).toBeNull();
+    expect(verifyWebhook(payload, signature, "wrong-secret", timestamp)).toBeNull();
+    expect(verifyWebhook(`${payload}x`, signature, "top-secret", timestamp)).toBeNull();
+    expect(verifyWebhook(payload, signature, "top-secret", "1714176000001")).toBeNull();
   });
 
   it("accepts timestamp within configured clock skew window", () => {
@@ -735,7 +889,9 @@ describe("pulse-webhooks verifyWebhook", () => {
 
     const event = verifyWebhook(payload, signature, "top-secret", timestamp, {
       nowMs: Number(timestamp),
-      schema: () => { throw new Error("validator error"); },
+      schema: () => {
+        throw new Error("validator error");
+      },
     });
 
     expect(event).toBeNull();
@@ -748,13 +904,9 @@ describe("pulse-webhooks verifyWebhookEdge", () => {
     const timestamp = "1714176000000";
     const signature = signWebhookPayload("top-secret", payload, timestamp);
 
-    const event = await verifyWebhookEdge(
-      payload,
-      signature,
-      "top-secret",
-      timestamp,
-      { nowMs: Number(timestamp) },
-    );
+    const event = await verifyWebhookEdge(payload, signature, "top-secret", timestamp, {
+      nowMs: Number(timestamp),
+    });
 
     expect(event).toEqual(deliveryEvent);
   });
@@ -787,18 +939,10 @@ describe("pulse-webhooks verifyWebhookEdge", () => {
 
   it("returns null when timestamp is missing or invalid", async () => {
     const payload = JSON.stringify(deliveryEvent);
-    const signature = signWebhookPayload(
-      "top-secret",
-      payload,
-      "1714176000000",
-    );
+    const signature = signWebhookPayload("top-secret", payload, "1714176000000");
 
-    expect(
-      await verifyWebhookEdge(payload, signature, "top-secret", ""),
-    ).toBeNull();
-    expect(
-      await verifyWebhookEdge(payload, signature, "top-secret", "not-a-number"),
-    ).toBeNull();
+    expect(await verifyWebhookEdge(payload, signature, "top-secret", "")).toBeNull();
+    expect(await verifyWebhookEdge(payload, signature, "top-secret", "not-a-number")).toBeNull();
   });
 
   it("returns null when signature does not match timestamped payload", async () => {
@@ -806,25 +950,9 @@ describe("pulse-webhooks verifyWebhookEdge", () => {
     const timestamp = "1714176000000";
     const signature = signWebhookPayload("top-secret", payload, timestamp);
 
-    expect(
-      await verifyWebhookEdge(payload, signature, "wrong-secret", timestamp),
-    ).toBeNull();
-    expect(
-      await verifyWebhookEdge(
-        `${payload}x`,
-        signature,
-        "top-secret",
-        timestamp,
-      ),
-    ).toBeNull();
-    expect(
-      await verifyWebhookEdge(
-        payload,
-        signature,
-        "top-secret",
-        "1714176000001",
-      ),
-    ).toBeNull();
+    expect(await verifyWebhookEdge(payload, signature, "wrong-secret", timestamp)).toBeNull();
+    expect(await verifyWebhookEdge(`${payload}x`, signature, "top-secret", timestamp)).toBeNull();
+    expect(await verifyWebhookEdge(payload, signature, "top-secret", "1714176000001")).toBeNull();
   });
 
   it("accepts timestamp within configured clock skew window", async () => {
@@ -872,9 +1000,7 @@ describe("pulse-webhooks verifyWebhookEdge", () => {
     const timestamp = "1714176000000";
     const signature = signWebhookPayload("top-secret", payload, timestamp);
 
-    expect(
-      await verifyWebhookEdge(payload, signature, "top-secret", timestamp),
-    ).toBeNull();
+    expect(await verifyWebhookEdge(payload, signature, "top-secret", timestamp)).toBeNull();
   });
 
   it("returns null when schema validation fails", async () => {
@@ -910,7 +1036,9 @@ describe("pulse-webhooks verifyWebhookEdge", () => {
 
     const event = await verifyWebhookEdge(payload, signature, "top-secret", timestamp, {
       nowMs: Number(timestamp),
-      schema: () => { throw new Error("validator error"); },
+      schema: () => {
+        throw new Error("validator error");
+      },
     });
 
     expect(event).toBeNull();
@@ -923,28 +1051,19 @@ describe("pulse-webhooks verifyWebhookRaw", () => {
     const timestamp = "1714176000000";
     const signature = signWebhookPayload("top-secret", payload, timestamp);
 
-    const result = verifyWebhookRaw(
-      payload,
-      signature,
-      "top-secret",
-      timestamp,
-    );
+    const result = verifyWebhookRaw(payload, signature, "top-secret", timestamp, {
+      nowMs: Number(timestamp),
+    });
 
     expect(result).toBe(true);
   });
 
   it("returns false when timestamp is missing or invalid", () => {
     const payload = JSON.stringify(deliveryEvent);
-    const signature = signWebhookPayload(
-      "top-secret",
-      payload,
-      "1714176000000",
-    );
+    const signature = signWebhookPayload("top-secret", payload, "1714176000000");
 
     expect(verifyWebhookRaw(payload, signature, "top-secret", "")).toBe(false);
-    expect(
-      verifyWebhookRaw(payload, signature, "top-secret", "not-a-number"),
-    ).toBe(false);
+    expect(verifyWebhookRaw(payload, signature, "top-secret", "not-a-number")).toBe(false);
   });
 
   it("returns false when signature does not match timestamped payload", () => {
@@ -952,15 +1071,9 @@ describe("pulse-webhooks verifyWebhookRaw", () => {
     const timestamp = "1714176000000";
     const signature = signWebhookPayload("top-secret", payload, timestamp);
 
-    expect(
-      verifyWebhookRaw(payload, signature, "wrong-secret", timestamp),
-    ).toBe(false);
-    expect(
-      verifyWebhookRaw(`${payload}x`, signature, "top-secret", timestamp),
-    ).toBe(false);
-    expect(
-      verifyWebhookRaw(payload, signature, "top-secret", "1714176000001"),
-    ).toBe(false);
+    expect(verifyWebhookRaw(payload, signature, "wrong-secret", timestamp)).toBe(false);
+    expect(verifyWebhookRaw(`${payload}x`, signature, "top-secret", timestamp)).toBe(false);
+    expect(verifyWebhookRaw(payload, signature, "top-secret", "1714176000001")).toBe(false);
   });
 
   it("returns true for malformed JSON payload (raw variant skips JSON parse)", () => {
@@ -969,12 +1082,9 @@ describe("pulse-webhooks verifyWebhookRaw", () => {
     const signature = signWebhookPayload("top-secret", payload, timestamp);
 
     // Raw variant should return true (signature is valid), ignoring JSON validity
-    const result = verifyWebhookRaw(
-      payload,
-      signature,
-      "top-secret",
-      timestamp,
-    );
+    const result = verifyWebhookRaw(payload, signature, "top-secret", timestamp, {
+      nowMs: Number(timestamp),
+    });
 
     expect(result).toBe(true);
   });
@@ -986,35 +1096,19 @@ describe("pulse-webhooks verifyWebhookEdgeRaw", () => {
     const timestamp = "1714176000000";
     const signature = signWebhookPayload("top-secret", payload, timestamp);
 
-    const result = await verifyWebhookEdgeRaw(
-      payload,
-      signature,
-      "top-secret",
-      timestamp,
-    );
+    const result = await verifyWebhookEdgeRaw(payload, signature, "top-secret", timestamp);
 
     expect(result).toBe(true);
   });
 
   it("returns false when timestamp is missing or invalid", async () => {
     const payload = JSON.stringify(deliveryEvent);
-    const signature = signWebhookPayload(
-      "top-secret",
-      payload,
-      "1714176000000",
-    );
+    const signature = signWebhookPayload("top-secret", payload, "1714176000000");
 
-    expect(
-      await verifyWebhookEdgeRaw(payload, signature, "top-secret", ""),
-    ).toBe(false);
-    expect(
-      await verifyWebhookEdgeRaw(
-        payload,
-        signature,
-        "top-secret",
-        "not-a-number",
-      ),
-    ).toBe(false);
+    expect(await verifyWebhookEdgeRaw(payload, signature, "top-secret", "")).toBe(false);
+    expect(await verifyWebhookEdgeRaw(payload, signature, "top-secret", "not-a-number")).toBe(
+      false,
+    );
   });
 
   it("returns false when signature does not match timestamped payload", async () => {
@@ -1022,25 +1116,13 @@ describe("pulse-webhooks verifyWebhookEdgeRaw", () => {
     const timestamp = "1714176000000";
     const signature = signWebhookPayload("top-secret", payload, timestamp);
 
-    expect(
-      await verifyWebhookEdgeRaw(payload, signature, "wrong-secret", timestamp),
-    ).toBe(false);
-    expect(
-      await verifyWebhookEdgeRaw(
-        `${payload}x`,
-        signature,
-        "top-secret",
-        timestamp,
-      ),
-    ).toBe(false);
-    expect(
-      await verifyWebhookEdgeRaw(
-        payload,
-        signature,
-        "top-secret",
-        "1714176000001",
-      ),
-    ).toBe(false);
+    expect(await verifyWebhookEdgeRaw(payload, signature, "wrong-secret", timestamp)).toBe(false);
+    expect(await verifyWebhookEdgeRaw(`${payload}x`, signature, "top-secret", timestamp)).toBe(
+      false,
+    );
+    expect(await verifyWebhookEdgeRaw(payload, signature, "top-secret", "1714176000001")).toBe(
+      false,
+    );
   });
 
   it("returns true for malformed JSON payload (raw variant skips JSON parse)", async () => {
@@ -1049,12 +1131,7 @@ describe("pulse-webhooks verifyWebhookEdgeRaw", () => {
     const signature = signWebhookPayload("top-secret", payload, timestamp);
 
     // Raw variant should return true (signature is valid), ignoring JSON validity
-    const result = await verifyWebhookEdgeRaw(
-      payload,
-      signature,
-      "top-secret",
-      timestamp,
-    );
+    const result = await verifyWebhookEdgeRaw(payload, signature, "top-secret", timestamp);
 
     expect(result).toBe(true);
   });
@@ -1063,12 +1140,7 @@ describe("pulse-webhooks verifyWebhookEdgeRaw", () => {
 describe("pulse-webhooks DeadLetterStore", () => {
   it("adds and retrieves entries by ID", () => {
     const dlq = new DeadLetterStore();
-    const id = dlq.add(
-      "https://example.com/webhooks",
-      deliveryEvent,
-      "HTTP 500",
-      3,
-    );
+    const id = dlq.add("https://example.com/webhooks", deliveryEvent, "HTTP 500", 3);
 
     expect(id).toMatch(/^dlq_\d+_\d+_[a-z0-9]+$/);
 
@@ -1083,18 +1155,8 @@ describe("pulse-webhooks DeadLetterStore", () => {
 
   it("lists all entries without filters", () => {
     const dlq = new DeadLetterStore();
-    const id1 = dlq.add(
-      "https://example.com/webhooks",
-      deliveryEvent,
-      "Error 1",
-      1,
-    );
-    const id2 = dlq.add(
-      "https://staging.com/webhooks",
-      deliveryEvent,
-      "Error 2",
-      2,
-    );
+    const id1 = dlq.add("https://example.com/webhooks", deliveryEvent, "Error 1", 1);
+    const id2 = dlq.add("https://staging.com/webhooks", deliveryEvent, "Error 2", 2);
 
     const entries = dlq.list();
     expect(entries).toHaveLength(2);
@@ -1125,28 +1187,13 @@ describe("pulse-webhooks DeadLetterStore", () => {
     const dlq = new DeadLetterStore();
 
     vi.setSystemTime(new Date("2026-04-26T10:00:00Z"));
-    const id1 = dlq.add(
-      "https://example.com/webhooks",
-      deliveryEvent,
-      "Error 1",
-      1,
-    );
+    const id1 = dlq.add("https://example.com/webhooks", deliveryEvent, "Error 1", 1);
 
     vi.setSystemTime(new Date("2026-04-26T11:00:00Z"));
-    const id2 = dlq.add(
-      "https://example.com/webhooks",
-      deliveryEvent,
-      "Error 2",
-      2,
-    );
+    const id2 = dlq.add("https://example.com/webhooks", deliveryEvent, "Error 2", 2);
 
     vi.setSystemTime(new Date("2026-04-26T12:00:00Z"));
-    const id3 = dlq.add(
-      "https://example.com/webhooks",
-      deliveryEvent,
-      "Error 3",
-      3,
-    );
+    const id3 = dlq.add("https://example.com/webhooks", deliveryEvent, "Error 3", 3);
 
     const since = new Date("2026-04-26T10:30:00Z").getTime();
     const entries = dlq.list({ since });
@@ -1164,28 +1211,13 @@ describe("pulse-webhooks DeadLetterStore", () => {
     const dlq = new DeadLetterStore();
 
     vi.setSystemTime(new Date("2026-04-26T10:00:00Z"));
-    const id1 = dlq.add(
-      "https://example.com/webhooks",
-      deliveryEvent,
-      "Error 1",
-      1,
-    );
+    const id1 = dlq.add("https://example.com/webhooks", deliveryEvent, "Error 1", 1);
 
     vi.setSystemTime(new Date("2026-04-26T11:00:00Z"));
-    const id2 = dlq.add(
-      "https://example.com/webhooks",
-      deliveryEvent,
-      "Error 2",
-      2,
-    );
+    const id2 = dlq.add("https://example.com/webhooks", deliveryEvent, "Error 2", 2);
 
     vi.setSystemTime(new Date("2026-04-26T12:00:00Z"));
-    const id3 = dlq.add(
-      "https://example.com/webhooks",
-      deliveryEvent,
-      "Error 3",
-      3,
-    );
+    const id3 = dlq.add("https://example.com/webhooks", deliveryEvent, "Error 3", 3);
 
     const until = new Date("2026-04-26T11:30:00Z").getTime();
     const entries = dlq.list({ until });
@@ -1203,28 +1235,13 @@ describe("pulse-webhooks DeadLetterStore", () => {
     const dlq = new DeadLetterStore();
 
     vi.setSystemTime(new Date("2026-04-26T10:00:00Z"));
-    const id1 = dlq.add(
-      "https://example.com/webhooks",
-      deliveryEvent,
-      "Error 1",
-      1,
-    );
+    dlq.add("https://example.com/webhooks", deliveryEvent, "Error 1", 1);
 
     vi.setSystemTime(new Date("2026-04-26T11:00:00Z"));
-    const id2 = dlq.add(
-      "https://example.com/webhooks",
-      deliveryEvent,
-      "Error 2",
-      2,
-    );
+    const id2 = dlq.add("https://example.com/webhooks", deliveryEvent, "Error 2", 2);
 
     vi.setSystemTime(new Date("2026-04-26T12:00:00Z"));
-    const id3 = dlq.add(
-      "https://example.com/webhooks",
-      deliveryEvent,
-      "Error 3",
-      3,
-    );
+    dlq.add("https://example.com/webhooks", deliveryEvent, "Error 3", 3);
 
     const since = new Date("2026-04-26T10:30:00Z").getTime();
     const until = new Date("2026-04-26T11:30:00Z").getTime();
@@ -1284,18 +1301,8 @@ describe("pulse-webhooks DeadLetterStore", () => {
 
   it("removes entries by ID", () => {
     const dlq = new DeadLetterStore();
-    const id1 = dlq.add(
-      "https://example.com/webhooks",
-      deliveryEvent,
-      "Error 1",
-      1,
-    );
-    const id2 = dlq.add(
-      "https://example.com/webhooks",
-      deliveryEvent,
-      "Error 2",
-      2,
-    );
+    const id1 = dlq.add("https://example.com/webhooks", deliveryEvent, "Error 1", 1);
+    const id2 = dlq.add("https://example.com/webhooks", deliveryEvent, "Error 2", 2);
 
     expect(dlq.size()).toBe(2);
 
@@ -1322,28 +1329,13 @@ describe("pulse-webhooks DeadLetterStore", () => {
     const dlq = new DeadLetterStore();
 
     vi.setSystemTime(new Date("2026-04-26T12:00:00Z"));
-    const id3 = dlq.add(
-      "https://example.com/webhooks",
-      deliveryEvent,
-      "Error 3",
-      3,
-    );
+    const id3 = dlq.add("https://example.com/webhooks", deliveryEvent, "Error 3", 3);
 
     vi.setSystemTime(new Date("2026-04-26T10:00:00Z"));
-    const id1 = dlq.add(
-      "https://example.com/webhooks",
-      deliveryEvent,
-      "Error 1",
-      1,
-    );
+    const id1 = dlq.add("https://example.com/webhooks", deliveryEvent, "Error 1", 1);
 
     vi.setSystemTime(new Date("2026-04-26T11:00:00Z"));
-    const id2 = dlq.add(
-      "https://example.com/webhooks",
-      deliveryEvent,
-      "Error 2",
-      2,
-    );
+    const id2 = dlq.add("https://example.com/webhooks", deliveryEvent, "Error 2", 2);
 
     const entries = dlq.list();
     expect(entries.map((e) => e.id)).toEqual([id1, id2, id3]);

@@ -3,6 +3,7 @@ import type {
   NormalizedEvent,
   ContractInvokedEvent,
   ContractEmittedEvent,
+  RawSorobanEvent,
 } from "../src/index.js";
 
 describe("Contract Event Types", () => {
@@ -15,7 +16,6 @@ describe("Contract Event Types", () => {
       ledger: 123456,
       txHash: "abc123def456",
       timestamp: "2026-05-31T09:00:00Z",
-      raw: {},
     };
 
     expectTypeOf(event).toMatchTypeOf<ContractInvokedEvent>();
@@ -33,7 +33,6 @@ describe("Contract Event Types", () => {
       txHash: "abc123def456",
       inSuccessfulContractCall: true,
       timestamp: "2026-05-31T09:00:00Z",
-      raw: {},
     };
 
     expectTypeOf(event).toMatchTypeOf<ContractEmittedEvent>();
@@ -48,7 +47,6 @@ describe("Contract Event Types", () => {
       ledger: 123456,
       txHash: "abc123def456",
       timestamp: "2026-05-31T09:00:00Z",
-      raw: {},
     };
 
     // This should type-check without errors when both cases are handled
@@ -102,6 +100,10 @@ describe("Contract Event Types", () => {
           return "claimable";
         case "claimable.claimed":
           return "claimable";
+        default: {
+          const _exhaustiveCheck: never = event;
+          return "unknown";
+        }
       }
     })();
 
@@ -120,7 +122,6 @@ describe("Contract Event Types", () => {
       txHash: "hash",
       inSuccessfulContractCall: true,
       timestamp: "2026-05-31T09:00:00Z",
-      raw: {},
     };
 
     const eventWithoutDecoded: ContractEmittedEvent = {
@@ -133,7 +134,6 @@ describe("Contract Event Types", () => {
       txHash: "hash",
       inSuccessfulContractCall: true,
       timestamp: "2026-05-31T09:00:00Z",
-      raw: {},
     };
 
     expectTypeOf(eventWithDecoded).toMatchTypeOf<ContractEmittedEvent>();
@@ -149,7 +149,6 @@ describe("Contract Event Types", () => {
       ledger: 123456,
       txHash: "abc123def456",
       timestamp: "2026-05-31T09:00:00Z",
-      raw: { original: "data" },
     };
 
     expectTypeOf(event.type).toMatchTypeOf<"contract.invoked">();
@@ -159,7 +158,7 @@ describe("Contract Event Types", () => {
     expectTypeOf(event.ledger).toMatchTypeOf<number>();
     expectTypeOf(event.txHash).toMatchTypeOf<string>();
     expectTypeOf(event.timestamp).toMatchTypeOf<string>();
-    expectTypeOf(event.raw).toMatchTypeOf<unknown>();
+    expectTypeOf(event.raw).toMatchTypeOf<RawSorobanEvent | undefined>();
   });
 
   it("should have correct field types on ContractEmittedEvent", () => {
@@ -174,7 +173,6 @@ describe("Contract Event Types", () => {
       txHash: "abc123def456",
       inSuccessfulContractCall: true,
       timestamp: "2026-05-31T09:00:00Z",
-      raw: { original: "data" },
     };
 
     expectTypeOf(event.type).toMatchTypeOf<"contract.emitted">();
@@ -187,6 +185,6 @@ describe("Contract Event Types", () => {
     expectTypeOf(event.txHash).toMatchTypeOf<string>();
     expectTypeOf(event.inSuccessfulContractCall).toMatchTypeOf<boolean>();
     expectTypeOf(event.timestamp).toMatchTypeOf<string>();
-    expectTypeOf(event.raw).toMatchTypeOf<unknown>();
+    expectTypeOf(event.raw).toMatchTypeOf<RawSorobanEvent | undefined>();
   });
 });

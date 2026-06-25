@@ -4,8 +4,7 @@ import fs from "fs";
 import path from "path";
 import os from "os";
 
-const mkdtemp = (prefix = "filecursor-") =>
-  fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+const mkdtemp = (prefix = "filecursor-") => fs.mkdtempSync(path.join(os.tmpdir(), prefix));
 
 describe("FileCursorStore", () => {
   let dir: string;
@@ -34,7 +33,8 @@ describe("FileCursorStore", () => {
   });
 
   it("returns null and warns on corrupted JSON file", async () => {
-    const store = new FileCursorStore(dir);
+    const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+    const store = new FileCursorStore(dir, logger);
     const key = "test-corrupt";
     const filename = path.join(dir, encodeURIComponent(key) + ".json");
 
@@ -42,12 +42,8 @@ describe("FileCursorStore", () => {
     fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(filename, "{ not valid json", "utf8");
 
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
-
     const result = await store.get(key);
     expect(result).toBeNull();
-    expect(warnSpy).toHaveBeenCalled();
-
-    warnSpy.mockRestore();
+    expect(logger.warn).toHaveBeenCalled();
   });
 });

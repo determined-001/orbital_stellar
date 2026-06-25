@@ -5,20 +5,20 @@ description: Event engine for Stellar Horizon — normalization, watchers, recon
 
 ## Overview
 
-`@orbital/pulse-core` opens a streaming connection to Horizon, normalizes each incoming record into a uniform `NormalizedEvent`, and emits it to any `Watcher` subscribed to the affected address. Reconnection, backoff, and rate-limit handling are automatic.
+`@orbital-stellar/pulse-core` opens a streaming connection to Horizon, normalizes each incoming record into a uniform `NormalizedEvent`, and emits it to any `Watcher` subscribed to the affected address. Reconnection, backoff, and rate-limit handling are automatic.
 
-Install when you want to consume Stellar events in-process — typically inside a server, background worker, or CLI. Layer [`@orbital/pulse-webhooks`](./pulse-webhooks) or [`@orbital/pulse-notify`](./pulse-notify) on top for delivery and React integration.
+Install when you want to consume Stellar events in-process — typically inside a server, background worker, or CLI. Layer [`@orbital-stellar/pulse-webhooks`](./pulse-webhooks) or [`@orbital-stellar/pulse-notify`](./pulse-notify) on top for delivery and React integration.
 
 ## Installation
 
 ```bash
-pnpm add @orbital/pulse-core
+pnpm add @orbital-stellar/pulse-core
 ```
 
 ## EventEngine
 
 ```ts
-import { EventEngine } from "@orbital/pulse-core";
+import { EventEngine } from "@orbital-stellar/pulse-core";
 
 const engine = new EventEngine({
   network: "testnet",

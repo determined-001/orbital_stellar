@@ -29,16 +29,16 @@
 
 Orbital is three planes sharing one vocabulary — the **normalized event**:
 
-- **Subscription plane** — `@orbital/pulse-core` opens and maintains a
+- **Subscription plane** — `@orbital-stellar/pulse-core` opens and maintains a
   connection to Stellar (Horizon today, Stellar RPC + Soroban in Phase 1),
   normalizes raw operations into a typed `NormalizedEvent` union, and routes
   each event to per-address `Watcher` subscribers.
-- **Delivery plane** — `@orbital/pulse-webhooks` attaches to a `Watcher`,
+- **Delivery plane** — `@orbital-stellar/pulse-webhooks` attaches to a `Watcher`,
   signs each event with HMAC-SHA256, and POSTs it to one or more HTTPS
   endpoints with retry, timeout, and SSRF safety. A second export
   (`verifyWebhookEdge`) lets receivers verify the signature on Cloudflare
   Workers, Vercel Edge, Deno, and browsers without Node `crypto`.
-- **Consumption plane** — `@orbital/pulse-notify` opens a browser
+- **Consumption plane** — `@orbital-stellar/pulse-notify` opens a browser
   `EventSource` to a backend that re-emits the events as Server-Sent
   Events, and re-renders React components on each event.
 
@@ -49,18 +49,18 @@ flowchart LR
     RPC["Stellar RPC<br/>Soroban — 🛠️ Phase 1"]
   end
 
-  subgraph Subscribe["Subscription plane<br/>@orbital/pulse-core"]
+  subgraph Subscribe["Subscription plane<br/>@orbital-stellar/pulse-core"]
     Engine["EventEngine"]
     Normalize["Normalize<br/>13 op types → 21 events"]
     Watcher["Watcher<br/>per-address pub/sub"]
   end
 
-  subgraph Deliver["Delivery plane<br/>@orbital/pulse-webhooks"]
+  subgraph Deliver["Delivery plane<br/>@orbital-stellar/pulse-webhooks"]
     Sign["HMAC-SHA256<br/>+ retry + SSRF + timeout"]
     Verify["verifyWebhook<br/>verifyWebhookEdge"]
   end
 
-  subgraph Consume["Consumption plane<br/>@orbital/pulse-notify"]
+  subgraph Consume["Consumption plane<br/>@orbital-stellar/pulse-notify"]
     Hooks["useStellarEvent<br/>useStellarPayment<br/>useStellarActivity"]
   end
 
@@ -90,7 +90,7 @@ together inside a single Next.js route handler — about 50 lines of glue.
 | **`WebhookDelivery`** | Attaches to a `Watcher`, signs each event, POSTs it with retry + timeout + concurrent-retry cap. Emits `webhook.failed` / `webhook.dropped` on terminal failure. | `packages/pulse-webhooks/src/index.ts` | ✅ |
 | **`verifyWebhook`** | Node-side HMAC verifier using `crypto.timingSafeEqual`. | `packages/pulse-webhooks/src/index.ts` | ✅ |
 | **`verifyWebhookEdge`** | Edge-runtime HMAC verifier using Web Crypto API + constant-time XOR. | `packages/pulse-webhooks/src/edge.ts` | ✅ |
-| **`@orbital/abi-registry`** | Shared Soroban ABI package that exports the canonical registry client, publisher interface, and scval conversion helpers. | `packages/abi-registry/src/index.ts` | ✅ |
+| **`@orbital-stellar/abi-registry`** | Shared Soroban ABI package that exports the canonical registry client, publisher interface, and scval conversion helpers. | `packages/abi-registry/src/index.ts` | ✅ |
 | **`useStellarEvent<T>`** | React hook that opens an `EventSource`, parses incoming SSE messages, optionally filters by event type, and re-renders on each event. Stable dep-array via sorted `eventKey`. | `packages/pulse-notify/src/index.ts` | ✅ |
 | **`useStellarPayment` / `useStellarActivity`** | Convenience wrappers over `useStellarEvent`. | `packages/pulse-notify/src/index.ts` | ✅ |
 | **Reference composition** | A Next.js Node-runtime route handler that subscribes to an address and streams events as SSE; plus a `webhook-sample` route that returns an HMAC-signed payload for the demo. | `apps/web/app/api/events/[address]/route.ts`, `apps/web/app/api/webhook-sample/route.ts` | ✅ |
@@ -100,9 +100,9 @@ together inside a single Next.js route handler — about 50 lines of glue.
 
 ---
 
-## 2.1 ABI Registry (`@orbital/abi-registry`)
+## 2.1 ABI Registry (`@orbital-stellar/abi-registry`)
 
-`@orbital/abi-registry` is the shared contract-interface package for Orbital.
+`@orbital-stellar/abi-registry` is the shared contract-interface package for Orbital.
 
 - It holds the canonical ABI client surface for Soroban event decoding and publishing.
 - It keeps ABI-related helpers in one place instead of duplicating schema logic in `pulse-core` or application code.
@@ -390,7 +390,7 @@ API:
   (`contract.invoked`, `contract.emitted`) join the `NormalizedEvent` union;
   existing consumers ignore them unless they subscribe.
 - **ABI Registry client.** Decodes Soroban event topics + data into typed,
-  human-readable JSON. Lives in the separate `@orbital/abi-registry`
+  human-readable JSON. Lives in the separate `@orbital-stellar/abi-registry`
   package so the registry data layer is independently versioned.
 - **Cursor persistence.** A pluggable `CursorStore` interface stored on
   `EventEngine` config. Implementations: in-memory (default, current

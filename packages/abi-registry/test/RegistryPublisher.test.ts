@@ -5,10 +5,7 @@ import { LocalFilePublisher } from "../src/RegistryPublisher.js";
 
 // Load a known-good spec from the well-known directory.
 const VALID_SPEC = JSON.parse(
-  readFileSync(
-    resolve(__dirname, "../specs/well-known/aqua.json"),
-    "utf-8"
-  )
+  readFileSync(resolve(__dirname, "../specs/well-known/aqua.json"), "utf-8"),
 );
 
 describe("LocalFilePublisher", () => {
@@ -24,9 +21,9 @@ describe("LocalFilePublisher", () => {
   it("rejects an invalid spec with a list of validation errors", async () => {
     const publisher = new LocalFilePublisher();
 
-    await expect(
-      publisher.publish({ contractId: "bad-contract" })
-    ).rejects.toThrow("Spec validation failed:");
+    await expect(publisher.publish({ contractId: "bad-contract" })).rejects.toThrow(
+      "Spec validation failed:",
+    );
   });
 
   it("error message lists every missing required field", async () => {

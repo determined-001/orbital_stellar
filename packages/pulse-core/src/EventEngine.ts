@@ -1,8 +1,21 @@
 import { Horizon } from "@stellar/stellar-sdk";
 import { Watcher } from "./Watcher.js";
-import { EngineAlreadyStartedError, HorizonStreamError } from "./errors.js";
+import { EngineAlreadyStartedError, NetworkMismatchError } from "./errors.js";
 import { SorobanSubscriber } from "./SorobanSubscriber.js";
 import type {
+import { SorobanRpcClient } from "./SorobanRpcClient.js";
+import type { SorobanRpcLike, SorobanEvent } from "./SorobanSubscriber.js";
+import { toAccountAddress, toContractAddress } from "./address.js";
+import { toStellarAmount } from "./amount.js";
+import type {
+  AccountCreatedEvent,
+  AccountMergeEvent,
+  AccountOptionsChanges,
+  AccountOptionsEvent,
+  AbiRegistryClientLike,
+  BumpSequenceEvent,
+  ClaimableClaimedEvent,
+  ClaimableCreatedEvent,
   ContractEmittedEvent,
   ContractInvokedEvent,
   ContractSubscriptionFilter,
@@ -74,6 +87,24 @@ function stableFilterKey(filters: ContractFilter[]): string {
   }));
   return JSON.stringify(normalized);
 }
+  RawHorizonPayment,
+  RawHorizonSetOptions,
+  RawHorizonCreateAccount,
+  RawHorizonManageSellOffer,
+  RawHorizonManageBuyOffer,
+  RawHorizonBumpSequence,
+  RawHorizonManageData,
+  RawHorizonChangeTrust,
+  RawHorizonAccountMerge,
+  RawHorizonCreateClaimableBalance,
+  RawHorizonClaimClaimableBalance,
+  RawHorizonLiquidityPoolDeposit,
+  RawHorizonLiquidityPoolWithdraw,
+  RawHorizonAllowTrust,
+  RawHorizonSetTrustLineFlags,
+  RawSorobanEvent,
+} from "./index.js";
+import { UnknownNetworkError, NETWORK_PASSPHRASES } from "./index.js";
 
 type PendingPaymentEvent = Omit<PaymentEvent, "type"> & { type: "unknown" };
 
@@ -94,14 +125,65 @@ type NormalizedEventOrPending =
   | ContractInvokedEvent
   | ContractEmittedEvent;
 
+/**
+ * Adds the lazy, non-enumerable `timestampDate` getter to an event type.
+ * Applied at runtime by {@link withTimestampDate} once an event has been
+ * normalized, so every event leaving the engine carries it.
+ */
+type Timestamped<T> = T & { readonly timestampDate: Date };
+
 type StreamCallbacks = {
   onmessage: (record: unknown) => void;
   onerror: (error: unknown) => void;
 };
 
-type HorizonStreamStopper = ReturnType<
-  ReturnType<Horizon.Server["payments"]>["stream"]
->;
+type HorizonStreamStopper = ReturnType<ReturnType<Horizon.Server["payments"]>["stream"]>;
+
+const HORIZON_URLS: Record<Network, string> = {
+  mainnet: "https://horizon.stellar.org",
+  testnet: "https://horizon-testnet.stellar.org",
+};
+
+const DEFAULT_RECONNECT: Required<ReconnectConfig> = {
+  initialDelayMs: 1000,
+  maxDelayMs: 30000,
+  maxRetries: Number.POSITIVE_INFINITY,
+};
+
+const STELLAR_MAX_TRUSTLINE_LIMIT = "922337203685.4775807";
+
+const noop: Logger = { info: () => {}, warn: () => {}, error: () => {} };
+
+/**
+ * Produces a stable, order-independent string key for a ContractFilter array.
+ * Used to deduplicate subscribeContract(config) calls.
+ */
+function stableFilterKey(filters: ContractFilter[]): string {
+  const normalized = filters.map((f) => ({
+    type: f.type,
+    contractIds: f.contractIds ? [...f.contractIds].sort() : undefined,
+    topics: f.topics,
+  }));
+  return JSON.stringify(normalized);
+}
+
+/**
+ * Attaches a non-enumerable lazy getter `timestampDate` to an event object.
+ * The Date is parsed from `event.timestamp` on first access and cached.
+ * JSON.stringify output is unaffected because the property is non-enumerable.
+ */
+function withTimestampDate<T extends { timestamp: string }>(event: T): Timestamped<T> {
+  let cached: Date | undefined;
+  Object.defineProperty(event, "timestampDate", {
+    enumerable: false,
+    configurable: true,
+    get(): Date {
+      if (cached === undefined) cached = new Date(event.timestamp);
+      return cached;
+    },
+  });
+  return event as Timestamped<T>;
+}
 
 export class EventEngine {
   private server: Horizon.Server;
@@ -124,6 +206,10 @@ export class EventEngine {
   private horizonCursor?: string;
   private filters: Map<string, (event: NormalizedEvent) => boolean> = new Map();
   private log: Required<NonNullable<CoreConfig["logger"]>>;
+  private log: Logger;
+  private cursorStore?: CursorStore;
+  private readonly network: Network;
+  private streamKey: string;
   private cursorFailureThreshold: number;
   private consecutiveCursorFailures = 0;
   private isCursorStoreUnhealthy = false;
@@ -133,6 +219,19 @@ export class EventEngine {
 
   private readonly abiRegistry: AbiRegistryClientLike | null = null;
 
+  /**
+   * Optional live Soroban subscriber. Wired only when the engine is configured
+   * for live contract streaming; otherwise undefined, and the guarded calls
+   * throughout the engine are no-ops.
+   */
+  private sorobanSubscriber?: SorobanSubscriber;
+  /** Optional ABI registry used to enrich `contract.emitted` events with `decodedData`. */
+  private abiRegistry?: AbiRegistryClientLike;
+
+  /**
+   * Creates a new EventEngine instance.
+   * @param config - The core configuration for the engine.
+   */
   constructor(
     config: CoreConfig & {
       soroban?: {
@@ -145,6 +244,18 @@ export class EventEngine {
   ) {
     let horizonUrl: string;
     if (config.horizonUrl !== undefined) {
+    },
+  ) {
+    let horizonUrl: string;
+    if (config.horizonUrl !== undefined) {
+      try {
+        const parsed = new URL(config.horizonUrl);
+        if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+          throw new Error("must be an http or https URL");
+        }
+      } catch (err) {
+        throw new Error(`Invalid horizonUrl: ${(err as Error).message}`, { cause: err });
+      }
       horizonUrl = config.horizonUrl;
     } else {
       const fromNetwork = HORIZON_URLS[config.network];
@@ -160,7 +271,11 @@ export class EventEngine {
     this.log = config.logger ?? noop;
     this.network = config.network;
     this.cursorStore = config.cursorStore;
+    this.streamKey = config.streamKey ?? "pulse-core-cursor";
     this.cursorFailureThreshold = config.cursorFailureThreshold ?? 5;
+    this.abiRegistry = config.abiRegistry;
+    this.cursorStore = config.cursorStore;
+    this.network = config.network;
   }
 
   status(): EngineStatus {
@@ -185,11 +300,89 @@ export class EventEngine {
         },
       },
     };
+        timeout: null as ReturnType<typeof setTimeout> | null,
+      };
+
+      // start timeout
+      const t = setTimeout(() => {
+        waiter.timeout = null;
+        waiter.reject(new Error("awaitContractSubscriptionActive: timeout"));
+      }, timeoutMs);
+      waiter.timeout = t;
+
+      const arr = this.contractPollWaiters.get(contractId) ?? [];
+      arr.push(waiter);
+      this.contractPollWaiters.set(contractId, arr);
+    });
+  }
+
+  private clearContractWaiter(
+    contractId: string,
+    waiter: { timeout?: ReturnType<typeof setTimeout> | null },
+  ) {
+    const arr = this.contractPollWaiters.get(contractId);
+    if (!arr) return;
+    const idx = arr.indexOf(waiter as any);
+    if (idx !== -1) arr.splice(idx, 1);
+    if (arr.length === 0) this.contractPollWaiters.delete(contractId);
+    if (waiter.timeout) {
+      clearTimeout(waiter.timeout);
+      waiter.timeout = null;
+    }
+  }
+
+  /**
+   * Notify the engine that a polling/getEvents call for `contractId` occurred.
+   * `polledTopics` is the topics array used in that call (may be undefined/null to mean "all topics").
+   * This will resolve any pending `awaitContractSubscriptionActive` promises whose
+   * requested topics are covered by the polled topics.
+   */
+  notifyContractPolled(contractId: string, polledTopics?: string[] | null): void {
+    const waiters = this.contractPollWaiters.get(contractId);
+    if (!waiters || waiters.length === 0) return;
+
+    for (const waiter of [...waiters]) {
+      const want = waiter.topics;
+      // If the waiter didn't request specific topics, any poll for the contract satisfies it.
+      if (!want || want.length === 0) {
+        waiter.resolve();
+        continue;
+      }
+
+      // If the poll had no topic restriction (polledTopics null/undefined), it covers everything.
+      if (!polledTopics || polledTopics.length === 0) {
+        waiter.resolve();
+        continue;
+      }
+
+      // Otherwise ensure all requested topics are included in the polled topics.
+      const polledSet = new Set(polledTopics);
+      const allIncluded = want.every((t) => polledSet.has(t));
+      if (allIncluded) {
+        waiter.resolve();
+      }
+    }
   }
 
   subscribe(address: string, options?: SubscribeOptions): Watcher {
     const existingWatcher = this.registry.get(address);
     if (existingWatcher) return existingWatcher;
+    if (existingWatcher) {
+      if (options?.filter) {
+        const name = this.subscriptionNames.get(address);
+        if (name !== undefined) {
+          this.log.warn(
+            `[pulse-core] subscribe() called for ${name} (${address}) which already has an active watcher — filter option ignored.`,
+          );
+        } else {
+          this.log.warn(
+            "[pulse-core] subscribe() called for an address that already has an active watcher. Filter option ignored.",
+            { address, hasFilter: true },
+          );
+        }
+      }
+      return existingWatcher;
+    }
 
     const watcher = new Watcher(address);
 
@@ -220,10 +413,24 @@ export class EventEngine {
 
   subscribeContract(
     idOrConfig: string | ContractSubscriptionConfig,
-    options?: ContractSubscribeOptions
+    options?: ContractSubscribeOptions,
   ): Watcher {
     if (typeof idOrConfig === "object") {
       const config = idOrConfig;
+      if (config.filters.length > 5) {
+        throw new Error(
+          `ContractSubscriptionConfig.filters must have ≤ 5 entries, got ${config.filters.length}`,
+        );
+      }
+      for (let i = 0; i < config.filters.length; i++) {
+        const f = config.filters[i]!;
+        if (f.contractIds !== undefined && f.contractIds.length > 5) {
+          throw new Error(
+            `ContractSubscriptionConfig.filters[${i}].contractIds must have ≤ 5 entries, got ${f.contractIds.length}`,
+          );
+        }
+      }
+
       const key = stableFilterKey(config.filters);
       const existing = this.contractConfigRegistry.get(key);
       if (existing) return existing;
@@ -236,7 +443,14 @@ export class EventEngine {
 
     const id = idOrConfig;
     const existing = this.contractRegistry.get(id);
-    if (existing) return existing.watcher;
+    if (existing) {
+      if (options?.filter) {
+        this.log.warn(
+          `[pulse-core] subscribeContract() called for ${this.describeSubscription(id)} which already has an active watcher — filter option ignored.`,
+        );
+      }
+      return existing.watcher;
+    }
 
     const watcher = new Watcher(id);
     const filters = options?.filters ?? [];
@@ -251,6 +465,7 @@ export class EventEngine {
     });
 
     this.contractRegistry.set(id, { watcher, filters });
+
     if (this.isRunning && this.sorobanSubscriber) {
       void this.sorobanSubscriber.start();
     }
@@ -264,16 +479,60 @@ export class EventEngine {
 
   start(options?: { strict?: boolean }): boolean {
     if (this.isRunning || this.reconnectTimer) {
-      if (options?.strict) throw new EngineAlreadyStartedError();
+      if (options?.strict) {
+        throw new EngineAlreadyStartedError();
+      }
+      this.log.warn(
+        "[pulse-core] EventEngine.start() called while the SSE stream is already active.",
+        {
+          isRunning: this.isRunning,
+          reconnectTimerActive: this.reconnectTimer !== null,
+        },
+      );
       return false;
     }
 
-    void this.openStream(false).catch((err) => {
-      this.log.error("[pulse-core] Failed to open SSE stream.", {
-        error: err instanceof Error ? err.message : String(err),
-      });
-      this.isRunning = false;
-    });
+    // Guard against pointing at the wrong network: if a Soroban RPC's network
+    // has been cached, its passphrase must match the engine's configured network.
+    const cachedNetwork = SorobanRpcClient.getCachedNetwork();
+    if (cachedNetwork) {
+      const expected = NETWORK_PASSPHRASES[this.network];
+      if (cachedNetwork.passphrase !== expected) {
+        throw new NetworkMismatchError(expected, cachedNetwork.passphrase);
+      }
+    }
+
+    this.openStream(false);
+    if (this.contractRegistry.size > 0 && this.sorobanSubscriber) {
+      this.sorobanSubscriber.start();
+    }
+    return true;
+  }
+
+  async healthCheck(thresholdMs = 5 * 60 * 1000): Promise<HealthCheckResult> {
+    const reasons: string[] = [];
+    if (!this.isRunning) {
+      reasons.push("engine is not running");
+    }
+    if (this.lastEventAt === null) {
+      reasons.push("no events received yet");
+    } else {
+      const age = Date.now() - new Date(this.lastEventAt).getTime();
+      if (age > thresholdMs) {
+        reasons.push(
+          `last event was ${Math.floor(age / 1000)}s ago (threshold ${Math.floor(thresholdMs / 1000)}s)`,
+        );
+      }
+    }
+    if (this.cursorStore?.ping) {
+      try {
+        await this.cursorStore.ping();
+      } catch (err) {
+        reasons.push(`cursorStore: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+    return { ok: reasons.length === 0, reasons };
+  }
 
     // SorobanSubscriber lifecycle is managed lazily when contract watchers exist.
     if (this.contractRegistry.size > 0) {
@@ -313,23 +572,28 @@ export class EventEngine {
     return { ok: reasons.length === 0, reasons };
   }
 
-  private get horizonKey(): string {
-    return `horizon:${this.network}`;
-  }
+    const sources = { horizon, soroban };
+    const lastEventAt = [horizon.lastEventAt, soroban.lastEventAt].filter(
+      (value): value is string => value !== null,
+    );
 
-  private get sorobanKey(): string {
-    return `soroban:${this.network}`;
+    return {
+      running: horizon.running || soroban.running,
+      watcherCount: this.registry.size,
+      contractWatcherCount: this.contractRegistry.size,
+      lastEventAt: lastEventAt.length ? (lastEventAt.sort()[lastEventAt.length - 1] ?? null) : null,
+      reconnectAttempt: Math.max(horizon.reconnectAttempt, soroban.reconnectAttempt),
+      pausedSources: this.pausedSources.size > 0 ? Array.from(this.pausedSources) : undefined,
+      sources,
+    };
   }
 
   private async openStream(isReconnect: boolean): Promise<void> {
     this.closeStream();
     this.clearReconnectTimer();
     this.isRunning = true;
+    this.horizonCursor = "now";
     this.pendingReconnectSuccessAttempt = isReconnect ? this.reconnectAttempt : null;
-
-    // Cursor resume (Issue #296): read stored cursor for horizon.
-    const startCursor = await this.resolveStoredCursor("horizon");
-    this.horizonCursor = startCursor;
 
     const callbacks: StreamCallbacks = {
       onmessage: (record) => {
@@ -454,26 +718,1143 @@ export class EventEngine {
         watcher.emit("*", event);
       }
     }
+
+    return (
+      this.getNumericField(error, "status") ??
+      this.getNumericField(error, "statusCode") ??
+      (this.isRecord(error.response)
+        ? (this.getNumericField(error.response, "status") ??
+          this.getNumericField(error.response, "statusCode"))
+        : undefined)
+    );
   }
 
-  // --- Normalization (only what tests use today) ---
-  private normalize(record: unknown): NormalizedEventOrPending | null {
-    const r = record as any;
-    if (r?.type === "payment") {
+  private getHeaderValue(error: unknown, headerName: string): string | null {
+    if (!this.isRecord(error)) {
+      return null;
+    }
+
+    const lowerName = headerName.toLowerCase();
+    const directHeader =
+      this.getStringField(error, headerName) ?? this.getStringField(error, lowerName);
+    if (directHeader) {
+      return directHeader;
+    }
+
+    const responseHeaders =
+      this.isRecord(error.response) && this.isRecord(error.response.headers)
+        ? error.response.headers
+        : undefined;
+
+    for (const headers of [error.headers, responseHeaders]) {
+      const value = this.getHeaderValueFromHeaders(headers, headerName);
+      if (value) {
+        return value;
+      }
+    }
+
+    return null;
+  }
+
+  private getHeaderValueFromHeaders(headers: unknown, headerName: string): string | null {
+    const lowerName = headerName.toLowerCase();
+
+    if (this.isHeaderMap(headers)) {
+      const value = headers.get(headerName) ?? headers.get(lowerName);
+      return typeof value === "string" ? value : null;
+    }
+
+    if (!this.isRecord(headers)) {
+      return null;
+    }
+
+    return this.getStringField(headers, headerName) ?? this.getStringField(headers, lowerName);
+  }
+
+  private parseRetryAfterMs(error: unknown): number | null {
+    const header = this.getHeaderValue(error, "Retry-After");
+    if (!header) {
+      return null;
+    }
+
+    const seconds = Number.parseInt(header, 10);
+    if (!Number.isNaN(seconds)) {
+      return seconds * 1000;
+    }
+
+    const date = new Date(header).getTime();
+    return Number.isNaN(date) ? null : Math.max(date - Date.now(), 0);
+  }
+
+  private closeStream(): void {
+    if (!this.stopStream) {
+      return;
+    }
+
+    const stopStream = this.stopStream;
+    this.stopStream = null;
+    stopStream();
+  }
+
+  private clearReconnectTimer(): void {
+    if (!this.reconnectTimer) {
+      return;
+    }
+
+    clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = null;
+  }
+
+  private notifyWatchers(eventType: WatcherNotificationType, event: WatcherNotification): void {
+    for (const [address, watcher] of this.registry.entries()) {
+      const name = this.subscriptionNames.get(address);
+      watcher.emit(eventType, name !== undefined ? { ...event, name } : event);
+    }
+
+    for (const [id, { watcher }] of this.contractRegistry.entries()) {
+      const name = this.subscriptionNames.get(id);
+      watcher.emit(eventType, name !== undefined ? { ...event, name } : event);
+    }
+  }
+
+  private handleCursorFailure(err: unknown): void {
+    this.consecutiveCursorFailures++;
+    this.log.warn("[pulse-core] cursorStore.set() failed.", {
+      key: this.streamKey,
+      consecutiveFailures: this.consecutiveCursorFailures,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    if (this.consecutiveCursorFailures >= this.cursorFailureThreshold) {
+      this.isCursorStoreUnhealthy = true;
+      this.notifyWatchers("engine.cursor_store_unhealthy", {
+        type: "engine.cursor_store_unhealthy",
+        attempt: 0,
+        emittedAt: new Date().toISOString(),
+      });
+    }
+  }
+
+  private describeSubscription(key: string): string {
+    const name = this.subscriptionNames.get(key);
+    return name !== undefined ? `${name} (${key})` : `address ${key}`;
+  }
+
+  private normalize(record: unknown): Timestamped<NormalizedEventOrPending> | null {
+    const result = this._normalize(record);
+    return result ? withTimestampDate(result) : null;
+  }
+
+  private _normalize(record: unknown): NormalizedEventOrPending | null {
+    const r = record as Record<string, unknown>;
+
+    if (r.type === "payment") {
+      const requiredFields = ["to", "from", "amount", "created_at"] as const;
+      for (const field of requiredFields) {
+        if (typeof r[field] !== "string" || r[field] === "") {
+          this.log.warn("[pulse-core] normalize() dropping payment record.", {
+            field,
+            record,
+            source: r.from,
+            address: r.to,
+          });
+          return null;
+        }
+      }
+
+      const asset = r.asset_type === "native" ? "XLM" : `${r.asset_code}:${r.asset_issuer}`;
+
       return {
         type: "unknown",
         to: toAccountAddress(r.to as string),
         from: toAccountAddress(r.from as string),
-        amount: r.amount as string,
-        asset: r.asset_type === "native" ? "XLM" : `${r.asset_code}:${r.asset_issuer}`,
+        amount: toStellarAmount(r.amount as string),
+        asset,
         timestamp: r.created_at as string,
-        raw: record,
-      } as any;
+        raw: record as RawHorizonPayment,
+      };
+    }
+
+    if (r.type === "set_options") {
+      return this.normalizeSetOptions(r, record);
+    }
+
+    if (r.type === "create_account") {
+      return this.normalizeCreateAccount(r, record);
+    }
+
+    if (r.type === "manage_sell_offer" || r.type === "manage_buy_offer") {
+      return this.normalizeOffer(r, record);
+    }
+
+    if (r.type === "bump_sequence") {
+      return this.normalizeBumpSequence(r, record);
+    }
+
+    if (r.type === "manage_data") {
+      return this.normalizeManageData(r, record);
+    }
+
+    if (r.type === "change_trust") {
+      return this.normalizeChangeTrust(r, record);
+    }
+
+    if (r.type === "account_merge") {
+      return {
+        type: "account.merged",
+        source: toAccountAddress(r.account as string),
+        destination: toAccountAddress(r.into as string),
+        timestamp: r.created_at as string,
+        raw: record as RawHorizonAccountMerge,
+      };
+    }
+
+    if (r.type === "create_claimable_balance") {
+      return this.normalizeCreateClaimableBalance(r, record);
+    }
+
+    if (r.type === "claim_claimable_balance") {
+      return this.normalizeClaimClaimableBalance(r, record);
+    }
+
+    if (r.type === "liquidity_pool_deposit") {
+      return this.normalizeLiquidityPoolDeposit(r, record);
+    }
+
+    if (r.type === "liquidity_pool_withdraw") {
+      return this.normalizeLiquidityPoolWithdraw(r, record);
+    }
+
+    if (r.type === "allow_trust") {
+      return this.normalizeAllowTrust(r, record);
+    }
+
+    if (r.type === "set_trust_line_flags") {
+      return this.normalizeSetTrustLineFlags(r, record);
+    }
+
+    if (r.type === "contract_invocation") {
+      return this.normalizeContractInvoked(r, record);
     }
     return null;
   }
 
-  // --- Below are no-op stubs to keep public API surface; full implementation existed before merges ---
-  // Existing repo likely already has full normalization/routing; tests in this issue focus on cursor resume.
+  private normalizeOffer(r: Record<string, unknown>, raw: unknown): OfferEvent | null {
+    if (typeof r.source_account !== "string" || typeof r.created_at !== "string") {
+      return null;
+    }
+
+    const offer_id = String(r.offer_id ?? "0");
+    const amount = String(r.amount ?? "0");
+
+    let type: OfferEventType;
+    if (amount === "0" || amount === "0.0000000") {
+      type = "offer.deleted";
+    } else if (offer_id === "0") {
+      type = "offer.created";
+    } else {
+      type = "offer.updated";
+    }
+
+    const buying_asset =
+      r.buying_asset_type === "native"
+        ? "XLM"
+        : `${r.buying_asset_code as string}:${r.buying_asset_issuer as string}`;
+
+    const selling_asset =
+      r.selling_asset_type === "native"
+        ? "XLM"
+        : `${r.selling_asset_code as string}:${r.selling_asset_issuer as string}`;
+
+    return {
+      type,
+      offer_id,
+      source: toAccountAddress(r.source_account),
+      buying_asset,
+      selling_asset,
+      amount: toStellarAmount(amount),
+      price: r.price as string,
+      timestamp: r.created_at,
+      raw: raw as RawHorizonManageSellOffer | RawHorizonManageBuyOffer,
+    };
+  }
+
+  private normalizeCreateAccount(
+    r: Record<string, unknown>,
+    raw: unknown,
+  ): AccountCreatedEvent | null {
+    if (
+      typeof r.funder !== "string" ||
+      typeof r.account !== "string" ||
+      typeof r.starting_balance !== "string" ||
+      typeof r.created_at !== "string"
+    ) {
+      return null;
+    }
+    return {
+      type: "account.created",
+      funder: toAccountAddress(r.funder),
+      account: toAccountAddress(r.account),
+      starting_balance: r.starting_balance,
+      timestamp: r.created_at,
+      raw: raw as RawHorizonCreateAccount,
+    };
+  }
+
+  private normalizeBumpSequence(
+    r: Record<string, unknown>,
+    raw: unknown,
+  ): BumpSequenceEvent | null {
+    if (typeof r.source_account !== "string" || typeof r.created_at !== "string") {
+      return null;
+    }
+    return {
+      type: "account.bump_sequence",
+      source: toAccountAddress(r.source_account),
+      bump_to: r.bump_to as string,
+      timestamp: r.created_at,
+      raw: raw as RawHorizonBumpSequence,
+    };
+  }
+
+  private normalizeManageData(r: Record<string, unknown>, raw: unknown): DataEvent | null {
+    if (typeof r.source_account !== "string" || r.source_account === "") {
+      this.log.warn("[pulse-core] normalize() dropping manage_data record.", {
+        field: "source_account",
+        record: raw,
+      });
+      return null;
+    }
+
+    if (typeof r.data_name !== "string" || r.data_name === "") {
+      this.log.warn("[pulse-core] normalize() dropping manage_data record.", {
+        field: "data_name",
+        record: raw,
+        source: r.source_account,
+      });
+      return null;
+    }
+
+    const value = r.data_value == null ? null : String(r.data_value);
+    const type: DataEventType = value !== null ? "data.set" : "data.cleared";
+
+    let decoded: Uint8Array | null = null;
+    if (value !== null) {
+      try {
+        decoded = Buffer.from(value, "base64");
+      } catch {
+        decoded = null;
+      }
+    }
+
+    return {
+      type,
+      source: toAccountAddress(r.source_account),
+      name: r.data_name,
+      value,
+      decoded,
+      timestamp: typeof r.created_at === "string" ? r.created_at : "",
+      raw: raw as RawHorizonManageData,
+    };
+  }
+
+  private normalizeChangeTrust(r: Record<string, unknown>, raw: unknown): TrustlineEvent | null {
+    if (typeof r.source_account !== "string") {
+      return null;
+    }
+
+    if (typeof r.created_at !== "string") {
+      return null;
+    }
+
+    if (typeof r.limit !== "string" && typeof r.limit !== "number") {
+      return null;
+    }
+
+    const asset =
+      r.asset_type === "native" ? "XLM" : `${r.asset_code as string}:${r.asset_issuer as string}`;
+    const limit = String(r.limit);
+
+    return {
+      type: this.resolveTrustlineEventType(limit),
+      account: toAccountAddress(r.source_account),
+      asset,
+      limit,
+      timestamp: r.created_at,
+      raw: raw as RawHorizonChangeTrust,
+    };
+  }
+
+  private resolveTrustlineEventType(limit: string): TrustlineEventType {
+    if (this.isZeroTrustlineLimit(limit)) {
+      return "trustline.removed";
+    }
+
+    if (limit === STELLAR_MAX_TRUSTLINE_LIMIT) {
+      return "trustline.added";
+    }
+
+    return "trustline.updated";
+  }
+
+  private isZeroTrustlineLimit(limit: string): boolean {
+    return /^0(?:\.0+)?$/.test(limit);
+  }
+
+  private normalizeSetOptions(
+    r: Record<string, unknown>,
+    raw: unknown,
+  ): AccountOptionsEvent | null {
+    const changes: AccountOptionsChanges = {};
+
+    if (typeof r.signer_key === "string") {
+      const weight = typeof r.signer_weight === "number" ? r.signer_weight : 0;
+      if (weight === 0) {
+        changes.signer_removed = { key: toAccountAddress(r.signer_key), weight: 0 };
+      } else {
+        changes.signer_added = { key: toAccountAddress(r.signer_key), weight };
+      }
+    }
+
+    const thresholds: NonNullable<AccountOptionsChanges["thresholds"]> = {};
+    if (typeof r.low_threshold === "number") thresholds.low_threshold = r.low_threshold;
+    if (typeof r.med_threshold === "number") thresholds.med_threshold = r.med_threshold;
+    if (typeof r.high_threshold === "number") thresholds.high_threshold = r.high_threshold;
+    if (typeof r.master_key_weight === "number") thresholds.master_key_weight = r.master_key_weight;
+    if (Object.keys(thresholds).length > 0) changes.thresholds = thresholds;
+
+    if (typeof r.home_domain === "string") {
+      changes.home_domain = r.home_domain;
+    }
+
+    // set_flags, clear_flags, and inflation_dest are intentionally not tracked — operations
+    // that only modify those fields are dropped as no-ops.
+    if (Object.keys(changes).length === 0) return null;
+
+    return {
+      type: "account.options_changed",
+      source: toAccountAddress(r.source_account as string),
+      changes,
+      timestamp: r.created_at as string,
+      raw: raw as RawHorizonSetOptions,
+    };
+  }
+
+  private normalizeCreateClaimableBalance(
+    r: Record<string, unknown>,
+    raw: unknown,
+  ): ClaimableCreatedEvent | null {
+    const requiredStringFields = ["source_account", "created_at", "amount", "balance_id"] as const;
+
+    for (const field of requiredStringFields) {
+      if (typeof r[field] !== "string" || r[field] === "") {
+        this.log.warn("[pulse-core] normalize() dropping create_claimable_balance record.", {
+          field,
+          record: raw,
+          source: r.source_account,
+        });
+        return null;
+      }
+    }
+
+    if (
+      !Array.isArray(r.claimants) ||
+      r.claimants.length === 0 ||
+      !r.claimants.every(
+        (c: unknown) =>
+          typeof c === "object" &&
+          c !== null &&
+          typeof (c as Record<string, unknown>).destination === "string" &&
+          (c as Record<string, unknown>).destination !== "",
+      )
+    ) {
+      this.log.warn("[pulse-core] normalize() dropping create_claimable_balance record.", {
+        field: "claimants",
+        record: raw,
+        source: r.source_account,
+      });
+      return null;
+    }
+
+    const asset = r.asset_type === "native" ? "XLM" : `${r.asset_code}:${r.asset_issuer}`;
+
+    return {
+      type: "claimable.created",
+      sponsor: toAccountAddress(r.source_account as string),
+      balanceId: r.balance_id as string,
+      claimants: (r.claimants as Array<Record<string, unknown>>).map((c) => ({
+        destination: toAccountAddress(c.destination as string),
+        predicate: c.predicate,
+      })),
+      asset,
+      amount: toStellarAmount(r.amount as string),
+      timestamp: r.created_at as string,
+      raw: raw as RawHorizonCreateClaimableBalance,
+    };
+  }
+
+  private normalizeClaimClaimableBalance(
+    r: Record<string, unknown>,
+    raw: unknown,
+  ): ClaimableClaimedEvent | null {
+    const requiredStringFields = ["source_account", "created_at", "balance_id"] as const;
+
+    for (const field of requiredStringFields) {
+      if (typeof r[field] !== "string" || r[field] === "") {
+        this.log.warn("[pulse-core] normalize() dropping claim_claimable_balance record.", {
+          field,
+          record: raw,
+          source: r.source_account,
+        });
+        return null;
+      }
+    }
+
+    return {
+      type: "claimable.claimed",
+      claimant: toAccountAddress(r.source_account as string),
+      balanceId: r.balance_id as string,
+      timestamp: r.created_at as string,
+      raw: raw as RawHorizonClaimClaimableBalance,
+    };
+  }
+
+  private normalizeLiquidityPoolDeposit(
+    r: Record<string, unknown>,
+    raw: unknown,
+  ): LiquidityPoolDepositEvent | null {
+    const requiredFields = [
+      "source_account",
+      "created_at",
+      "liquidity_pool_id",
+      "shares_received",
+    ] as const;
+
+    for (const field of requiredFields) {
+      if (typeof r[field] !== "string" || r[field] === "") {
+        this.log.warn("[pulse-core] normalize() dropping liquidity_pool_deposit record.", {
+          field,
+          record: raw,
+          source: r.source_account,
+        });
+        return null;
+      }
+    }
+
+    if (!Array.isArray(r.reserves_deposited)) {
+      this.log.warn("[pulse-core] normalize() dropping liquidity_pool_deposit record.", {
+        field: "reserves_deposited",
+        record: raw,
+        source: r.source_account,
+      });
+      return null;
+    }
+
+    return {
+      type: "lp.deposited",
+      source: toAccountAddress(r.source_account as string),
+      pool_id: r.liquidity_pool_id as string,
+      reserves_deposited: r.reserves_deposited as LiquidityPoolReserve[],
+      shares_received: r.shares_received as string,
+      timestamp: r.created_at as string,
+      raw: raw as RawHorizonLiquidityPoolDeposit,
+    };
+  }
+
+  private normalizeLiquidityPoolWithdraw(
+    r: Record<string, unknown>,
+    raw: unknown,
+  ): LiquidityPoolWithdrawEvent | null {
+    const requiredFields = ["source_account", "created_at", "liquidity_pool_id", "shares"] as const;
+
+    for (const field of requiredFields) {
+      if (typeof r[field] !== "string" || r[field] === "") {
+        this.log.warn("[pulse-core] normalize() dropping liquidity_pool_withdraw record.", {
+          field,
+          record: raw,
+          source: r.source_account,
+        });
+        return null;
+      }
+    }
+
+    if (!Array.isArray(r.reserves_received)) {
+      this.log.warn("[pulse-core] normalize() dropping liquidity_pool_withdraw record.", {
+        field: "reserves_received",
+        record: raw,
+        source: r.source_account,
+      });
+      return null;
+    }
+
+    return {
+      type: "lp.withdrawn",
+      source: toAccountAddress(r.source_account as string),
+      pool_id: r.liquidity_pool_id as string,
+      reserves_received: r.reserves_received as LiquidityPoolReserve[],
+      shares_redeemed: r.shares as string,
+      timestamp: r.created_at as string,
+      raw: raw as RawHorizonLiquidityPoolWithdraw,
+    };
+  }
+
+  private normalizeAllowTrust(r: Record<string, unknown>, raw: unknown): TrustAuthEvent | null {
+    const trustor = r.trustor;
+    const issuer = r.trustee ?? r.source_account;
+    const authorize = r.authorize;
+
+    if (typeof trustor !== "string" || trustor === "") return null;
+    if (typeof issuer !== "string" || issuer === "") return null;
+    if (typeof authorize !== "boolean") return null;
+    if (typeof r.created_at !== "string") return null;
+
+    const asset = r.asset_type === "native" ? "XLM" : `${r.asset_code}:${r.asset_issuer}`;
+
+    const type: TrustAuthEventType = authorize ? "trustline.authorized" : "trustline.deauthorized";
+
+    return {
+      type,
+      trustor: toAccountAddress(trustor),
+      issuer: toAccountAddress(issuer),
+      asset,
+      timestamp: r.created_at,
+      operation: "allow_trust",
+      raw: raw as RawHorizonAllowTrust,
+    };
+  }
+
+  private normalizeSetTrustLineFlags(
+    r: Record<string, unknown>,
+    raw: unknown,
+  ): TrustAuthEvent | null {
+    const trustor = r.trustor;
+    const issuer = r.source_account;
+
+    if (typeof trustor !== "string" || trustor === "") return null;
+    if (typeof issuer !== "string" || issuer === "") return null;
+    if (typeof r.created_at !== "string") return null;
+
+    const setFlagsS = r.set_flags_s as string[] | undefined;
+    const clearFlagsS = r.clear_flags_s as string[] | undefined;
+
+    const isSettingAuth = setFlagsS?.includes("authorized") ?? false;
+    const isClearingAuth = clearFlagsS?.includes("authorized") ?? false;
+
+    if (isSettingAuth === isClearingAuth) return null;
+
+    const type: TrustAuthEventType = isSettingAuth
+      ? "trustline.authorized"
+      : "trustline.deauthorized";
+
+    const asset = r.asset_type === "native" ? "XLM" : `${r.asset_code}:${r.asset_issuer}`;
+
+    return {
+      type,
+      trustor: toAccountAddress(trustor),
+      issuer: toAccountAddress(issuer),
+      asset,
+      timestamp: r.created_at,
+      operation: "set_trust_line_flags",
+      raw: raw as RawHorizonSetTrustLineFlags,
+    };
+  }
+
+  private normalizeContractInvoked(
+    r: Record<string, unknown>,
+    raw: unknown,
+  ): ContractInvokedEvent | null {
+    if (typeof r.contract_id !== "string" || r.contract_id === "") return null;
+    if (typeof r.function !== "string") return null;
+    if (typeof r.created_at !== "string") return null;
+    return {
+      type: "contract.invoked",
+      contractId: toContractAddress(r.contract_id),
+      function: r.function,
+      args: Array.isArray(r.args) ? (r.args as unknown[]) : [],
+      ...(typeof r.ledger === "number" ? { ledger: r.ledger } : {}),
+      ...(typeof r.txHash === "string" ? { txHash: r.txHash } : {}),
+      timestamp: r.created_at,
+      raw: raw as RawSorobanEvent,
+    };
+  }
+
+  private normalizeContractEmitted(
+    r: Record<string, unknown>,
+    raw: unknown,
+  ): ContractEmittedEvent | null {
+    if (typeof r.contract_id !== "string" || r.contract_id === "") return null;
+    if (typeof r.created_at !== "string") return null;
+    return {
+      type: "contract.emitted",
+      contractId: toContractAddress(r.contract_id),
+      topics: Array.isArray(r.topics) ? (r.topics as string[]) : [],
+      data: r.data ?? null,
+      decodedData: r.decodedData,
+      ...(typeof r.ledger === "number" ? { ledger: r.ledger } : {}),
+      ...(typeof r.eventId === "string" ? { eventId: r.eventId } : {}),
+      ...(typeof r.txHash === "string" ? { txHash: r.txHash } : {}),
+      inSuccessfulContractCall: Boolean(r.inSuccessfulContractCall),
+      timestamp: r.created_at,
+      raw: raw as RawSorobanEvent,
+    };
+  }
+
+  private passesFilter(address: string, event: NormalizedEvent): boolean {
+    const filter = this.filters.get(address);
+    if (!filter) return true;
+
+    try {
+      return filter(event);
+    } catch (err) {
+      this.log.warn("[pulse-core] subscribe() filter threw for address. Treating as reject.", {
+        address,
+        error: err,
+      });
+      return false;
+    }
+  }
+
+  private matchesContractFilters(
+    event: ContractInvokedEvent | ContractEmittedEvent,
+    filters: ContractSubscriptionFilter[],
+  ): boolean {
+    // No filters = match everything
+    if (filters.length === 0) return true;
+
+    // At least one filter must match (OR across filters)
+    return filters.some((f) => {
+      if (f.type !== undefined && f.type !== event.type) return false;
+      if (f.contractIds !== undefined && !f.contractIds.includes(event.contractId)) return false;
+      if (f.topicFilters !== undefined) {
+        // Only ContractEmittedEvent has topics
+        if (event.type === "contract.emitted") {
+          for (let i = 0; i < f.topicFilters.length; i++) {
+            const pattern = f.topicFilters[i];
+            if (pattern !== null && pattern !== event.topics[i]) return false;
+          }
+        } else {
+          // ContractInvokedEvent doesn't have topics, so topicFilters don't apply
+          return false;
+        }
+      }
+      return true;
+    });
+  }
+
+  /** Dispatch a contract event (invoked or emitted) to all matching contract watchers. */
+  private dispatchContractEvent(
+    event: Timestamped<ContractInvokedEvent | ContractEmittedEvent>,
+  ): void {
+    for (const [id, { watcher, filters }] of this.contractRegistry.entries()) {
+      // Structural contractId/topic filters first, then the optional
+      // per-subscription predicate (keyed by subscription id).
+      if (this.matchesContractFilters(event, filters) && this.passesFilter(id, event)) {
+        watcher.emit(event.type, event);
+        watcher.emit("*", event);
+      }
+    }
+  }
+
+  private route(event: Timestamped<NormalizedEventOrPending>): void {
+    // Check if Soroban source is paused for contract events
+    if (
+      (event.type === "contract.invoked" || event.type === "contract.emitted") &&
+      this.pausedSources.has("soroban")
+    ) {
+      return;
+    }
+
+    // Check if Horizon source is paused for all other events
+    if (
+      event.type !== "contract.invoked" &&
+      event.type !== "contract.emitted" &&
+      this.pausedSources.has("horizon")
+    ) {
+      return;
+    }
+
+    if (event.type === "account.created") {
+      const funderWatcher = this.registry.get(event.funder);
+      if (funderWatcher && this.passesFilter(event.funder, event)) {
+        funderWatcher.emit("account.created", event);
+        funderWatcher.emit("*", event);
+      }
+
+      const accountWatcher = this.registry.get(event.account);
+      if (
+        accountWatcher &&
+        event.account !== event.funder &&
+        this.passesFilter(event.account, event)
+      ) {
+        accountWatcher.emit("account.created", event);
+        accountWatcher.emit("*", event);
+      }
+      return;
+    }
+
+    if (event.type === "account.options_changed") {
+      const watcher = this.registry.get(event.source);
+      if (watcher && this.passesFilter(event.source, event)) {
+        watcher.emit("account.options_changed", event);
+        watcher.emit("*", event);
+      }
+      return;
+    }
+
+    if (
+      event.type === "offer.created" ||
+      event.type === "offer.updated" ||
+      event.type === "offer.deleted"
+    ) {
+      const watcher = this.registry.get(event.source);
+      if (watcher && this.passesFilter(event.source, event)) {
+        watcher.emit(event.type, event);
+        watcher.emit("*", event);
+      }
+      return;
+    }
+
+    if (
+      event.type === "trustline.added" ||
+      event.type === "trustline.removed" ||
+      event.type === "trustline.updated"
+    ) {
+      const watcher = this.registry.get(event.account);
+      if (watcher && this.passesFilter(event.account, event)) {
+        watcher.emit(event.type, event);
+        watcher.emit("*", event);
+      }
+      return;
+    }
+
+    if (event.type === "account.merged") {
+      const sourceWatcher = this.registry.get(event.source);
+      if (sourceWatcher && this.passesFilter(event.source, event)) {
+        sourceWatcher.emit("account.merged", event);
+        sourceWatcher.emit("*", event);
+      }
+
+      const destinationWatcher = this.registry.get(event.destination);
+      if (destinationWatcher && this.passesFilter(event.destination, event)) {
+        destinationWatcher.emit("account.merged", event);
+        destinationWatcher.emit("*", event);
+      }
+      return;
+    }
+
+    if (event.type === "account.bump_sequence") {
+      const watcher = this.registry.get(event.source);
+      if (watcher && this.passesFilter(event.source, event)) {
+        watcher.emit("account.bump_sequence", event);
+        watcher.emit("*", event);
+      }
+      return;
+    }
+
+    if (event.type === "data.set" || event.type === "data.cleared") {
+      const watcher = this.registry.get(event.source);
+      if (watcher && this.passesFilter(event.source, event)) {
+        watcher.emit(event.type, event);
+        watcher.emit("*", event);
+      }
+      return;
+    }
+
+    if (event.type === "claimable.created") {
+      const notified = new Set<string>();
+
+      for (const claimant of event.claimants) {
+        const watcher = this.registry.get(claimant.destination);
+        if (
+          watcher &&
+          !notified.has(claimant.destination) &&
+          this.passesFilter(claimant.destination, event)
+        ) {
+          notified.add(claimant.destination);
+          watcher.emit("claimable.created", event);
+          watcher.emit("*", event);
+        }
+      }
+
+      if (!notified.has(event.sponsor)) {
+        const sponsorWatcher = this.registry.get(event.sponsor);
+        if (sponsorWatcher && this.passesFilter(event.sponsor, event)) {
+          sponsorWatcher.emit("claimable.created", event);
+          sponsorWatcher.emit("*", event);
+        }
+      }
+      return;
+    }
+
+    if (event.type === "claimable.claimed") {
+      const watcher = this.registry.get(event.claimant);
+      if (watcher && this.passesFilter(event.claimant, event)) {
+        watcher.emit("claimable.claimed", event);
+        watcher.emit("*", event);
+      }
+      return;
+    }
+
+    if (event.type === "lp.deposited" || event.type === "lp.withdrawn") {
+      const watcher = this.registry.get(event.source);
+      if (watcher && this.passesFilter(event.source, event)) {
+        watcher.emit(event.type, event);
+        watcher.emit("*", event);
+      }
+      return;
+    }
+
+    if (event.type === "trustline.authorized" || event.type === "trustline.deauthorized") {
+      const issuerWatcher = this.registry.get(event.issuer);
+      if (issuerWatcher && this.passesFilter(event.issuer, event)) {
+        issuerWatcher.emit(event.type, event);
+        issuerWatcher.emit("*", event);
+      }
+
+      const trustorWatcher = this.registry.get(event.trustor);
+      if (
+        trustorWatcher &&
+        event.trustor !== event.issuer &&
+        this.passesFilter(event.trustor, event)
+      ) {
+        trustorWatcher.emit(event.type, event);
+        trustorWatcher.emit("*", event);
+      }
+      return;
+    }
+
+    if (event.type === "contract.invoked" || event.type === "contract.emitted") {
+      if (event.type === "contract.emitted" && this.abiRegistry) {
+        // Async enrichment: look up the ABI spec and populate decodedData,
+        // then route. The event is held until the lookup settles so that
+        // subscribers always receive a fully-enriched (or gracefully degraded)
+        // event rather than a partially-populated one.
+        const contractId = event.contractId;
+        this.abiRegistry.getSpec(contractId).then(
+          (spec) => {
+            if (spec !== null && spec !== undefined) {
+              (event as ContractEmittedEvent).decodedData =
+                (spec as { entries?: unknown }).entries ?? spec;
+            }
+            this.dispatchContractEvent(event);
+          },
+          (err: unknown) => {
+            this.log.warn("ABI registry lookup failed for contract.emitted event", {
+              contractId,
+              error: err instanceof Error ? err.message : String(err),
+            });
+            this.dispatchContractEvent(event);
+          },
+        );
+        return;
+      }
+
+      this.dispatchContractEvent(event);
+      return;
+    }
+
+    if (event.type !== "unknown") {
+      return;
+    }
+
+    if (event.from === event.to) {
+      const watcher = this.registry.get(event.to);
+      if (watcher) {
+        const selfPayment = this.withResolvedType(event, "payment.self");
+        if (this.passesFilter(event.to, selfPayment)) {
+          watcher.emit("payment.self", selfPayment);
+          watcher.emit("*", selfPayment);
+        }
+      }
+      return;
+    }
+
+    const toWatcher = this.registry.get(event.to);
+    if (toWatcher) {
+      const receivedEvent = this.withResolvedType(event, "payment.received");
+      if (this.passesFilter(event.to, receivedEvent)) {
+        toWatcher.emit("payment.received", receivedEvent);
+        toWatcher.emit("*", receivedEvent);
+      }
+    }
+
+    const fromWatcher = this.registry.get(event.from);
+    if (fromWatcher) {
+      const sentEvent = this.withResolvedType(event, "payment.sent");
+      if (this.passesFilter(event.from, sentEvent)) {
+        fromWatcher.emit("payment.sent", sentEvent);
+        fromWatcher.emit("*", sentEvent);
+      }
+    }
+  }
+
+  private withResolvedType(
+    event: PendingPaymentEvent,
+    type: PaymentEventType,
+  ): Timestamped<PaymentEvent> {
+    // `timestampDate` is a non-enumerable getter, so spreading drops it —
+    // re-attach it to the resolved event so derived payment events carry it too.
+    return withTimestampDate({
+      ...event,
+      type,
+    });
+  }
 }
 
+// ---------------------------------------------------------------------------
+// Legacy Soroban RPC normalizer
+//
+// Normalizes a raw Soroban RPC event object (as returned by the RPC
+// `getEvents` endpoint) into a typed result.  This is a lower-level utility
+// that operates on the raw RPC shape rather than the Horizon-derived
+// NormalizedEvent union used by EventEngine internally.
+// ---------------------------------------------------------------------------
+
+/** @internal */
+export interface RpcContractInvokedEvent {
+  type: "contract_invoked";
+  id: string;
+  pagingToken: string;
+  contractId: string;
+  txHash: string;
+  ledger: number;
+  ledgerClosedAt: string;
+  inSuccessfulContractCall: boolean;
+  raw: RawSorobanEvent;
+  decodedData?: unknown;
+}
+
+/** @internal */
+export interface RpcContractEmittedEvent {
+  type: "contract_emitted";
+  id: string;
+  pagingToken: string;
+  contractId: string;
+  txHash: string;
+  ledger: number;
+  ledgerClosedAt: string;
+  topics: string[];
+  value: string;
+  inSuccessfulContractCall: boolean;
+  raw: RawSorobanEvent;
+  decodedData?: unknown;
+}
+
+/**
+ * Normalizes a raw Soroban RPC event into a typed domain event structure.
+ * Handles malformed fields safely by logging warnings and returning null.
+ */
+export function normalizeContractEvent(
+  rawRpcEvent: any,
+  xdrFormatOrLogger?: "base64" | "json" | Logger,
+  loggerOption?: Logger,
+): RpcContractInvokedEvent | RpcContractEmittedEvent | null {
+  let xdrFormat: "base64" | "json" = "base64";
+  let logger = loggerOption;
+
+  if (xdrFormatOrLogger !== undefined) {
+    if (typeof xdrFormatOrLogger === "string") {
+      xdrFormat = xdrFormatOrLogger;
+    } else {
+      logger = xdrFormatOrLogger as Logger;
+    }
+  }
+  // 1. Structural check patterns
+  if (!rawRpcEvent || typeof rawRpcEvent !== "object") {
+    logger?.warn("[pulse-core] Dropping malformed Soroban event: payload is not a valid object.", {
+      event: rawRpcEvent,
+    });
+    return null;
+  }
+
+  const e = rawRpcEvent as Record<string, unknown>;
+
+  const requiredFields = [
+    "id",
+    "pagingToken",
+    "contractId",
+    "txHash",
+    "ledger",
+    "ledgerClosedAt",
+    "type",
+  ];
+  for (const field of requiredFields) {
+    if (e[field] === undefined || e[field] === null) {
+      logger?.warn(
+        `[pulse-core] Dropping malformed Soroban event: missing required field "${field}".`,
+        { event: rawRpcEvent },
+      );
+      return null;
+    }
+  }
+
+  const {
+    contractId,
+    txHash,
+    ledger,
+    ledgerClosedAt,
+    type,
+    inSuccessfulContractCall,
+    topic,
+    value,
+  } = e;
+
+  if (type === "system" || type === "diagnostic") {
+    if (typeof rawRpcEvent.function !== "string") {
+      logger?.warn(
+        "[pulse-core] Dropping malformed contract invoked event: missing function field.",
+        { event: rawRpcEvent },
+      );
+      return null;
+    }
+    return {
+      type: "contract_invoked",
+      id: String(e.id),
+      pagingToken: String(e.pagingToken),
+      contractId: String(contractId),
+      txHash: String(txHash),
+      ledger: Number(ledger),
+      ledgerClosedAt: String(ledgerClosedAt),
+      inSuccessfulContractCall: Boolean(inSuccessfulContractCall),
+      raw: rawRpcEvent,
+    };
+  }
+
+  if (type === "contract") {
+    if (!Array.isArray(topic) || value === undefined || value === null) {
+      logger?.warn(
+        "[pulse-core] Dropping malformed contract emitted event: missing topics array or data payload.",
+        { event: rawRpcEvent },
+      );
+      return null;
+    }
+
+    const isJson =
+      xdrFormat === "json" || typeof value === "object" || rawRpcEvent.decodedData !== undefined;
+
+    const norm: any = {
+      type: "contract_emitted",
+      id: String(e.id),
+      pagingToken: String(e.pagingToken),
+      contractId: String(contractId),
+      txHash: String(txHash),
+      ledger: Number(ledger),
+      ledgerClosedAt: String(ledgerClosedAt),
+      topics: (topic as unknown[]).map((t) => String(t)),
+      value: isJson ? "" : String(value),
+      inSuccessfulContractCall: Boolean(inSuccessfulContractCall),
+      raw: rawRpcEvent,
+    };
+
+    if (isJson) {
+      norm.decodedData = rawRpcEvent.decodedData !== undefined ? rawRpcEvent.decodedData : value;
+    }
+
+    return norm;
+  }
+
+  logger?.warn(
+    `[pulse-core] Dropping malformed Soroban event: unknown event type category "${type}".`,
+    { event: rawRpcEvent },
+  );
+  return null;
+}
