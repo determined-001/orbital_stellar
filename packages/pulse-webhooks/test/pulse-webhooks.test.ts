@@ -2,7 +2,7 @@ import { createHmac } from "crypto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { Watcher } from "@orbital-stellar/pulse-core";
-import type { WebhookMetrics } from "../src/index.js";
+import type { RetryQueue, WebhookMetrics } from "../src/index.js";
 import {
   DeadLetterStore,
   MemoryRetryQueue,
@@ -1481,5 +1481,254 @@ describe("pulse-webhooks DeadLetterStore", () => {
     expect(failedCall.raw?.dlqId).toBe(entries[0]?.id);
 
     vi.useRealTimers();
+  });
+});
+
+describe("pulse-webhooks WebhookDelivery with retryQueue", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  function mockQueue(): RetryQueue {
+    return {
+      enqueue: vi.fn().mockResolvedValue(undefined),
+      dequeue: vi.fn().mockResolvedValue(null),
+      ack: vi.fn().mockResolvedValue(undefined),
+      nack: vi.fn().mockResolvedValue(undefined),
+      evictNewest: vi.fn().mockResolvedValue(null),
+      size: vi.fn().mockResolvedValue(0),
+    };
+  }
+
+  it("enqueues retry instead of setTimeout when retryQueue is configured", async () => {
+    const fetchMock = vi.fn().mockRejectedValue(new Error("network down"));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const queue = mockQueue();
+    const watcher = new Watcher("GABC");
+
+    new WebhookDelivery(watcher, {
+      url: "https://example.com/hook",
+      secret: "top-secret",
+      retries: 2,
+      random: () => 0.5,
+      retryQueue: queue,
+      retryQueuePollIntervalMs: 10_000,
+    });
+
+    watcher.emit("*", deliveryEvent);
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(queue.enqueue).toHaveBeenCalledTimes(1);
+    expect(queue.enqueue).toHaveBeenCalledWith(
+      expect.objectContaining({
+        url: "https://example.com/hook",
+        attempt: 2,
+        event: deliveryEvent,
+        nextRetryAt: expect.any(Number),
+      }),
+    );
+  });
+
+  it("dequeues and delivers a queued retry record via the poller", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200 });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const record = {
+      id: "rec_1",
+      event: deliveryEvent,
+      url: "https://example.com/hook",
+      attempt: 2,
+      nextRetryAt: Date.now(),
+    };
+
+    let callCount = 0;
+    const queue = mockQueue();
+    vi.mocked(queue.dequeue).mockImplementation(async () => {
+      callCount++;
+      return callCount === 1 ? record : null;
+    });
+
+    const watcher = new Watcher("GABC");
+
+    new WebhookDelivery(watcher, {
+      url: "https://example.com/hook",
+      secret: "top-secret",
+      retryQueue: queue,
+      retryQueuePollIntervalMs: 100,
+    });
+
+    await vi.advanceTimersByTimeAsync(100);
+
+    expect(queue.dequeue).toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(queue.ack).toHaveBeenCalledWith("rec_1");
+  });
+
+  it("calls nack with backoff delay when delivery fails and retries remain", async () => {
+    const fetchMock = vi.fn().mockRejectedValue(new Error("network down"));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const record = {
+      id: "rec_1",
+      event: deliveryEvent,
+      url: "https://example.com/hook",
+      attempt: 1,
+      nextRetryAt: Date.now(),
+    };
+
+    let callCount = 0;
+    const queue = mockQueue();
+    vi.mocked(queue.dequeue).mockImplementation(async () => {
+      callCount++;
+      return callCount === 1 ? record : null;
+    });
+
+    const watcher = new Watcher("GABC");
+
+    new WebhookDelivery(watcher, {
+      url: "https://example.com/hook",
+      secret: "top-secret",
+      retries: 3,
+      random: () => 0.5,
+      retryQueue: queue,
+      retryQueuePollIntervalMs: 100,
+    });
+
+    await vi.advanceTimersByTimeAsync(100);
+
+    expect(queue.nack).toHaveBeenCalledTimes(1);
+    // backoff(1, 0.5) = 500ms for exponentialJittered
+    expect(queue.nack).toHaveBeenCalledWith("rec_1", 500);
+  });
+
+  it("acks and emits failure when all retries are exhausted from the queue", async () => {
+    const fetchMock = vi.fn().mockRejectedValue(new Error("network down"));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const record = {
+      id: "rec_1",
+      event: deliveryEvent,
+      url: "https://example.com/hook",
+      attempt: 3,
+      nextRetryAt: Date.now(),
+    };
+
+    let callCount = 0;
+    const queue = mockQueue();
+    vi.mocked(queue.dequeue).mockImplementation(async () => {
+      callCount++;
+      return callCount === 1 ? record : null;
+    });
+
+    const watcher = new Watcher("GABC");
+    const failedHandler = vi.fn();
+    watcher.on("webhook.failed", failedHandler);
+
+    new WebhookDelivery(watcher, {
+      url: "https://example.com/hook",
+      secret: "top-secret",
+      retries: 3,
+      retryQueue: queue,
+      retryQueuePollIntervalMs: 100,
+    });
+
+    await vi.advanceTimersByTimeAsync(100);
+
+    expect(queue.ack).toHaveBeenCalledWith("rec_1");
+    expect(failedHandler).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not use setTimeout for retries when retryQueue is configured", async () => {
+    const fetchMock = vi.fn().mockRejectedValue(new Error("network down"));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const setTimeoutSpy = vi.spyOn(globalThis, "setTimeout");
+
+    const queue = mockQueue();
+    const watcher = new Watcher("GABC");
+
+    new WebhookDelivery(watcher, {
+      url: "https://example.com/hook",
+      secret: "top-secret",
+      retries: 2,
+      retryQueue: queue,
+      retryQueuePollIntervalMs: 10_000,
+    });
+
+    watcher.emit("*", deliveryEvent);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    // setTimeout should only be called for the abort timer (deliveryTimeoutMs), not retries
+    const retryTimeoutCalls = setTimeoutSpy.mock.calls.filter((args) => {
+      const delay = args[1] as number;
+      return delay !== 10000; // exclude the abort timer
+    });
+    expect(retryTimeoutCalls).toHaveLength(0);
+  });
+
+  it("continues to use setTimeout retries when retryQueue is not configured", async () => {
+    const fetchMock = vi.fn().mockRejectedValue(new Error("network down"));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const setTimeoutSpy = vi.spyOn(globalThis, "setTimeout");
+
+    const watcher = new Watcher("GABC");
+
+    new WebhookDelivery(watcher, {
+      url: "https://example.com/hook",
+      secret: "top-secret",
+      retries: 2,
+      random: () => 0.5,
+    });
+
+    watcher.emit("*", deliveryEvent);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const retryTimeoutCalls = setTimeoutSpy.mock.calls.filter((args) => {
+      const delay = args[1] as number;
+      return delay !== 10000; // exclude the abort timer
+    });
+    expect(retryTimeoutCalls).toHaveLength(1);
+    expect(retryTimeoutCalls[0][1]).toBe(500); // exponentialJittered(1, 0.5)
+  });
+
+  it("stops the poller when the watcher stops", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200 });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const queue = mockQueue();
+    vi.mocked(queue.dequeue).mockResolvedValue(null);
+
+    const watcher = new Watcher("GABC");
+
+    new WebhookDelivery(watcher, {
+      url: "https://example.com/hook",
+      secret: "top-secret",
+      retryQueue: queue,
+      retryQueuePollIntervalMs: 100,
+    });
+
+    await vi.advanceTimersByTimeAsync(100);
+
+    expect(queue.dequeue).toHaveBeenCalledTimes(1);
+
+    watcher.stop();
+
+    const dequeueCountBefore = vi.mocked(queue.dequeue).mock.calls.length;
+    await vi.advanceTimersByTimeAsync(5000);
+
+    expect(vi.mocked(queue.dequeue).mock.calls.length).toBe(dequeueCountBefore);
   });
 });
