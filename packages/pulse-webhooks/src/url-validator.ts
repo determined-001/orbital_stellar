@@ -31,7 +31,7 @@ export class UrlValidator {
       }
 
       return null;
-    } catch (e) {
+    } catch {
       return "Invalid URL format";
     }
   }
@@ -47,7 +47,7 @@ export class UrlValidator {
       // Example using a public API for ASN lookup. In production, use a cached local database.
       const response = await fetch(`https://rdap.db.ripe.net/autnum/lookup?hostname=${hostname}`);
       if (!response.ok) return null;
-      
+
       const data = await response.json();
       // This is a simplified extraction; actual RDAP response structure varies.
       return data.asn || null;
@@ -56,5 +56,3 @@ export class UrlValidator {
     }
   }
 }
-
-export { UrlValidator };

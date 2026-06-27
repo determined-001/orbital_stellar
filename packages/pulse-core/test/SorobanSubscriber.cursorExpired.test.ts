@@ -4,8 +4,12 @@ import { SorobanRpcError } from "../src/errors.js";
 
 class MemoryCursorStore {
   cursor: string | undefined = "old-cursor";
-  async getCursor() { return this.cursor; }
-  async saveCursor(c: string) { this.cursor = c; }
+  async getCursor() {
+    return this.cursor;
+  }
+  async saveCursor(c: string) {
+    this.cursor = c;
+  }
 }
 
 describe("SorobanSubscriber — cursor expiration", () => {
@@ -17,19 +21,22 @@ describe("SorobanSubscriber — cursor expiration", () => {
         if (calls === 1 && startCursor === "old-cursor") {
           throw new SorobanRpcError("startCursor is before oldest ledger", {
             code: "invalid_request",
-            retryable: false
+            retryable: false,
           });
         }
         return { events: [], latestLedger: 999999 };
-      }
+      },
     };
 
     const cursorStore = new MemoryCursorStore();
     const subscriber = new SorobanSubscriber({
       rpc: rpc as any,
       cursorStore,
-      setTimeoutFn: (cb: any) => { cb(); return {} as any; },
-      clearTimeoutFn: () => {}
+      setTimeoutFn: (cb: any) => {
+        cb();
+        return {} as any;
+      },
+      clearTimeoutFn: () => {},
     });
 
     const emitted: any[] = [];

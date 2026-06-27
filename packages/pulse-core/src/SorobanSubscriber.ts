@@ -167,6 +167,8 @@ export class SorobanSubscriber extends EventEmitter {
       throw new RangeError(`pageLimit must be between 1 and 10,000 (received ${pageLimit})`);
     }
 
+    super();
+
     this.rpc = options.rpc;
     this.cursorStore = options.cursorStore;
     this.onEvent = options.onEvent;
@@ -343,17 +345,21 @@ export class SorobanSubscriber extends EventEmitter {
       ),
     );
 
-    let results: { events: SorobanEvent[], latestLedger?: number }[];
+    let results: { events: SorobanEvent[]; latestLedger?: number }[];
     try {
       results = await Promise.all(promises);
     } catch (err) {
       // An aborted request is expected during shutdown — swallow it silently.
       if (this.isAbortError(err)) return;
+
+      let handledError: unknown = err;
+
       // Route classified RPC errors to the retry/terminal handlers when present.
-      if (err instanceof SorobanRpcError) {
+      if (handledError instanceof SorobanRpcError) {
         if (
-          err.code === "invalid_request" &&
-          (err.message.includes("startCursor") || err.message.includes("oldest ledger"))
+          handledError.code === "invalid_request" &&
+          (handledError.message.includes("startCursor") ||
+            handledError.message.includes("oldest ledger"))
         ) {
           const lostCursor = currentCursor || "unknown";
           this.emit("engine.cursor_expired", { source: "soroban", lostCursor });
@@ -364,7 +370,7 @@ export class SorobanSubscriber extends EventEmitter {
             if (latestLedger !== undefined) {
               console.warn(
                 `[pulse-core] Soroban subscriber cursor expired (lost: ${lostCursor}). ` +
-                `Falling back to startLedger = ${latestLedger}. Data loss occurred.`
+                  `Falling back to startLedger = ${latestLedger}. Data loss occurred.`,
               );
               if (!this.isReplayMode) {
                 await this.cursorStore.saveCursor(latestLedger.toString());
@@ -375,22 +381,29 @@ export class SorobanSubscriber extends EventEmitter {
               return;
             }
           } catch (fallbackErr) {
-            // let fallback errors fall through to the terminal/retryable handler logic below
-            err = fallbackErr as any;
+            // Let fallback errors fall through to the retryable/terminal handler logic below.
+            handledError = fallbackErr;
           }
         }
-        if ((err as SorobanRpcError).retryable) {
-          if (this.onRetryableError) {
-            this.onRetryableError(err as SorobanRpcError);
-            this.scheduleRetry();
+
+        if (handledError instanceof SorobanRpcError) {
+          if (handledError.retryable) {
+            if (this.onRetryableError) {
+              this.onRetryableError(handledError);
+              this.scheduleRetry();
+              return;
+            }
+          } else if (this.onTerminalError) {
+            this.onTerminalError(handledError);
             return;
           }
         } else if (this.onTerminalError) {
-          this.onTerminalError(err);
+          this.onTerminalError(handledError);
           return;
         }
       }
-      throw err;
+
+      throw handledError;
     }
 
     const allEventsMap = new Map<string, SorobanEvent>();
