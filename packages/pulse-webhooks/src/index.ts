@@ -4,7 +4,8 @@ import type {
   Watcher,
   WatcherNotification,
 } from "@orbital-stellar/pulse-core";
-import { createHmac, timingSafeEqual } from "crypto";
+
+import { createHmac, timingSafeEqual, randomUUID } from "crypto";
 import { isIP } from "net";
 
 import { DeadLetterStore } from "./MemoryDeadLetterStore.js";
@@ -105,9 +106,13 @@ export class WebhookDelivery {
   // Map of timer -> event so we can evict the newest entry when the cap is hit.
   private retryTimers: Map<ReturnType<typeof setTimeout>, { event: NormalizedEvent; url: string }> =
     new Map();
+  // Map to store idempotency delivery IDs per event and URL
+  private deliveryIds: Map<NormalizedEvent, Map<string, string>> = new Map();
+
   // Timers that fire a durable-queue drain at each record's due time (only used
   // when `config.retryQueue` is set).
   private queueDrainTimers = new Set<ReturnType<typeof setTimeout>>();
+
   // Monotonic counter for durable RetryRecord ids.
   private retrySeq = 0;
 
@@ -179,6 +184,19 @@ export class WebhookDelivery {
     const timeoutMs = this.config.deliveryTimeoutMs;
     const abortTimer = setTimeout(() => controller.abort(), timeoutMs);
 
+    // Idempotency header: generate or reuse UUID per event-URL pair
+    let urlDeliveryMap = this.deliveryIds.get(event);
+    if (!urlDeliveryMap) {
+      urlDeliveryMap = new Map();
+      this.deliveryIds.set(event, urlDeliveryMap);
+    }
+    let deliveryId = urlDeliveryMap.get(url);
+    if (!deliveryId) {
+      // Use crypto.randomUUID for UUID v4
+      deliveryId = randomUUID();
+      urlDeliveryMap.set(url, deliveryId);
+    }
+
     const parentTraceId = this.extractTraceId(event);
     const spanAttrs: Record<string, string | number | boolean> = {
       "webhook.url": url,
@@ -198,6 +216,7 @@ export class WebhookDelivery {
           "x-orbital-signature": signature,
           "x-orbital-timestamp": timestamp,
           "x-orbital-attempt": String(attempt),
+          "x-orbital-delivery-id": deliveryId,
         },
         body: payload,
         signal: controller.signal,

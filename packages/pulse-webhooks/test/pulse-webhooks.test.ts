@@ -547,6 +547,51 @@ describe("pulse-webhooks WebhookDelivery tracer", () => {
     expect(span.end).toHaveBeenCalledTimes(1);
   });
 
+  it("sends x-orbital-delivery-id (UUID v4) and re-uses the same ID across retries, but new ID for next event", async () => {
+    const fetchMock = vi.fn().mockRejectedValue(new Error("network down"));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const watcher = new Watcher("GABC");
+    new WebhookDelivery(watcher, {
+      url: "https://example.com/hook",
+      secret: "top-secret",
+      retries: 3,
+    });
+
+    watcher.emit("*", deliveryEvent);
+    await flushAsyncWork();
+
+    // attempt 1
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const headers1 = fetchMock.mock.calls[0][1].headers;
+    const deliveryId1 = headers1["x-orbital-delivery-id"];
+    expect(deliveryId1).toBeDefined();
+    expect(deliveryId1).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+    ); // UUID v4 pattern
+
+    // advance to trigger retry (attempt 2)
+    vi.advanceTimersByTime(2000);
+    await flushAsyncWork();
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const headers2 = fetchMock.mock.calls[1][1].headers;
+    const deliveryId2 = headers2["x-orbital-delivery-id"];
+    expect(deliveryId2).toBe(deliveryId1); // Must re-use the same ID across retries
+
+    // Emit a different event
+    const deliveryEvent2 = { ...deliveryEvent, raw: { id: "evt_2" } };
+    watcher.emit("*", deliveryEvent2);
+    await flushAsyncWork();
+
+    // attempt 1 of second event
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    const headers3 = fetchMock.mock.calls[2][1].headers;
+    const deliveryId3 = headers3["x-orbital-delivery-id"];
+    expect(deliveryId3).toBeDefined();
+    expect(deliveryId3).not.toBe(deliveryId1); // New ID for the next event
+  });
+
   it("emits a span per attempt on retry, recording error on failure", async () => {
     const fetchMock = vi.fn().mockRejectedValue(new Error("network down"));
     vi.stubGlobal("fetch", fetchMock);
