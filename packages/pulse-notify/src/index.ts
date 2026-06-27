@@ -1,6 +1,12 @@
 import { useState, useEffect, useRef } from "react";
-import type { NormalizedEvent, PaymentEvent } from "@orbital-stellar/pulse-core";
-import { acquireEventConnection } from "./connectionPool.js";
+
+import { acquireEventConnection, acquireContractEventConnection } from "./connectionPool.js";
+import type {
+  NormalizedEvent,
+  PaymentEvent,
+  ContractInvokedEvent,
+  ContractEmittedEvent,
+} from "@orbital-stellar/pulse-core";
 import { acquireWsConnection } from "./wsTransport.js";
 export { useStellarEventSuspense } from "./useStellarEventSuspense.js";
 
@@ -204,7 +210,97 @@ export {
 } from "./StellarConnectionStatus.js";
 export { StellarEventBoundary } from "./StellarEventBoundary.js";
 
-export { pulseNotifyVitePlugin } from "./vitePlugin.js";
+export type UseContractEventConfig<T extends NormalizedEvent = NormalizedEvent> = {
+  serverUrl: string;
+  contractId: string;
+  topics?: string[];
+  token?: string;
+  /** SSR initial state; replaced on first live event */
+  initialEvent?: T | null;
+  /** Client-side predicate; events that return false are suppressed before state update */
+  filter?: (event: NormalizedEvent) => boolean;
+  /** Enable cookie-based auth for same-origin or CORS-credentialed SSE */
+  withCredentials?: boolean;
+  /** Side-effect callback fired for every incoming event, before filter is applied */
+  onEvent?: (event: NormalizedEvent) => void;
+};
+
+/** Hook for subscribing to Soroban contract events */
+export function useContractEvent<
+  T extends Extract<NormalizedEvent, { type: "contract.invoked" | "contract.emitted" }> = Extract<
+    NormalizedEvent,
+    { type: "contract.invoked" | "contract.emitted" }
+  >,
+>(config: UseContractEventConfig<T>): EventState<T> {
+  const { serverUrl, contractId, topics, token, initialEvent, filter, withCredentials, onEvent } =
+    config;
+
+  const filterRef = useRef(filter);
+  useEffect(() => {
+    filterRef.current = filter;
+  }, [filter]);
+
+  const onEventRef = useRef(onEvent);
+  useEffect(() => {
+    onEventRef.current = onEvent;
+  }, [onEvent]);
+
+  const [state, setState] = useState<EventState<T>>({
+    event: initialEvent ?? null,
+    connected: false,
+    error: null,
+    lastEventAt: null,
+  });
+
+  useEffect(() => {
+    const connection = acquireContractEventConnection(
+      { serverUrl, contractId, topics, token, withCredentials },
+      {
+        onOpen: () => {
+          setState((prev) => ({ ...prev, connected: true, error: null }));
+        },
+        onEvent: (incoming) => {
+          onEventRef.current?.(incoming);
+          // Basic topic filtering for emitted events
+          if (incoming.type === "contract.emitted" && topics && topics.length > 0) {
+            const ev = incoming as ContractEmittedEvent;
+            const matches = topics.every((t) => ev.topics.includes(t));
+            if (!matches) return;
+          }
+          // Apply user filter if provided
+          if (filterRef.current && !filterRef.current(incoming)) return;
+          // Narrow to requested generic type
+          setState((prev) => ({
+            ...prev,
+            event: incoming as unknown as T,
+            lastEventAt: incoming.timestamp ?? null,
+          }));
+        },
+        onParseError: () => {
+          setState((prev) => ({ ...prev, error: "Failed to parse event" }));
+        },
+        onError: () => {
+          setState((prev) => ({
+            ...prev,
+            connected: false,
+            error: "Connection lost — retrying...",
+          }));
+        },
+      },
+    );
+
+    if (connection.connected) {
+      setState((prev) => ({ ...prev, connected: true, error: null }));
+    }
+
+    return () => {
+      connection.unsubscribe();
+    };
+  }, [serverUrl, contractId, JSON.stringify(topics ?? []), token, withCredentials]);
+
+  return state;
+}
+
 export type { PulseNotifyVitePlugin } from "./vitePlugin.js";
 
 export {

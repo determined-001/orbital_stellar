@@ -4,6 +4,7 @@ import {
   __getConnectionPoolSizeForTests,
   __resetConnectionPoolForTests,
   acquireEventConnection,
+  acquireContractEventConnection,
 } from "../src/connectionPool.ts";
 
 type EventSourceMessageHandler = (message: { data: string }) => void;
@@ -126,6 +127,84 @@ describe("connectionPool", () => {
 
     acquireEventConnection(
       { serverUrl: "https://events.example.com", address: "GABC", token: "secret" },
+      {
+        onOpen: () => undefined,
+        onEvent: () => undefined,
+        onParseError: () => undefined,
+        onError: () => undefined,
+      },
+    );
+
+    assert.equal(MockEventSource.instances.length, 2);
+    assert.equal(__getConnectionPoolSizeForTests(), 2);
+  });
+});
+
+describe("acquireContractEventConnection", () => {
+  test("shares a single EventSource for identical contract connection keys", () => {
+    const eventsA: string[] = [];
+    const eventsB: string[] = [];
+
+    const a = acquireContractEventConnection(
+      {
+        serverUrl: "https://events.example.com",
+        contractId: "C123",
+        topics: ["transfer"],
+        token: "secret",
+      },
+      {
+        onOpen: () => undefined,
+        onEvent: (event) => eventsA.push(event.type),
+        onParseError: () => undefined,
+        onError: () => undefined,
+      },
+    );
+
+    const b = acquireContractEventConnection(
+      {
+        serverUrl: "https://events.example.com",
+        contractId: "C123",
+        topics: ["transfer"],
+        token: "secret",
+      },
+      {
+        onOpen: () => undefined,
+        onEvent: (event) => eventsB.push(event.type),
+        onParseError: () => undefined,
+        onError: () => undefined,
+      },
+    );
+
+    assert.equal(MockEventSource.instances.length, 1);
+    assert.equal(__getConnectionPoolSizeForTests(), 1);
+    assert.equal(a.connected, false);
+    assert.equal(b.connected, false);
+
+    MockEventSource.instances[0]?.onopen?.();
+    assert.equal(a.connected, true);
+    assert.equal(b.connected, true);
+
+    MockEventSource.instances[0]?.onmessage?.({
+      data: JSON.stringify({ type: "contract.emitted", topics: ["transfer"], data: "test" }),
+    });
+
+    assert.deepEqual(eventsA, ["contract.emitted"]);
+    assert.deepEqual(eventsB, ["contract.emitted"]);
+  });
+
+  test("uses separate connections for different contract topics", () => {
+    acquireContractEventConnection(
+      { serverUrl: "https://events.example.com", contractId: "C123", topics: ["transfer"] },
+      {
+        onOpen: () => undefined,
+        onEvent: () => undefined,
+        onParseError: () => undefined,
+        onError: () => undefined,
+      },
+    );
+
+    acquireContractEventConnection(
+      { serverUrl: "https://events.example.com", contractId: "C123", topics: ["mint"] },
       {
         onOpen: () => undefined,
         onEvent: () => undefined,
