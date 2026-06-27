@@ -32,6 +32,15 @@ export { Watcher } from "./Watcher.js";
 export { toStellarAmount, toBigInt } from "./amount.js";
 export type { StellarAmount } from "./amount.js";
 export type { AccountAddress, MuxedAddress, ContractAddress } from "./address.js";
+export {
+  isAccountAddress,
+  isMuxedAddress,
+  isContractAddress,
+  isStellarAddress,
+  toAccountAddress,
+  toMuxedAddress,
+  toContractAddress,
+} from "./address.js";
 export { EngineAlreadyStartedError, HorizonStreamError } from "./errors.js";
 export { StrKey } from "@stellar/stellar-sdk";
 export { CursorStore } from "./CursorStore.js";
