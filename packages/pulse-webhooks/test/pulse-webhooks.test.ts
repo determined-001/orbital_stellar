@@ -989,7 +989,7 @@ describe("pulse-webhooks verifyWebhookRaw", () => {
 describe("pulse-webhooks verifyWebhookEdgeRaw", () => {
   it("returns true when signature matches timestamped payload", async () => {
     const payload = JSON.stringify(deliveryEvent);
-    const timestamp = "1714176000000";
+    const timestamp = String(Date.now());
     const signature = signWebhookPayload("top-secret", payload, timestamp);
 
     const result = await verifyWebhookEdgeRaw(payload, signature, "top-secret", timestamp);
@@ -1023,7 +1023,7 @@ describe("pulse-webhooks verifyWebhookEdgeRaw", () => {
 
   it("returns true for malformed JSON payload (raw variant skips JSON parse)", async () => {
     const payload = "{ invalid json }";
-    const timestamp = "1714176000000";
+    const timestamp = String(Date.now());
     const signature = signWebhookPayload("top-secret", payload, timestamp);
 
     // Raw variant should return true (signature is valid), ignoring JSON validity
