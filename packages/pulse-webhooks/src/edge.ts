@@ -1,7 +1,7 @@
 import type { NormalizedEvent } from "@orbital-stellar/pulse-core";
 
 import type { VerifyWebhookOptions } from "./types.js";
-import { DEFAULT_CLOCK_SKEW_MS } from "./types.js";
+import { DEFAULT_CLOCK_SKEW_MS, DEFAULT_MAX_AGE_MS } from "./types.js";
 
 /**
  * Verifies webhook signatures using Web Crypto API (compatible with Cloudflare Workers, Deno, and browsers)
@@ -72,11 +72,9 @@ export async function verifyWebhookEdgeRaw(
   // Reject timestamps from the future (beyond clock skew allowance).
   if (timestampMs > nowMs + clockSkewMs) return false;
 
-  // Only enforce the replay window when maxAgeMs is explicitly configured.
-  // Omitting it preserves pre-existing behaviour (no age rejection).
-  if (options.maxAgeMs !== undefined) {
-    if (timestampMs < nowMs - options.maxAgeMs - clockSkewMs) return false;
-  }
+  // Enforce replay window: reject timestamps older than maxAgeMs (default 5 min) plus allowed clock skew.
+  const maxAgeMs = options.maxAgeMs ?? DEFAULT_MAX_AGE_MS;
+  if (timestampMs < nowMs - maxAgeMs - clockSkewMs) return false;
 
   try {
     const keyData = new TextEncoder().encode(secret);
