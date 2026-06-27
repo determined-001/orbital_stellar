@@ -58,7 +58,7 @@ export type WebhookFailureRaw = {
 export type WebhookDroppedRaw = {
   /** The reason the webhook was dropped. Currently only `retry_cap_exceeded`. */
   reason: "retry_cap_exceeded";
-  /** The target URL that was dropped. */
+  /** The target URL that was dropped.   */
   url: string;
   /** The `maxConcurrentRetries` limit that was hit. */
   maxConcurrentRetries: number;
