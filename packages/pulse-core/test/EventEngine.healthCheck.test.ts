@@ -47,7 +47,7 @@ describe("engine.healthCheck()", () => {
     const engine = new EventEngine({ network: "testnet" });
     const result = await engine.healthCheck();
     expect(result.ok).toBe(false);
-    expect(result.reasons).toContain("engine is not running");
+    expect(result.reasons).toContain("horizon source is not running");
   });
 
   it("returns ok=false with reason when running but no events received", async () => {
@@ -55,7 +55,7 @@ describe("engine.healthCheck()", () => {
     engine.start();
     const result = await engine.healthCheck();
     expect(result.ok).toBe(false);
-    expect(result.reasons).toContain("no events received yet");
+    expect(result.reasons).toContain("horizon source: no events received yet");
   });
 
   it("returns ok=true when running and last event is within threshold", async () => {
@@ -100,7 +100,7 @@ describe("engine.healthCheck()", () => {
     vi.advanceTimersByTime(6 * 60 * 1000);
     const result = await engine.healthCheck();
     expect(result.ok).toBe(false);
-    expect(result.reasons[0]).toMatch(/last event was \d+s ago/);
+    expect(result.reasons[0]).toMatch(/horizon source: last event was \d+s ago/);
   });
 
   it("respects a custom threshold", async () => {
@@ -152,5 +152,68 @@ describe("engine.healthCheck()", () => {
     const result = await engine.healthCheck();
     expect(result.ok).toBe(false);
     expect(result.reasons.some((r) => r.includes("cursorStore"))).toBe(true);
+  });
+
+  describe("with Soroban subscriber", () => {
+    function withMockSoroban(
+      overrides: Partial<{
+        isRunning: boolean;
+        lastEventAt: string | null;
+      }> = {},
+    ): EventEngine {
+      const engine = new EventEngine({ network: "testnet" });
+      engine.start();
+      engine.subscribe("GABC");
+      // Set a recent Horizon event so Horizon source passes
+      streamInstances[0]!.handlers.onmessage({
+        type: "payment",
+        id: "1",
+        paging_token: "1",
+        created_at: new Date().toISOString(),
+        transaction_successful: true,
+        source_account: "GABC",
+        from: "GABC",
+        to: "GDEF",
+        amount: "10.0000000",
+        asset_type: "native",
+      });
+      // Inject a mock SorobanSubscriber into the private field
+      const now = new Date().toISOString();
+      const mockSubscriber = {
+        isRunning: overrides.isRunning ?? true,
+        lastEventAt: overrides.lastEventAt !== undefined ? overrides.lastEventAt : now,
+      };
+      // @ts-expect-error — accessing private field for test injection
+      engine.sorobanSubscriber = mockSubscriber;
+      return engine;
+    }
+
+    it("returns ok=true when both sources are healthy and recent", async () => {
+      const engine = withMockSoroban();
+      const result = await engine.healthCheck();
+      expect(result.ok).toBe(true);
+      expect(result.reasons).toHaveLength(0);
+    });
+
+    it("returns ok=false when Soroban subscriber is not running", async () => {
+      const engine = withMockSoroban({ isRunning: false, lastEventAt: new Date().toISOString() });
+      const result = await engine.healthCheck();
+      expect(result.ok).toBe(false);
+      expect(result.reasons).toContain("soroban subscriber is not running");
+    });
+
+    it("returns ok=false when Soroban subscriber has no events", async () => {
+      const engine = withMockSoroban({ lastEventAt: null });
+      const result = await engine.healthCheck();
+      expect(result.ok).toBe(false);
+      expect(result.reasons).toContain("soroban subscriber: no events received yet");
+    });
+
+    it("returns ok=false when Soroban subscriber events exceed threshold", async () => {
+      const engine = withMockSoroban({ lastEventAt: new Date(0).toISOString() });
+      const result = await engine.healthCheck();
+      expect(result.ok).toBe(false);
+      expect(result.reasons[0]).toMatch(/soroban subscriber: last event was \d+s ago/);
+    });
   });
 });
