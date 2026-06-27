@@ -63,5 +63,5 @@ export abstract class CursorStore {
    * Optional liveness probe used by the engine health check. Stores backed by
    * a network service may implement this to verify connectivity.
    */
-  ping?: () => Promise<unknown>;
+  ping?: () => Promise<void>;
 }
