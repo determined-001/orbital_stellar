@@ -992,7 +992,10 @@ describe("pulse-webhooks verifyWebhookEdgeRaw", () => {
     const timestamp = "1714176000000";
     const signature = signWebhookPayload("top-secret", payload, timestamp);
 
-    const result = await verifyWebhookEdgeRaw(payload, signature, "top-secret", timestamp);
+    // After
+    const result = await verifyWebhookEdgeRaw(payload, signature, "top-secret", timestamp, {
+      nowMs: Number(timestamp),
+    });
 
     expect(result).toBe(true);
   });
@@ -1027,7 +1030,11 @@ describe("pulse-webhooks verifyWebhookEdgeRaw", () => {
     const signature = signWebhookPayload("top-secret", payload, timestamp);
 
     // Raw variant should return true (signature is valid), ignoring JSON validity
-    const result = await verifyWebhookEdgeRaw(payload, signature, "top-secret", timestamp);
+
+    // After
+    const result = await verifyWebhookEdgeRaw(payload, signature, "top-secret", timestamp, {
+      nowMs: Number(timestamp),
+    });
 
     expect(result).toBe(true);
   });
