@@ -6,7 +6,8 @@ import type {
 } from "@orbital-stellar/pulse-core";
 
 import { createHmac, timingSafeEqual, randomUUID } from "crypto";
-import { isIP } from "net";
+import { lookup } from "dns/promises";
+import { BlockList, isIP } from "net";
 
 import { DeadLetterStore } from "./MemoryDeadLetterStore.js";
 import { exponentialJittered } from "./backoff.js";
@@ -14,6 +15,23 @@ import type { BackoffStrategy } from "./backoff.js";
 import type { RetryQueue, RetryRecord } from "./RetryQueue.js";
 import type { Tracer, VerifyWebhookOptions, WebhookConfig } from "./types.js";
 import { DEFAULT_MAX_AGE_MS, DEFAULT_CLOCK_SKEW_MS } from "./types.js";
+
+const BLOCKED_WEBHOOK_ADDRESSES = new BlockList();
+BLOCKED_WEBHOOK_ADDRESSES.addSubnet("10.0.0.0", 8, "ipv4");
+BLOCKED_WEBHOOK_ADDRESSES.addSubnet("127.0.0.0", 8, "ipv4");
+BLOCKED_WEBHOOK_ADDRESSES.addSubnet("172.16.0.0", 12, "ipv4");
+BLOCKED_WEBHOOK_ADDRESSES.addSubnet("192.168.0.0", 16, "ipv4");
+BLOCKED_WEBHOOK_ADDRESSES.addSubnet("169.254.0.0", 16, "ipv4");
+BLOCKED_WEBHOOK_ADDRESSES.addAddress("::1", "ipv6");
+BLOCKED_WEBHOOK_ADDRESSES.addSubnet("fc00::", 7, "ipv6");
+BLOCKED_WEBHOOK_ADDRESSES.addSubnet("fe80::", 10, "ipv6");
+BLOCKED_WEBHOOK_ADDRESSES.addSubnet("::ffff:a00:0", 104, "ipv6");
+BLOCKED_WEBHOOK_ADDRESSES.addSubnet("::ffff:7f00:0", 104, "ipv6");
+BLOCKED_WEBHOOK_ADDRESSES.addSubnet("::ffff:ac10:0", 108, "ipv6");
+BLOCKED_WEBHOOK_ADDRESSES.addSubnet("::ffff:c0a8:0", 112, "ipv6");
+BLOCKED_WEBHOOK_ADDRESSES.addSubnet("::ffff:a9fe:0", 112, "ipv6");
+
+const BLOCKED_ADDRESS_ERROR = "Webhook URL points to a blocked private address";
 export { DeadLetterStore } from "./MemoryDeadLetterStore.js";
 export { NOOP_WEBHOOK_METRICS, CountingWebhookMetrics } from "./metrics.js";
 export type { WebhookAttemptStatus, WebhookMetrics, WebhookTerminalOutcome } from "./types.js";
@@ -176,6 +194,14 @@ export class WebhookDelivery {
       return;
     }
 
+    const resolvedHostnameError = await this.validateResolvedHostname(url);
+    if (this.watcher.stopped) return;
+
+    if (resolvedHostnameError) {
+      this.emitFailure(event, url, resolvedHostnameError, attempt);
+      return;
+    }
+
     const payload = JSON.stringify(event);
     const timestamp = Date.now().toString();
     const signature = this.sign(payload, timestamp);
@@ -213,6 +239,8 @@ export class WebhookDelivery {
     try {
       const res = await fetch(url, {
         method: "POST",
+        // Redirect targets have not passed the URL and DNS checks above.
+        redirect: "manual",
         headers: {
           "Content-Type": "application/json",
           "x-orbital-signature": signature,
@@ -290,16 +318,11 @@ export class WebhookDelivery {
 
     const hostname = this.normalizeHostname(parsedUrl.hostname);
     if (hostname === "localhost") {
-      return "Webhook URL points to a blocked private address";
+      return BLOCKED_ADDRESS_ERROR;
     }
 
-    const ipVersion = isIP(hostname);
-    if (ipVersion === 4 && this.isBlockedIpv4(hostname)) {
-      return "Webhook URL points to a blocked private address";
-    }
-
-    if (ipVersion === 6 && this.isBlockedIpv6(hostname)) {
-      return "Webhook URL points to a blocked private address";
+    if (this.isBlockedIp(hostname)) {
+      return BLOCKED_ADDRESS_ERROR;
     }
 
     return null;
@@ -309,25 +332,39 @@ export class WebhookDelivery {
     return hostname.replace(/^\[/, "").replace(/\]$/, "").toLowerCase();
   }
 
-  private isBlockedIpv4(hostname: string): boolean {
-    const [a = -1, b = -1] = hostname.split(".").map((segment) => Number(segment));
-
-    return (
-      a === 10 ||
-      a === 127 ||
-      (a === 172 && b >= 16 && b <= 31) ||
-      (a === 192 && b === 168) ||
-      (a === 169 && b === 254)
-    );
-  }
-
-  private isBlockedIpv6(hostname: string): boolean {
-    if (hostname === "::1") return true;
-    if (/^::ffff:(\d{1,3}\.){3}\d{1,3}$/i.test(hostname)) {
-      return this.isBlockedIpv4(hostname.slice(hostname.lastIndexOf(":") + 1));
+  private isBlockedIp(address: string): boolean {
+    const ipVersion = isIP(address);
+    if (ipVersion === 4) {
+      return BLOCKED_WEBHOOK_ADDRESSES.check(address, "ipv4");
+    }
+    if (ipVersion === 6) {
+      // URL normalisation converts mapped dotted forms such as
+      // ::ffff:10.0.0.1 to their canonical hexadecimal form ::ffff:a00:1.
+      return BLOCKED_WEBHOOK_ADDRESSES.check(address, "ipv6");
     }
 
-    return /^fe[89ab][0-9a-f]:/i.test(hostname) || /^f[cd][0-9a-f]{2}:/i.test(hostname);
+    return false;
+  }
+
+  private async validateResolvedHostname(url: string): Promise<string | null> {
+    const hostname = this.normalizeHostname(new URL(url).hostname);
+    if (isIP(hostname) !== 0) return null;
+
+    try {
+      // Check every A and AAAA answer before each attempt. This prevents a
+      // public answer from masking a private IPv6 answer and re-checks retries.
+      const addresses = await lookup(hostname, { all: true, verbatim: true });
+      if (addresses.length === 0) {
+        return "Webhook hostname did not resolve to an IP address";
+      }
+
+      return addresses.some(({ address }) => this.isBlockedIp(address))
+        ? BLOCKED_ADDRESS_ERROR
+        : null;
+    } catch {
+      // DNS failures must fail closed; delivery can retry and resolve again.
+      return "Webhook hostname could not be resolved";
+    }
   }
 
   private extractTraceId(event: NormalizedEvent): string | undefined {

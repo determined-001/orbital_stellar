@@ -1,6 +1,9 @@
 import { createHmac } from "crypto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+const dnsLookupMock = vi.hoisted(() => vi.fn());
+vi.mock("dns/promises", () => ({ lookup: dnsLookupMock }));
+
 import { Watcher } from "@orbital-stellar/pulse-core";
 import type { WebhookMetrics } from "../src/index.js";
 import {
@@ -26,7 +29,14 @@ const deliveryEvent = {
 async function flushAsyncWork(): Promise<void> {
   await Promise.resolve();
   await Promise.resolve();
+  await Promise.resolve();
+  await Promise.resolve();
 }
+
+beforeEach(() => {
+  dnsLookupMock.mockReset();
+  dnsLookupMock.mockResolvedValue([{ address: "93.184.216.34", family: 4 }]);
+});
 
 function signWebhookPayload(secret: string, payload: string, timestamp: string): string {
   return createHmac("sha256", secret).update(`${timestamp}.${payload}`).digest("hex");
@@ -43,7 +53,7 @@ describe("pulse-webhooks WebhookDelivery", () => {
     vi.restoreAllMocks();
   });
 
-  it("delivers each event to every configured URL", () => {
+  it("delivers each event to every configured URL", async () => {
     vi.setSystemTime(new Date("2026-04-27T00:00:00.000Z"));
     const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200 });
     vi.stubGlobal("fetch", fetchMock);
@@ -64,6 +74,7 @@ describe("pulse-webhooks WebhookDelivery", () => {
     });
 
     watcher.emit("*", deliveryEvent);
+    await flushAsyncWork();
 
     expect(fetchMock).toHaveBeenCalledTimes(3);
     expect(fetchMock).toHaveBeenNthCalledWith(
@@ -246,6 +257,123 @@ describe("pulse-webhooks WebhookDelivery", () => {
 
     expect(fetchMock).not.toHaveBeenCalled();
     expect(failedHandler).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    "https://[fc00::1]/hook",
+    "https://[fdff:ffff::1]/hook",
+    "https://[fe80::1]/hook",
+    "https://[febf:ffff::1]/hook",
+    "https://[::ffff:10.0.0.1]/hook",
+    "https://[::ffff:127.0.0.1]/hook",
+    "https://[::ffff:172.31.255.255]/hook",
+    "https://[::ffff:192.168.1.1]/hook",
+    "https://[::ffff:169.254.1.1]/hook",
+  ])("blocks private IPv6 destination %s", async (url) => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200 });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const watcher = new Watcher("GABC");
+    const failedHandler = vi.fn();
+    watcher.on("webhook.failed", failedHandler);
+
+    new WebhookDelivery(watcher, { url, secret: "top-secret" });
+    watcher.emit("*", deliveryEvent);
+    await flushAsyncWork();
+
+    expect(dnsLookupMock).not.toHaveBeenCalled();
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(failedHandler).toHaveBeenCalledWith(
+      expect.objectContaining({
+        raw: expect.objectContaining({
+          url,
+          error: "Webhook URL points to a blocked private address",
+        }),
+      }),
+    );
+  });
+
+  it.each([
+    "https://[fbff:ffff::1]/hook",
+    "https://[fe7f:ffff::1]/hook",
+    "https://[fec0::1]/hook",
+    "https://[::ffff:8.8.8.8]/hook",
+  ])("allows IPv6 destination outside the blocked ranges %s", async (url) => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200 });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const watcher = new Watcher("GABC");
+    new WebhookDelivery(watcher, { url, secret: "top-secret" });
+    watcher.emit("*", deliveryEvent);
+    await flushAsyncWork();
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("blocks a hostname when any DNS answer is private IPv6", async () => {
+    dnsLookupMock.mockResolvedValue([
+      { address: "2606:4700:4700::1111", family: 6 },
+      { address: "fe80::1234", family: 6 },
+    ]);
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200 });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const url = "https://hooks.example.com/stellar";
+    const watcher = new Watcher("GABC");
+    const failedHandler = vi.fn();
+    watcher.on("webhook.failed", failedHandler);
+
+    new WebhookDelivery(watcher, { url, secret: "top-secret" });
+    watcher.emit("*", deliveryEvent);
+    await flushAsyncWork();
+
+    expect(dnsLookupMock).toHaveBeenCalledWith("hooks.example.com", {
+      all: true,
+      verbatim: true,
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(failedHandler).toHaveBeenCalledWith(
+      expect.objectContaining({
+        raw: expect.objectContaining({
+          error: "Webhook URL points to a blocked private address",
+        }),
+      }),
+    );
+  });
+
+  it("re-checks DNS before a retry and blocks a rebound private address", async () => {
+    dnsLookupMock
+      .mockResolvedValueOnce([{ address: "2606:4700:4700::1111", family: 6 }])
+      .mockResolvedValueOnce([{ address: "fc00::1234", family: 6 }]);
+    const fetchMock = vi.fn().mockRejectedValue(new Error("network down"));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const watcher = new Watcher("GABC");
+    const failedHandler = vi.fn();
+    watcher.on("webhook.failed", failedHandler);
+
+    new WebhookDelivery(watcher, {
+      url: "https://hooks.example.com/stellar",
+      secret: "top-secret",
+      retries: 2,
+      random: () => 0,
+    });
+    watcher.emit("*", deliveryEvent);
+    await flushAsyncWork();
+
+    vi.advanceTimersByTime(0);
+    await flushAsyncWork();
+
+    expect(dnsLookupMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(failedHandler).toHaveBeenCalledWith(
+      expect.objectContaining({
+        raw: expect.objectContaining({
+          error: "Webhook URL points to a blocked private address",
+          attempts: 2,
+        }),
+      }),
+    );
   });
 
   it("keeps delivering to other URLs when one URL fails", async () => {
