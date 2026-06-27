@@ -13,7 +13,7 @@ export { exponentialJittered, linear, cappedExponential, constant } from "./back
 export type { BackoffStrategy } from "./backoff.js";
 export { PostgresDeadLetterStore } from "./PostgresDeadLetterStore.js";
 export { RedisRetryQueue } from "./RedisRetryQueue.js";
-export { verifyWebhookEdge, verifyWebhookEdgeRaw } from "./edge.js";
+export { verifyWebhookEdge, verifyWebhookEdgeRaw, verifyWebhookEdgeStream } from "./edge.js";
 export type {
   DeadLetterEntry,
   DeadLetterFilter as MemoryDeadLetterFilter,
