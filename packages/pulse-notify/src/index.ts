@@ -4,7 +4,6 @@ import { acquireEventConnection, acquireContractEventConnection } from "./connec
 import type {
   NormalizedEvent,
   PaymentEvent,
-  ContractInvokedEvent,
   ContractEmittedEvent,
 } from "@orbital-stellar/pulse-core";
 import { acquireWsConnection } from "./wsTransport.js";
@@ -318,6 +317,151 @@ export type UseHistoryOptions = {
 export type HistoryState<T extends NormalizedEvent = NormalizedEvent> = EventState<T> & {
   history: T[];
 };
+
+// ─── useStellarAddresses ─────────────────────────────────────────────────────
+
+export type UseAddressesOptions = {
+  event?: string | string[];
+  token?: string;
+  /** Client-side predicate; events that return false are suppressed before state update */
+  filter?: (event: NormalizedEvent) => boolean;
+  /** Enable cookie-based auth for same-origin or CORS-credentialed SSE */
+  withCredentials?: boolean;
+  /** Side-effect callback fired for every incoming event (per address), before filter is applied */
+  onEvent?: (address: string, event: NormalizedEvent) => void;
+};
+
+/**
+ * Watches multiple Stellar addresses with a single hook call.
+ *
+ * Connections are acquired from the shared pool (see connectionPool.ts), so
+ * duplicate addresses across the same `serverUrl`/`token` combination always
+ * reuse one underlying EventSource rather than opening a new one.
+ *
+ * @param serverUrl - Base URL of the pulse-notify server.
+ * @param addresses - Array of Stellar account addresses to watch.
+ * @param options   - Optional shared configuration (token, filter, …).
+ * @returns A `Record<address, EventState<T>>` that is updated independently
+ *          for each address as events arrive.
+ *
+ * @example
+ * const states = useStellarAddresses(serverUrl, [addrA, addrB, addrC]);
+ * // states[addrA].event, states[addrB].connected, …
+ */
+export function useStellarAddresses<T extends NormalizedEvent = NormalizedEvent>(
+  serverUrl: string,
+  addresses: string[],
+  options?: UseAddressesOptions,
+): Record<string, EventState<T>> {
+  const { event: eventType, token, filter, withCredentials, onEvent } = options ?? {};
+
+  // Serialise the addresses array once per render so we can use it as a stable
+  // effect dependency even when the caller passes an inline literal.
+  const addressKey = [...addresses].sort().join(",");
+  const eventKey = Array.isArray(eventType) ? [...eventType].sort().join(",") : (eventType ?? "*");
+
+  // Initialise state lazily — one EventState entry per address.
+  const [states, setStates] = useState<Record<string, EventState<T>>>(() => {
+    const initial: Record<string, EventState<T>> = {};
+    for (const addr of addresses) {
+      initial[addr] = { event: null, connected: false, error: null, lastEventAt: null };
+    }
+    return initial;
+  });
+
+  // Keep callbacks in refs so that effect deps stay stable across renders.
+  const filterRef = useRef(filter);
+  useEffect(() => {
+    filterRef.current = filter;
+  });
+
+  const onEventRef = useRef(onEvent);
+  useEffect(() => {
+    onEventRef.current = onEvent;
+  });
+
+  useEffect(() => {
+    if (addresses.length === 0) return;
+
+    // Normalise the event-type list once for all subscriptions.
+    const resolvedEventType: string | string[] = eventKey === "*" ? "*" : (eventType ?? "*");
+
+    const connections = addresses.map((addr) => {
+      const connection = acquireEventConnection(
+        { serverUrl, address: addr, token, withCredentials },
+        {
+          onOpen: () => {
+            setStates((prev) => ({
+              ...prev,
+              [addr]: { ...prev[addr]!, connected: true, error: null },
+            }));
+          },
+          onEvent: (incoming) => {
+            onEventRef.current?.(addr, incoming);
+
+            // Apply event-type filter.
+            const allowed =
+              resolvedEventType === "*" ||
+              (Array.isArray(resolvedEventType)
+                ? resolvedEventType.includes(incoming.type)
+                : incoming.type === resolvedEventType);
+            if (!allowed) return;
+
+            // Apply user predicate.
+            if (filterRef.current && !filterRef.current(incoming)) return;
+
+            setStates((prev) => ({
+              ...prev,
+              [addr]: {
+                ...prev[addr]!,
+                event: incoming as T,
+                lastEventAt: incoming.timestamp ?? null,
+              },
+            }));
+          },
+          onParseError: () => {
+            setStates((prev) => ({
+              ...prev,
+              [addr]: { ...prev[addr]!, error: "Failed to parse event" },
+            }));
+          },
+          onError: () => {
+            setStates((prev) => ({
+              ...prev,
+              [addr]: {
+                ...prev[addr]!,
+                connected: false,
+                error: "Connection lost — retrying...",
+              },
+            }));
+          },
+        },
+      );
+
+      // If the pool already had an open connection, reflect that immediately.
+      if (connection.connected) {
+        setStates((prev) => ({
+          ...prev,
+          [addr]: { ...prev[addr]!, connected: true, error: null },
+        }));
+      }
+
+      return connection;
+    });
+
+    return () => {
+      for (const connection of connections) {
+        connection.unsubscribe();
+      }
+    };
+    // ✅ addressKey and eventKey are stable serialised strings — safe as deps
+    // even when the caller passes inline array literals.
+  }, [serverUrl, addressKey, eventKey, token, withCredentials]);
+
+  return states;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 export function useStellarHistory<T extends NormalizedEvent = NormalizedEvent>(
   serverUrl: string,
