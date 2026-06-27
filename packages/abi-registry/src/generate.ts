@@ -25,13 +25,17 @@ function toIdentifierName(value: string): string {
   if (parts.length === 0) {
     return "value";
   }
-  return parts.map((part, index) => {
-    const cleaned = part.replace(/^[0-9]+/, "");
-    if (!cleaned) {
-      return index === 0 ? "value" : "value";
-    }
-    return index === 0 ? cleaned.toLowerCase() : cleaned.charAt(0).toUpperCase() + cleaned.slice(1).toLowerCase();
-  }).join("");
+  return parts
+    .map((part, index) => {
+      const cleaned = part.replace(/^[0-9]+/, "");
+      if (!cleaned) {
+        return index === 0 ? "value" : "value";
+      }
+      return index === 0
+        ? cleaned.toLowerCase()
+        : cleaned.charAt(0).toUpperCase() + cleaned.slice(1).toLowerCase();
+    })
+    .join("");
 }
 
 function ensureUniqueName(base: string, used: Set<string>): string {
@@ -133,7 +137,10 @@ function mapTypeToZod(type: xdr.ScSpecTypeDef | undefined): string {
   }
 }
 
-export function generateContractArtifacts(spec: ContractSpec, contractName: string): GeneratedContractArtifacts {
+export function generateContractArtifacts(
+  spec: ContractSpec,
+  contractName: string,
+): GeneratedContractArtifacts {
   const entries = spec.entries
     .map((entry) => {
       try {
@@ -153,7 +160,7 @@ export function generateContractArtifacts(spec: ContractSpec, contractName: stri
   const declarations: string[] = [];
   const schemas: string[] = [];
 
-  declarations.push("import { z } from \"zod\";");
+  declarations.push('import { z } from "zod";');
   declarations.push("");
 
   for (const event of entries) {

@@ -60,7 +60,7 @@ describe("generateContractArtifacts", () => {
 
     expect(artifacts.schemas).toContain("export const TransferSchema");
     expect(artifacts.schemas).toContain("z.object({");
-    expect(artifacts.schemas).toContain("from: z.string()" );
+    expect(artifacts.schemas).toContain("from: z.string()");
     expect(artifacts.schemas).toContain("amount: z.string()");
     expect(artifacts.schemas).toContain("export const ApproveSchema");
     expect(artifacts.schemas).toContain("export const MintSchema");
@@ -70,8 +70,12 @@ describe("generateContractArtifacts", () => {
     const spec = {
       contractId: "CABC123",
       entries: [
-        createEventEntry("transfer_event", [{ name: "from_address", type: xdr.ScSpecTypeDef.scSpecTypeAddress() }]),
-        createEventEntry("transfer_event", [{ name: "from_address", type: xdr.ScSpecTypeDef.scSpecTypeAddress() }]),
+        createEventEntry("transfer_event", [
+          { name: "from_address", type: xdr.ScSpecTypeDef.scSpecTypeAddress() },
+        ]),
+        createEventEntry("transfer_event", [
+          { name: "from_address", type: xdr.ScSpecTypeDef.scSpecTypeAddress() },
+        ]),
       ],
     } satisfies ContractSpec;
 
