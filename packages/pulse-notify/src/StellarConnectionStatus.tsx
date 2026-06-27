@@ -1,4 +1,5 @@
 import { createElement, useEffect, useMemo, useState } from "react";
+import { StellarEventBoundary } from "./StellarEventBoundary.js";
 import type { ComponentPropsWithoutRef, CSSProperties, ReactElement } from "react";
 
 export type StellarConnectionStatusState = "connecting" | "connected" | "error";
@@ -103,21 +104,25 @@ export function StellarConnectionStatus({
   );
 
   return createElement(
-    "span",
-    {
-      ...spanProps,
-      "aria-label": ariaLabel ?? `Stellar connection ${label}`,
-      "aria-live": spanProps["aria-live"] ?? "polite",
-      className: statusClassName,
-      "data-status": status,
-      role: spanProps.role ?? "status",
-      style: rootStyle,
-    },
-    createElement("span", {
-      "aria-hidden": true,
-      className: "stellar-connection-status__dot",
-      style: dotStyle,
-    }),
-    createElement("span", { className: "stellar-connection-status__label" }, label),
+    StellarEventBoundary,
+    { fallback: null },
+    createElement(
+      "span",
+      {
+        ...spanProps,
+        "aria-label": ariaLabel ?? `Stellar connection ${label}`,
+        "aria-live": spanProps["aria-live"] ?? "polite",
+        className: statusClassName,
+        "data-status": status,
+        role: spanProps.role ?? "status",
+        style: rootStyle,
+      },
+      createElement("span", {
+        "aria-hidden": true,
+        className: "stellar-connection-status__dot",
+        style: dotStyle,
+      }),
+      createElement("span", { className: "stellar-connection-status__label" }, label),
+    ),
   );
 }

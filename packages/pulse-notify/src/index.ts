@@ -202,6 +202,7 @@ export {
   type StellarConnectionStatusProps,
   type StellarConnectionStatusState,
 } from "./StellarConnectionStatus.js";
+export { StellarEventBoundary } from "./StellarEventBoundary.js";
 
 export { pulseNotifyVitePlugin } from "./vitePlugin.js";
 export type { PulseNotifyVitePlugin } from "./vitePlugin.js";
