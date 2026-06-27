@@ -10,7 +10,7 @@ export type StellarEventBoundaryProps = {
   /**
    * Client‑only children to render after component mounts.
    */
-  children: ReactNode;
+  children?: ReactNode;
 };
 
 /**

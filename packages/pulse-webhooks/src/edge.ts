@@ -72,7 +72,7 @@ export async function verifyWebhookEdgeRaw(
   // Reject timestamps from the future (beyond clock skew allowance).
   if (timestampMs > nowMs + clockSkewMs) return false;
 
-  // Enforce replay window: reject timestamps older than maxAgeMs (default 5 min) plus allowed clock skew.
+  // Enforce replay window: reject timestamps older than maxAgeMs (default 5 min) plus allowed clock skew.
   const maxAgeMs = options.maxAgeMs ?? DEFAULT_MAX_AGE_MS;
   if (timestampMs < nowMs - maxAgeMs - clockSkewMs) return false;
 

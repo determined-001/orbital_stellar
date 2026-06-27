@@ -16,7 +16,7 @@ function toPascalCase(value: string): string {
 
 function toCamelCase(value: string): string {
   const pascal = toPascalCase(value);
-  return pascal ? pascal[0].toLowerCase() + pascal.slice(1) : value;
+  return pascal ? pascal.charAt(0).toLowerCase() + pascal.slice(1) : value;
 }
 
 function toIdentifierName(value: string): string {
@@ -169,7 +169,7 @@ export function generateContractArtifacts(
     const interfaceName = ensureUniqueName(baseName, usedNames);
     const schemaName = `${interfaceName}Schema`;
     const params = Array.isArray((event as any).params?.()) ? (event as any).params() : [];
-    const propertyLines = params.map((param) => {
+    const propertyLines = (params as unknown[]).map((param) => {
       const rawParam = param as { name?: () => unknown; type?: () => xdr.ScSpecTypeDef };
       const propertyName = toCamelCase(String(rawParam.name?.() ?? "value"));
       return `  ${propertyName}: ${mapTypeToTs(rawParam.type?.())};`;
@@ -182,7 +182,7 @@ export function generateContractArtifacts(
 
     schemas.push(`export const ${schemaName} = z.object({`);
     schemas.push(
-      ...params.map((param) => {
+      ...(params as unknown[]).map((param) => {
         const rawParam = param as { name?: () => unknown; type?: () => xdr.ScSpecTypeDef };
         const propertyName = toCamelCase(String(rawParam.name?.() ?? "value"));
         return `  ${propertyName}: ${mapTypeToZod(rawParam.type?.())},`;
