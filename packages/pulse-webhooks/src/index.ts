@@ -1,4 +1,9 @@
-import type { NormalizedEvent, Watcher, WatcherNotification } from "@orbital-stellar/pulse-core";
+import type {
+  DecodeFailedNotification,
+  NormalizedEvent,
+  Watcher,
+  WatcherNotification,
+} from "@orbital-stellar/pulse-core";
 import { createHmac, timingSafeEqual } from "crypto";
 
 import { DeadLetterStore } from "./MemoryDeadLetterStore.js";
@@ -112,13 +117,16 @@ export class WebhookDelivery {
       this.clearRetryTimers();
     });
 
-    this.watcher.on("*", (event: NormalizedEvent | WatcherNotification) => {
-      if ("raw" in event) {
-        for (const url of this.config.urls) {
-          void this.deliverToUrl(event, url);
+    this.watcher.on(
+      "*",
+      (event: NormalizedEvent | WatcherNotification | DecodeFailedNotification) => {
+        if ("raw" in event) {
+          for (const url of this.config.urls) {
+            void this.deliverToUrl(event, url);
+          }
         }
-      }
-    });
+      },
+    );
   }
 
   getDeadLetterStore(): DeadLetterStore {

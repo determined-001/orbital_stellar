@@ -46,6 +46,7 @@ import type {
   WatcherNotificationType,
   Logger,
   CursorStore,
+  DecodeFailedNotification,
   RawHorizonPayment,
   RawHorizonSetOptions,
   RawHorizonCreateAccount,
@@ -1534,9 +1535,19 @@ export class EventEngine {
       data: r.data ?? null,
       decodedData: r.decodedData,
       ...(typeof r.ledger === "number" ? { ledger: r.ledger } : {}),
-      ...(typeof r.eventId === "string" ? { eventId: r.eventId } : {}),
-      ...(typeof r.txHash === "string" ? { txHash: r.txHash } : {}),
-      inSuccessfulContractCall: Boolean(r.inSuccessfulContractCall),
+      ...(typeof r.eventId === "string"
+        ? { eventId: r.eventId }
+        : typeof r.event_id === "string"
+          ? { eventId: r.event_id }
+          : {}),
+      ...(typeof r.txHash === "string"
+        ? { txHash: r.txHash }
+        : typeof r.tx_hash === "string"
+          ? { txHash: r.tx_hash }
+          : {}),
+      inSuccessfulContractCall: Boolean(
+        r.inSuccessfulContractCall ?? r.in_successful_contract_call,
+      ),
       timestamp: r.created_at,
       raw: raw as RawSorobanEvent,
     };
@@ -1595,6 +1606,24 @@ export class EventEngine {
       if (this.matchesContractFilters(event, filters) && this.passesFilter(id, event)) {
         watcher.emit(event.type, event);
         watcher.emit("*", event);
+      }
+    }
+  }
+
+  private emitDecodeFailedNotification(
+    event: Timestamped<ContractEmittedEvent>,
+    error: string,
+  ): void {
+    const notification: DecodeFailedNotification = {
+      type: "event.decode_failed",
+      contractId: event.contractId,
+      eventId: event.eventId,
+      error,
+    };
+
+    for (const [id, { watcher, filters }] of this.contractRegistry.entries()) {
+      if (this.matchesContractFilters(event, filters) && this.passesFilter(id, event)) {
+        watcher.emit("event.decode_failed", notification);
       }
     }
   }
@@ -1788,13 +1817,22 @@ export class EventEngine {
             if (spec !== null && spec !== undefined) {
               (event as ContractEmittedEvent).decodedData =
                 (spec as { entries?: unknown }).entries ?? spec;
+            } else {
+              (event as ContractEmittedEvent).decodedData = undefined;
+              this.emitDecodeFailedNotification(
+                event,
+                `No ABI spec found for contract ${contractId}`,
+              );
             }
             this.dispatchContractEvent(event);
           },
           (err: unknown) => {
+            (event as ContractEmittedEvent).decodedData = undefined;
+            const errorMessage = err instanceof Error ? err.message : String(err);
+            this.emitDecodeFailedNotification(event, errorMessage);
             this.log.warn("ABI registry lookup failed for contract.emitted event", {
               contractId,
-              error: err instanceof Error ? err.message : String(err),
+              error: errorMessage,
             });
             this.dispatchContractEvent(event);
           },

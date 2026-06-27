@@ -1,7 +1,7 @@
 import { EventEmitter } from "events";
-import type { NormalizedEvent, WatcherNotification } from "./index.js";
+import type { DecodeFailedNotification, NormalizedEvent, WatcherNotification } from "./index.js";
 
-type WatcherEvent = NormalizedEvent | WatcherNotification;
+type WatcherEvent = NormalizedEvent | WatcherNotification | DecodeFailedNotification;
 
 type WatcherLogger = Pick<Console, "warn">;
 

@@ -560,6 +560,13 @@ export type ContractEmittedEvent = {
 
 export type ContractEvent = ContractInvokedEvent | ContractEmittedEvent;
 
+export type DecodeFailedNotification = {
+  type: "event.decode_failed";
+  contractId: ContractAddress;
+  eventId?: string;
+  error: string;
+};
+
 /**
  * Filter criteria for a contract subscription.
  * All specified fields must match (AND semantics).
