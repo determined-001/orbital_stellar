@@ -315,11 +315,17 @@ export class SorobanSubscriber {
         flatFilters.push(...sub.filters);
       }
 
-      if (flatFilters.length === 0) {
+      // Coalesce identical filters (order-preserving) so duplicate subscriptions
+      // share a single filter slot. This minimises the number of getEvents calls
+      // under the 5-filter cap — e.g. 6 subscriptions on the same contract collapse
+      // to one filter, hence one call instead of two.
+      const uniqueFilters = this.coalesceFilters(flatFilters);
+
+      if (uniqueFilters.length === 0) {
         rpcCalls = [[]];
       } else {
-        for (let i = 0; i < flatFilters.length; i += 5) {
-          rpcCalls.push(flatFilters.slice(i, i + 5));
+        for (let i = 0; i < uniqueFilters.length; i += 5) {
+          rpcCalls.push(uniqueFilters.slice(i, i + 5));
         }
       }
     }
@@ -466,6 +472,32 @@ export class SorobanSubscriber {
     }
     // No contractId constraint → matches.
     return true;
+  }
+
+  /**
+   * Collapses identical filters into a single entry, preserving first-seen order.
+   * Two filters are identical when they target the same event `type`, the same set
+   * of contract IDs (order-independent), and the same positional topic filters.
+   * This is what lets N subscriptions sharing a filter coalesce into one RPC slot,
+   * so the poll issues the minimum number of getEvents calls.
+   */
+  private coalesceFilters(filters: ContractSubscriptionFilter[]): ContractSubscriptionFilter[] {
+    const byKey = new Map<string, ContractSubscriptionFilter>();
+    for (const filter of filters) {
+      const key = this.filterKey(filter);
+      if (!byKey.has(key)) byKey.set(key, filter);
+    }
+    return [...byKey.values()];
+  }
+
+  /** Stable identity key for a filter; contract IDs are sorted so order doesn't matter. */
+  private filterKey(filter: ContractSubscriptionFilter): string {
+    const contractIds = filter.contractIds ? [...filter.contractIds].sort() : undefined;
+    return JSON.stringify({
+      type: filter.type,
+      contractIds,
+      topicFilters: filter.topicFilters,
+    });
   }
 
   /** Records a delivered event ID, evicting the oldest entries past the cap. */
