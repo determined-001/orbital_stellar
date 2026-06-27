@@ -461,10 +461,24 @@ export class EventEngine {
   }
 
   /**
-   * Removes a contract subscription by its id.
+   * Removes a contract subscription created with the legacy id-based
+   * `subscribeContract(id)`, stopping its watcher.
    */
-  unsubscribeContract(id: string): void {
-    this.contractRegistry.get(id)?.watcher.stop();
+  unsubscribeContract(id: string): void;
+  /**
+   * Removes the contract subscription created with `subscribeContract(config)`,
+   * stopping the watcher registered under the same filter shape. No-op when no
+   * matching subscription exists.
+   */
+  unsubscribeContract(config: ContractSubscriptionConfig): void;
+  unsubscribeContract(idOrConfig: string | ContractSubscriptionConfig): void {
+    if (typeof idOrConfig === "object") {
+      const key = stableFilterKey(idOrConfig.filters);
+      // The watcher's stop handler removes it from contractConfigRegistry.
+      this.contractConfigRegistry.get(key)?.stop();
+      return;
+    }
+    this.contractRegistry.get(idOrConfig)?.watcher.stop();
   }
 
   /**
@@ -523,6 +537,7 @@ export class EventEngine {
    * tearing it down.
    */
   unsubscribeAllContracts(): void {
+    // Legacy id-based subscriptions.
     for (const [id, entry] of this.contractRegistry.entries()) {
       const name = this.subscriptionNames.get(id);
       const notification = {
@@ -533,6 +548,17 @@ export class EventEngine {
       };
       entry.watcher.emit("engine.stopped", notification);
       entry.watcher.stop();
+    }
+
+    // Config-based subscriptions (subscribeContract(config)). Snapshot first —
+    // each watcher's stop handler mutates contractConfigRegistry.
+    for (const watcher of [...this.contractConfigRegistry.values()]) {
+      watcher.emit("engine.stopped", {
+        type: "engine.stopped" as const,
+        attempt: 0,
+        emittedAt: new Date().toISOString(),
+      });
+      watcher.stop();
     }
   }
 
