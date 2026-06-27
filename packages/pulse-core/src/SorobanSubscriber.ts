@@ -1,5 +1,6 @@
 import type { ContractSubscriptionFilter, ContractAddress } from "./index.js";
 import { SorobanRpcError } from "./errors.js";
+import { EventEmitter } from "events";
 
 /**
  * SorobanSubscriber — polls a Soroban RPC for contract events and forwards
@@ -105,7 +106,7 @@ const MAX_PAGE_LIMIT = 10_000;
 const DEFAULT_PAGE_LIMIT = 100;
 const DEFAULT_DEDUP_CACHE_SIZE = 10_000;
 
-export class SorobanSubscriber {
+export class SorobanSubscriber extends EventEmitter {
   private readonly rpc: SorobanRpc;
   private readonly cursorStore: CursorStore;
   private readonly onEvent?: (event: SorobanEvent) => Promise<void>;
@@ -161,6 +162,7 @@ export class SorobanSubscriber {
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(options: SorobanSubscriberOptions) {
+    super();
     const pageLimit = options.pageLimit ?? options.pageSize ?? DEFAULT_PAGE_LIMIT;
     if (!Number.isFinite(pageLimit) || pageLimit < MIN_PAGE_LIMIT || pageLimit > MAX_PAGE_LIMIT) {
       throw new RangeError(`pageLimit must be between 1 and 10,000 (received ${pageLimit})`);
@@ -348,7 +350,7 @@ export class SorobanSubscriber {
       ),
     );
 
-    let results: { events: SorobanEvent[] }[];
+    let results: { events: SorobanEvent[]; latestLedger?: number }[];
     try {
       results = await Promise.all(promises);
     } catch (err) {
@@ -356,9 +358,36 @@ export class SorobanSubscriber {
       if (this.isAbortError(err)) return;
       // Route classified RPC errors to the retry/terminal handlers when present.
       if (err instanceof SorobanRpcError) {
-        if (err.retryable) {
+        if (
+          err.code === "invalid_request" &&
+          (err.message.includes("startCursor") || err.message.includes("oldest ledger"))
+        ) {
+          const lostCursor = currentCursor || "unknown";
+          this.emit("engine.cursor_expired", { source: "soroban", lostCursor });
+
+          try {
+            const fallbackPage = await this.rpc.getEvents(undefined, 1, signal);
+            const latestLedger = fallbackPage.latestLedger;
+            if (latestLedger !== undefined) {
+              console.warn(
+                `[pulse-core] Soroban subscriber cursor expired (lost: ${lostCursor}). ` +
+                  `Falling back to startLedger = ${latestLedger}. Data loss occurred.`,
+              );
+              if (!this.isReplayMode) {
+                await this.cursorStore.saveCursor(latestLedger.toString());
+              } else {
+                this.replayCursor = latestLedger.toString();
+              }
+              this.scheduleRetry();
+              return;
+            }
+          } catch {
+            // fallback fetch failed; continue with the original cursor-expired error
+          }
+        }
+        if ((err as SorobanRpcError).retryable) {
           if (this.onRetryableError) {
-            this.onRetryableError(err);
+            this.onRetryableError(err as SorobanRpcError);
             this.scheduleRetry();
             return;
           }
