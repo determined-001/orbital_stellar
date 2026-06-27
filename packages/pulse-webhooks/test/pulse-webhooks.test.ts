@@ -5,6 +5,7 @@ import { Watcher } from "@orbital-stellar/pulse-core";
 import type { WebhookMetrics } from "../src/index.js";
 import {
   DeadLetterStore,
+  MemoryRetryQueue,
   verifyWebhook,
   verifyWebhookRaw,
   verifyWebhookEdge,
@@ -176,37 +177,38 @@ describe("pulse-webhooks WebhookDelivery", () => {
     );
   });
 
-  it("rejects private URLs before running the custom urlValidator", async () => {
-    const blockedUrl = "https://127.0.0.1/webhooks/stellar";
-    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200 });
-    const urlValidator = vi.fn().mockResolvedValue(null);
+  it("persists retryable failures through a configured retry queue and drains them", async () => {
+    vi.setSystemTime(new Date("2026-04-27T00:00:00.000Z"));
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: false, status: 500 })
+      .mockResolvedValue({ ok: true, status: 200 });
     vi.stubGlobal("fetch", fetchMock);
 
+    const queue = new MemoryRetryQueue();
     const watcher = new Watcher("GABC");
-    const failedHandler = vi.fn();
-    watcher.on("webhook.failed", failedHandler);
-
-    new WebhookDelivery(watcher, {
-      url: blockedUrl,
+    const delivery = new WebhookDelivery(watcher, {
+      url: "https://prod.example.com/webhooks/stellar",
       secret: "top-secret",
-      urlValidator,
+      retries: 3,
+      random: () => 0,
+      retryQueue: queue,
     });
 
     watcher.emit("*", deliveryEvent);
     await flushAsyncWork();
+    await flushAsyncWork();
 
-    expect(urlValidator).not.toHaveBeenCalled();
-    expect(fetchMock).not.toHaveBeenCalled();
-    expect(failedHandler).toHaveBeenCalledTimes(1);
-    expect(failedHandler).toHaveBeenCalledWith(
-      expect.objectContaining({
-        raw: expect.objectContaining({
-          url: blockedUrl,
-          error: "Webhook URL points to a blocked private address",
-          attempts: 1,
-        }),
-      }),
-    );
+    // The failed attempt is persisted to the durable queue (not just an in-process
+    // timer), so a process restart could resume it.
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(await queue.size()).toBe(1);
+
+    // Draining redelivers the persisted retry and acknowledges it on success.
+    await delivery.drainDueRetries(Date.now() + 3_600_000);
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(await queue.size()).toBe(0);
   });
 
   it("rejects URL when custom urlValidator blocks an otherwise allowed URL without retrying", async () => {
