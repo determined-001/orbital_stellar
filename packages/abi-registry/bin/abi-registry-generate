@@ -1,0 +1,18 @@
+#!/usr/bin/env node
+import { readFileSync, writeFileSync } from "node:fs";
+import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import { generateContractTypes } from "../src/generate.js";
+
+const [, , inputPath, outputPath] = process.argv;
+
+if (!inputPath || !outputPath) {
+  console.error("Usage: abi-registry-generate <input-spec.json> <output.d.ts>");
+  process.exit(1);
+}
+
+const resolvedInputPath = resolve(process.cwd(), inputPath);
+const resolvedOutputPath = resolve(process.cwd(), outputPath);
+const spec = JSON.parse(readFileSync(resolvedInputPath, "utf8"));
+const generated = generateContractTypes(spec, resolvedOutputPath);
+writeFileSync(resolvedOutputPath, generated, "utf8");
