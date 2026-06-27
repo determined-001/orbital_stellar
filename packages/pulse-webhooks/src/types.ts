@@ -40,6 +40,13 @@ export type WebhookConfig = {
   urlValidator?: (url: string) => Promise<string | null>;
   /** Optional metrics recorder for per-URL delivery observability. */
   metrics?: WebhookMetrics;
+  /**
+   * Optional durable retry queue. When provided, retryable delivery failures are
+   * persisted to it (instead of the in-process timer set) so pending retries can
+   * survive a process restart. See {@link import("./RetryQueue.js").RetryQueue}
+   * and {@link import("./MemoryRetryQueue.js").MemoryRetryQueue}.
+   */
+  retryQueue?: import("./RetryQueue.js").RetryQueue;
 };
 
 export const DEFAULT_MAX_AGE_MS = 300_000;

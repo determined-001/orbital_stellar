@@ -4,6 +4,7 @@ import { createHmac, timingSafeEqual } from "crypto";
 import { DeadLetterStore } from "./MemoryDeadLetterStore.js";
 import { exponentialJittered } from "./backoff.js";
 import type { BackoffStrategy } from "./backoff.js";
+import type { RetryQueue, RetryRecord } from "./RetryQueue.js";
 import type { Tracer, VerifyWebhookOptions, WebhookConfig } from "./types.js";
 import { DEFAULT_MAX_AGE_MS, DEFAULT_CLOCK_SKEW_MS } from "./types.js";
 export { DeadLetterStore } from "./MemoryDeadLetterStore.js";
@@ -13,6 +14,7 @@ export { exponentialJittered, linear, cappedExponential, constant } from "./back
 export type { BackoffStrategy } from "./backoff.js";
 export { PostgresDeadLetterStore } from "./PostgresDeadLetterStore.js";
 export { RedisRetryQueue } from "./RedisRetryQueue.js";
+export { MemoryRetryQueue } from "./MemoryRetryQueue.js";
 export { verifyWebhookEdge, verifyWebhookEdgeRaw } from "./edge.js";
 export type {
   DeadLetterEntry,
@@ -26,6 +28,7 @@ export type {
   PgLike,
 } from "./PostgresDeadLetterStore.js";
 export type { RedisLike, RedisRetryQueueOptions } from "./RedisRetryQueue.js";
+export type { MemoryRetryQueueOptions } from "./MemoryRetryQueue.js";
 export type { RetryQueue, RetryRecord } from "./RetryQueue.js";
 export type {
   Span,
@@ -67,13 +70,14 @@ export type WebhookDroppedRaw = {
 
 type ResolvedWebhookConfig = Omit<
   Required<WebhookConfig>,
-  "url" | "tracer" | "urlValidator" | "metrics" | "backoff"
+  "url" | "tracer" | "urlValidator" | "metrics" | "backoff" | "retryQueue"
 > & {
   urls: string[];
   backoff: BackoffStrategy;
   tracer?: Tracer;
   urlValidator?: WebhookConfig["urlValidator"];
   metrics?: WebhookConfig["metrics"];
+  retryQueue?: RetryQueue;
 };
 
 export class WebhookDelivery {
@@ -83,6 +87,11 @@ export class WebhookDelivery {
   // Map of timer -> event so we can evict the newest entry when the cap is hit.
   private retryTimers: Map<ReturnType<typeof setTimeout>, { event: NormalizedEvent; url: string }> =
     new Map();
+  // Timers that fire a durable-queue drain at each record's due time (only used
+  // when `config.retryQueue` is set).
+  private queueDrainTimers = new Set<ReturnType<typeof setTimeout>>();
+  // Monotonic counter for durable RetryRecord ids.
+  private retrySeq = 0;
 
   constructor(watcher: Watcher, config: WebhookConfig, dlq?: DeadLetterStore) {
     this.watcher = watcher;
@@ -187,32 +196,29 @@ export class WebhookDelivery {
       this.dlq.recordFailure(url);
 
       if (attempt < this.config.retries) {
-        // Enforce the retry cap — evict the newest pending retry when at limit.
-        if (this.retryTimers.size >= this.config.maxConcurrentRetries) {
-          // Evict the newest (last-inserted) retry — it has waited the least, so dropping it wastes the least elapsed time.
-          const newestTimer = [...this.retryTimers.keys()].at(-1)!;
-          const newest = this.retryTimers.get(newestTimer)!;
-          clearTimeout(newestTimer);
-          this.retryTimers.delete(newestTimer);
-          this.config.metrics?.recordTerminal(newest.url, "dropped");
-          this.dlq.add(newest.url, newest.event, "retry_cap_exceeded", 0);
-          this.watcher.emit("webhook.dropped", {
-            ...newest.event,
-            raw: {
-              reason: "retry_cap_exceeded",
-              url: newest.url,
-              maxConcurrentRetries: this.config.maxConcurrentRetries,
-              originalEvent: newest.event,
-            } satisfies WebhookDroppedRaw,
-          } as unknown as NormalizedEvent);
-        }
+        if (this.config.retryQueue) {
+          // Durable path: persist the pending retry to the queue so it survives a
+          // process restart. A drain timer fires the redelivery at its due time.
+          await this.persistRetry(this.config.retryQueue, event, url, attempt + 1, errorMessage);
+        } else {
+          // In-process path: enforce the retry cap by evicting the newest pending
+          // retry when at limit.
+          if (this.retryTimers.size >= this.config.maxConcurrentRetries) {
+            // Evict the newest (last-inserted) retry — it has waited the least, so dropping it wastes the least elapsed time.
+            const newestTimer = [...this.retryTimers.keys()].at(-1)!;
+            const newest = this.retryTimers.get(newestTimer)!;
+            clearTimeout(newestTimer);
+            this.retryTimers.delete(newestTimer);
+            this.emitDropped(newest.event, newest.url);
+          }
 
-        const delay = this.config.backoff(attempt, this.config.random);
-        const retryTimer = setTimeout(() => {
-          this.retryTimers.delete(retryTimer);
-          void this.deliverToUrl(event, url, attempt + 1);
-        }, delay);
-        this.retryTimers.set(retryTimer, { event, url });
+          const delay = this.config.backoff(attempt, this.config.random);
+          const retryTimer = setTimeout(() => {
+            this.retryTimers.delete(retryTimer);
+            void this.deliverToUrl(event, url, attempt + 1);
+          }, delay);
+          this.retryTimers.set(retryTimer, { event, url });
+        }
       } else {
         this.emitFailure(event, url, errorMessage, attempt);
       }
@@ -262,6 +268,84 @@ export class WebhookDelivery {
       clearTimeout(timer);
     }
     this.retryTimers.clear();
+    for (const timer of this.queueDrainTimers) {
+      clearTimeout(timer);
+    }
+    this.queueDrainTimers.clear();
+  }
+
+  /** Emits `webhook.dropped` and dead-letters an event shed by the retry cap. */
+  private emitDropped(event: NormalizedEvent, url: string): void {
+    this.config.metrics?.recordTerminal(url, "dropped");
+    this.dlq.add(url, event, "retry_cap_exceeded", 0);
+    this.watcher.emit("webhook.dropped", {
+      ...event,
+      raw: {
+        reason: "retry_cap_exceeded",
+        url,
+        maxConcurrentRetries: this.config.maxConcurrentRetries,
+        originalEvent: event,
+      } satisfies WebhookDroppedRaw,
+    } as unknown as NormalizedEvent);
+  }
+
+  /**
+   * Persists a pending retry to the durable queue and schedules a drain at its
+   * due time. The retry cap is enforced against the queue's `size()`, shedding
+   * the newest (furthest-future) record via `evictNewest()` when at the limit.
+   */
+  private async persistRetry(
+    queue: RetryQueue,
+    event: NormalizedEvent,
+    url: string,
+    attempt: number,
+    lastError: string,
+  ): Promise<void> {
+    if ((await queue.size()) >= this.config.maxConcurrentRetries) {
+      const evicted = await queue.evictNewest();
+      if (evicted) {
+        this.emitDropped(evicted.event as NormalizedEvent, evicted.url);
+      }
+    }
+
+    const delay = this.config.backoff(attempt - 1, this.config.random);
+    const record: RetryRecord<NormalizedEvent> = {
+      id: `retry-${Date.now()}-${this.retrySeq++}`,
+      event,
+      url,
+      attempt,
+      nextRetryAt: Date.now() + delay,
+      lastError,
+      createdAt: Date.now(),
+    };
+    await queue.enqueue(record);
+
+    // Auto-drive the redelivery without requiring an external scheduler.
+    const timer = setTimeout(() => {
+      this.queueDrainTimers.delete(timer);
+      void this.drainDueRetries();
+    }, delay);
+    this.queueDrainTimers.add(timer);
+  }
+
+  /**
+   * Drains all currently-due records from the configured retry queue, redelivering
+   * each and acknowledging it. A redelivery that fails again re-persists itself
+   * (with the next backoff) via {@link deliverToUrl}, so this loop terminates once
+   * no record is due. Safe to call from a scheduler or on process startup to
+   * resume retries persisted before a restart.
+   */
+  async drainDueRetries(nowMs: number = Date.now()): Promise<void> {
+    const queue = this.config.retryQueue;
+    if (!queue) return;
+
+    for (;;) {
+      if (this.watcher.stopped) return;
+      const record = await queue.dequeue(nowMs);
+      if (!record) return;
+      await this.deliverToUrl(record.event as NormalizedEvent, record.url, record.attempt);
+      await queue.ack(record.id);
+    }
   }
 
   private getErrorMessage(err: unknown): string {
