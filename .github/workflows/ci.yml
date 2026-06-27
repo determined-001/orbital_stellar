@@ -99,7 +99,7 @@ jobs:
       - name: Build pulse-notify
         run: pnpm tsc -p packages/pulse-notify/tsconfig.json
       - name: Check bundle size
-        run: pnpm --filter @orbital/pulse-notify size
+        run: pnpm --filter @orbital-stellar/pulse-notify size
 
   typecheck-web:
     needs: changes

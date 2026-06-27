@@ -31,7 +31,7 @@ export class UrlValidator {
       }
 
       return null;
-    } catch (e) {
+    } catch {
       return "Invalid URL format";
     }
   }

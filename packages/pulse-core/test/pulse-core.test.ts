@@ -2183,65 +2183,66 @@ describe("pulse-core EventEngine", () => {
             break;
           }
           case "account.options_changed": {
-            const raw: RawHorizonSetOptions | undefined = event.raw;
+            const _raw: RawHorizonSetOptions | undefined = event.raw;
             break;
           }
           case "account.created": {
-            const raw: RawHorizonCreateAccount | undefined = event.raw;
+            const _raw: RawHorizonCreateAccount | undefined = event.raw;
             break;
           }
           case "trustline.added":
           case "trustline.removed":
           case "trustline.updated": {
-            const raw: RawHorizonChangeTrust | undefined = event.raw;
+            const _raw: RawHorizonChangeTrust | undefined = event.raw;
             break;
           }
           case "account.merged": {
-            const raw: RawHorizonAccountMerge | undefined = event.raw;
+            const _raw: RawHorizonAccountMerge | undefined = event.raw;
             break;
           }
           case "offer.created":
           case "offer.updated":
           case "offer.deleted": {
-            const raw: RawHorizonManageSellOffer | RawHorizonManageBuyOffer | undefined = event.raw;
+            const _raw: RawHorizonManageSellOffer | RawHorizonManageBuyOffer | undefined =
+              event.raw;
             break;
           }
           case "account.bump_sequence": {
-            const raw: RawHorizonBumpSequence | undefined = event.raw;
+            const _raw: RawHorizonBumpSequence | undefined = event.raw;
             break;
           }
           case "data.set":
           case "data.cleared": {
-            const raw: RawHorizonManageData | undefined = event.raw;
+            const _raw: RawHorizonManageData | undefined = event.raw;
             break;
           }
           case "claimable.created": {
-            const raw: RawHorizonCreateClaimableBalance | undefined = event.raw;
+            const _raw: RawHorizonCreateClaimableBalance | undefined = event.raw;
             break;
           }
           case "claimable.claimed": {
-            const raw: RawHorizonClaimClaimableBalance | undefined = event.raw;
+            const _raw: RawHorizonClaimClaimableBalance | undefined = event.raw;
             break;
           }
           case "lp.deposited": {
-            const raw: RawHorizonLiquidityPoolDeposit | undefined = event.raw;
+            const _raw: RawHorizonLiquidityPoolDeposit | undefined = event.raw;
             break;
           }
           case "lp.withdrawn": {
-            const raw: RawHorizonLiquidityPoolWithdraw | undefined = event.raw;
+            const _raw: RawHorizonLiquidityPoolWithdraw | undefined = event.raw;
             break;
           }
           case "trustline.authorized":
           case "trustline.deauthorized": {
-            const raw: RawHorizonAllowTrust | RawHorizonSetTrustLineFlags | undefined = event.raw;
+            const _raw: RawHorizonAllowTrust | RawHorizonSetTrustLineFlags | undefined = event.raw;
             break;
           }
           case "contract.emitted": {
-            const raw = event.raw;
+            const _raw = event.raw;
             break;
           }
           case "contract.invoked": {
-            const raw = event.raw;
+            const _raw = event.raw;
             break;
           }
           default: {

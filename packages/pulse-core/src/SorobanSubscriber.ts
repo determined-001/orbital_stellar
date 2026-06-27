@@ -168,6 +168,8 @@ export class SorobanSubscriber extends EventEmitter {
       throw new RangeError(`pageLimit must be between 1 and 10,000 (received ${pageLimit})`);
     }
 
+    super();
+
     this.rpc = options.rpc;
     this.cursorStore = options.cursorStore;
     this.onEvent = options.onEvent;
@@ -356,11 +358,15 @@ export class SorobanSubscriber extends EventEmitter {
     } catch (err) {
       // An aborted request is expected during shutdown — swallow it silently.
       if (this.isAbortError(err)) return;
+
+      let handledError: unknown = err;
+
       // Route classified RPC errors to the retry/terminal handlers when present.
-      if (err instanceof SorobanRpcError) {
+      if (handledError instanceof SorobanRpcError) {
         if (
-          err.code === "invalid_request" &&
-          (err.message.includes("startCursor") || err.message.includes("oldest ledger"))
+          handledError.code === "invalid_request" &&
+          (handledError.message.includes("startCursor") ||
+            handledError.message.includes("oldest ledger"))
         ) {
           const lostCursor = currentCursor || "unknown";
           this.emit("engine.cursor_expired", { source: "soroban", lostCursor });
@@ -385,18 +391,25 @@ export class SorobanSubscriber extends EventEmitter {
             // fallback fetch failed; continue with the original cursor-expired error
           }
         }
-        if ((err as SorobanRpcError).retryable) {
-          if (this.onRetryableError) {
-            this.onRetryableError(err as SorobanRpcError);
-            this.scheduleRetry();
+
+        if (handledError instanceof SorobanRpcError) {
+          if (handledError.retryable) {
+            if (this.onRetryableError) {
+              this.onRetryableError(handledError);
+              this.scheduleRetry();
+              return;
+            }
+          } else if (this.onTerminalError) {
+            this.onTerminalError(handledError);
             return;
           }
         } else if (this.onTerminalError) {
-          this.onTerminalError(err);
+          this.onTerminalError(handledError);
           return;
         }
       }
-      throw err;
+
+      throw handledError;
     }
 
     const allEventsMap = new Map<string, SorobanEvent>();
