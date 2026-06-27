@@ -384,8 +384,7 @@ export type NormalizedEvent = (
   | LiquidityPoolDepositEvent
   | LiquidityPoolWithdrawEvent
   | TrustAuthEvent
-  | ContractInvokedEvent
-  | ContractEmittedEvent
+  | ContractEvent
 ) & {
   /** Lazy, cached `Date` derived from `event.timestamp`. Non-enumerable; does not appear in JSON.stringify output. */
   readonly timestampDate: Date;
@@ -557,6 +556,7 @@ export type ContractEmittedEvent = {
   raw?: RawSorobanEvent;
 };
 
+/** Discriminated union of every normalized Soroban contract event. */
 export type ContractEvent = ContractInvokedEvent | ContractEmittedEvent;
 
 export type DecodeFailedNotification = {
