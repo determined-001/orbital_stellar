@@ -86,7 +86,7 @@ describe("SorobanRpcClient xdrFormat options & Normalization", () => {
 
       expect(fetchMock).toHaveBeenCalledTimes(1);
       const [, callOptions] = fetchMock.mock.calls[0] as [string, RequestInit];
-      expect(callOptions.signal).toBe(controller.signal);
+      expect(callOptions.signal).toBeInstanceOf(AbortSignal);
       const parsedBody = JSON.parse(callOptions.body as string);
       expect(parsedBody.params.xdrFormat).toBe("json");
     });

@@ -3,7 +3,20 @@ import type { StellarAmount } from "./amount.js";
 import type { AccountAddress, MuxedAddress, ContractAddress } from "./address.js";
 
 export { SorobanRpcClient } from "./SorobanRpcClient.js";
-export type { SorobanRpcClientOptions } from "./SorobanRpcClient.js";
+export type {
+  JsonRpcFailure,
+  JsonRpcResponse,
+  JsonRpcSuccess,
+  SorobanEventFilter,
+  SorobanEventXdrFormat,
+  SorobanGetEventsParams,
+  SorobanGetEventsResult,
+  SorobanLatestLedgerResult,
+  SorobanNetworkInfo,
+  SorobanRpcCallOptions,
+  SorobanRpcClientOptions,
+  SorobanRpcEvent,
+} from "./SorobanRpcClient.js";
 export { EventEngine } from "./EventEngine.js";
 export { SorobanSubscriber } from "./SorobanSubscriber.js";
 export type {
