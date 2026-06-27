@@ -5,6 +5,7 @@ import type {
   WatcherNotification,
 } from "@orbital-stellar/pulse-core";
 import { createHmac, timingSafeEqual } from "crypto";
+import { isIP } from "net";
 
 import { DeadLetterStore } from "./MemoryDeadLetterStore.js";
 import { exponentialJittered } from "./backoff.js";
@@ -136,6 +137,12 @@ export class WebhookDelivery {
   private async deliverToUrl(event: NormalizedEvent, url: string, attempt = 1): Promise<void> {
     if (this.watcher.stopped) return;
 
+    const builtInValidationError = this.validateUrl(url);
+    if (builtInValidationError) {
+      this.emitFailure(event, url, builtInValidationError, attempt);
+      return;
+    }
+
     let customValidationError: string | null = null;
     try {
       customValidationError = this.config.urlValidator ? await this.config.urlValidator(url) : null;
@@ -234,6 +241,56 @@ export class WebhookDelivery {
       clearTimeout(abortTimer);
       span?.end();
     }
+  }
+
+  private validateUrl(url: string): string | null {
+    let parsedUrl: URL;
+    try {
+      parsedUrl = new URL(url);
+    } catch {
+      return "Invalid webhook URL";
+    }
+
+    const hostname = this.normalizeHostname(parsedUrl.hostname);
+    if (hostname === "localhost") {
+      return "Webhook URL points to a blocked private address";
+    }
+
+    const ipVersion = isIP(hostname);
+    if (ipVersion === 4 && this.isBlockedIpv4(hostname)) {
+      return "Webhook URL points to a blocked private address";
+    }
+
+    if (ipVersion === 6 && this.isBlockedIpv6(hostname)) {
+      return "Webhook URL points to a blocked private address";
+    }
+
+    return null;
+  }
+
+  private normalizeHostname(hostname: string): string {
+    return hostname.replace(/^\[/, "").replace(/\]$/, "").toLowerCase();
+  }
+
+  private isBlockedIpv4(hostname: string): boolean {
+    const [a = -1, b = -1] = hostname.split(".").map((segment) => Number(segment));
+
+    return (
+      a === 10 ||
+      a === 127 ||
+      (a === 172 && b >= 16 && b <= 31) ||
+      (a === 192 && b === 168) ||
+      (a === 169 && b === 254)
+    );
+  }
+
+  private isBlockedIpv6(hostname: string): boolean {
+    if (hostname === "::1") return true;
+    if (/^::ffff:(\d{1,3}\.){3}\d{1,3}$/i.test(hostname)) {
+      return this.isBlockedIpv4(hostname.slice(hostname.lastIndexOf(":") + 1));
+    }
+
+    return /^fe[89ab][0-9a-f]:/i.test(hostname) || /^f[cd][0-9a-f]{2}:/i.test(hostname);
   }
 
   private extractTraceId(event: NormalizedEvent): string | undefined {
