@@ -207,6 +207,12 @@ export { StellarEventBoundary } from "./StellarEventBoundary.js";
 export { pulseNotifyVitePlugin } from "./vitePlugin.js";
 export type { PulseNotifyVitePlugin } from "./vitePlugin.js";
 
+export {
+  useContractState,
+  type ContractStateOptions,
+  type ContractStateResult,
+} from "./useContractState.js";
+
 export type UseHistoryOptions = {
   token?: string;
   /** Maximum number of events to retain in FIFO order. Defaults to 100. */
