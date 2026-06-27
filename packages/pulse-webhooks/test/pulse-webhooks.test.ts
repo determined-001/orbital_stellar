@@ -5,6 +5,7 @@ import { Watcher } from "@orbital-stellar/pulse-core";
 import type { WebhookMetrics } from "../src/index.js";
 import {
   DeadLetterStore,
+  MemoryRetryQueue,
   verifyWebhook,
   verifyWebhookRaw,
   verifyWebhookEdge,
@@ -174,6 +175,40 @@ describe("pulse-webhooks WebhookDelivery", () => {
       "https://prod.example.com/webhooks/stellar",
       "failure",
     );
+  });
+
+  it("persists retryable failures through a configured retry queue and drains them", async () => {
+    vi.setSystemTime(new Date("2026-04-27T00:00:00.000Z"));
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: false, status: 500 })
+      .mockResolvedValue({ ok: true, status: 200 });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const queue = new MemoryRetryQueue();
+    const watcher = new Watcher("GABC");
+    const delivery = new WebhookDelivery(watcher, {
+      url: "https://prod.example.com/webhooks/stellar",
+      secret: "top-secret",
+      retries: 3,
+      random: () => 0,
+      retryQueue: queue,
+    });
+
+    watcher.emit("*", deliveryEvent);
+    await flushAsyncWork();
+    await flushAsyncWork();
+
+    // The failed attempt is persisted to the durable queue (not just an in-process
+    // timer), so a process restart could resume it.
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(await queue.size()).toBe(1);
+
+    // Draining redelivers the persisted retry and acknowledges it on success.
+    await delivery.drainDueRetries(Date.now() + 3_600_000);
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(await queue.size()).toBe(0);
   });
 
   it("rejects URL when custom urlValidator blocks an otherwise allowed URL without retrying", async () => {
