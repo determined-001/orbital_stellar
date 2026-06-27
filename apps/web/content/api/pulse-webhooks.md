@@ -46,6 +46,7 @@ new WebhookDelivery(watcher, {
 | `retries` | `number` | `3` | Retry attempts before emitting `webhook.failed` |
 | `deliveryTimeoutMs` | `number` | `10_000` | Per-attempt abort threshold |
 | `allowPrivateNetworks` | `boolean` | `false` | Bypass SSRF checks (development only) |
+| `urlValidator` | `(url) => Promise<string \| null>` | — | Optional custom validator run after built-in URL checks |
 
 When `url` is an array, each endpoint is delivered in parallel and retried independently.
 

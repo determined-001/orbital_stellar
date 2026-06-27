@@ -176,6 +176,39 @@ describe("pulse-webhooks WebhookDelivery", () => {
     );
   });
 
+  it("rejects private URLs before running the custom urlValidator", async () => {
+    const blockedUrl = "https://127.0.0.1/webhooks/stellar";
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200 });
+    const urlValidator = vi.fn().mockResolvedValue(null);
+    vi.stubGlobal("fetch", fetchMock);
+
+    const watcher = new Watcher("GABC");
+    const failedHandler = vi.fn();
+    watcher.on("webhook.failed", failedHandler);
+
+    new WebhookDelivery(watcher, {
+      url: blockedUrl,
+      secret: "top-secret",
+      urlValidator,
+    });
+
+    watcher.emit("*", deliveryEvent);
+    await flushAsyncWork();
+
+    expect(urlValidator).not.toHaveBeenCalled();
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(failedHandler).toHaveBeenCalledTimes(1);
+    expect(failedHandler).toHaveBeenCalledWith(
+      expect.objectContaining({
+        raw: expect.objectContaining({
+          url: blockedUrl,
+          error: "Webhook URL points to a blocked private address",
+          attempts: 1,
+        }),
+      }),
+    );
+  });
+
   it("rejects URL when custom urlValidator blocks an otherwise allowed URL without retrying", async () => {
     const allowedUrl = "https://prod.example.com/webhooks/stellar";
     const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200 });

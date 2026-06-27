@@ -36,7 +36,7 @@ export type WebhookConfig = {
   backoff?: import("./backoff.js").BackoffStrategy;
   /** Optional OpenTelemetry-compatible tracer. When provided, one span is emitted per delivery attempt. */
   tracer?: Tracer;
-  /** Optional custom URL validator for additional block-lists. Return an error message to reject, or null to allow. */
+  /** Optional custom URL validator for additional block-lists. Runs after built-in URL checks. Return an error message to reject, or null to allow. */
   urlValidator?: (url: string) => Promise<string | null>;
   /** Optional metrics recorder for per-URL delivery observability. */
   metrics?: WebhookMetrics;
