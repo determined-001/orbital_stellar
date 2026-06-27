@@ -286,6 +286,10 @@ export function verifyWebhook(
   timestamp: string,
   options: VerifyWebhookOptions = {},
 ): NormalizedEvent | null {
+  // Enforce maximum body size before any cryptographic work.
+  const maxBodyBytes = options.maxBodyBytes ?? 100_000;
+  if (Buffer.byteLength(payload, "utf8") > maxBodyBytes) return null;
+
   if (!verifyWebhookRaw(payload, signature, secret, timestamp, options)) return null;
   try {
     const evt = JSON.parse(payload) as NormalizedEvent;

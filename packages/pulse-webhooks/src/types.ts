@@ -60,4 +60,6 @@ export type VerifyWebhookOptions = {
    *  will run this after signature verification and return `null` if it returns `false`.
    */
   schema?: (event: import("@orbital-stellar/pulse-core").NormalizedEvent) => boolean;
+  /** Maximum payload size in bytes. Defaults to 100_000 (≈100 KB). */
+  maxBodyBytes?: number;
 };

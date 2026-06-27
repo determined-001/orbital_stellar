@@ -20,6 +20,11 @@ export async function verifyWebhookEdge(
   timestamp: string,
   options: VerifyWebhookOptions = {},
 ): Promise<NormalizedEvent | null> {
+  // Enforce maximum body size before any cryptographic work.
+  const maxBodyBytes = options.maxBodyBytes ?? 100_000;
+  // Measure payload size in bytes.
+  const payloadBytes = new TextEncoder().encode(payload).length;
+  if (payloadBytes > maxBodyBytes) return null;
   if (!(await verifyWebhookEdgeRaw(payload, signature, secret, timestamp, options))) {
     return null;
   }
