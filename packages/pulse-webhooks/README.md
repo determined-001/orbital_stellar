@@ -129,6 +129,7 @@ Attaches a delivery driver to a `Watcher`. Every event the watcher emits is deli
 | `config.deliveryTimeoutMs`    | `number`             | `10_000` | Abort threshold for each HTTP attempt                                                 |
 | `config.allowPrivateNetworks` | `boolean`            | `false`  | If true, bypass SSRF checks for local/private IP ranges                               |
 | `config.random`               | `() => number`       | `random` | Optional RNG for testing jitter. Defaults to `Math.random`.                           |
+| `config.urlValidator`         | `(url) => Promise<string \| null>` | — | Optional custom validator run after built-in URL checks; return an error message to reject |
 
 ### `verifyWebhook(payload, signature, secret, timestamp, options?)` → `NormalizedEvent | null`
 
