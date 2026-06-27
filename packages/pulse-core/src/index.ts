@@ -454,6 +454,14 @@ export interface AbiRegistryClientLike {
 }
 
 export type SorobanConfig = {
+  /** Soroban RPC endpoint used for live contract-event polling. */
+  rpcUrl: string;
+  /** Optional headers forwarded to the Soroban RPC endpoint. */
+  rpcHeaders?: Record<string, string>;
+  /** Interval between Soroban polls in milliseconds. Defaults to 2,000. */
+  pollIntervalMs?: number;
+  /** Number of ledgers to look back from the latest ledger on the first poll. Defaults to 0. */
+  startLedgerLookback?: number;
   /**
    * Pagination limit for each Soroban RPC `getEvents` call.
    * Must be an integer from 1 through 10,000. Defaults to 100.

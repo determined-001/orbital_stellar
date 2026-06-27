@@ -1,4 +1,9 @@
 import type { ContractSubscriptionFilter, ContractAddress } from "./index.js";
+import type {
+  SorobanGetEventsParams,
+  SorobanGetEventsResult,
+  SorobanRpcCallOptions,
+} from "./SorobanRpcClient.js";
 import { SorobanRpcError } from "./errors.js";
 import { EventEmitter } from "events";
 
@@ -34,6 +39,12 @@ export interface SorobanEvent {
   contractId?: string;
   type?: string;
   decodedData?: unknown;
+  ledger?: number;
+  ledgerClosedAt?: string;
+  txHash?: string;
+  inSuccessfulContractCall?: boolean;
+  function?: string;
+  args?: unknown[];
 }
 
 /** Minimal interface for a Soroban RPC client. */
@@ -45,6 +56,7 @@ export interface SorobanRpc {
     filters?: ContractSubscriptionFilter[],
     options?: { xdrFormat?: "base64" | "json"; signal?: AbortSignal } | AbortSignal,
   ): Promise<{ events: SorobanEvent[]; [key: string]: any }>;
+  getLatestLedger?(options?: SorobanRpcCallOptions): Promise<number>;
 }
 
 /** Alias for {@link SorobanRpc}; the name used by EventEngine's replay API. */
@@ -93,6 +105,10 @@ export interface SorobanSubscriberOptions {
   dedupCacheSize?: number;
   /** Interval for the self-driving {@link SorobanSubscriber.start} poll loop. Defaults to 2000ms. */
   pollIntervalMs?: number;
+  /** Explicit ledger for the first poll. Primarily used by bounded replay. */
+  startLedger?: number;
+  /** Ledgers subtracted from `getLatestLedger()` for the first live poll. Defaults to 0. */
+  startLedgerLookback?: number;
   /** Delay before retrying after a retryable RPC error. Defaults to 1000ms. */
   retryDelayMs?: number;
   /** Injectable timer scheduler (for testing). Defaults to `globalThis.setTimeout`. */
@@ -171,6 +187,8 @@ export class SorobanSubscriber extends EventEmitter {
   private _isRunning = false;
   private pollTimer: ReturnType<typeof setInterval> | null = null;
   private readonly pollIntervalMs: number;
+  private startLedger: number | undefined;
+  private readonly startLedgerLookback: number;
   /** ISO timestamp of the most recently delivered event, or null. */
   lastEventAt: string | null = null;
 
@@ -185,6 +203,24 @@ export class SorobanSubscriber extends EventEmitter {
   constructor(options: SorobanSubscriberOptions) {
     super();
     const pageLimit = resolveSorobanPageLimit(options.pageLimit ?? options.pageSize);
+    const pollIntervalMs = options.pollIntervalMs ?? 2000;
+    if (!Number.isFinite(pollIntervalMs) || pollIntervalMs <= 0) {
+      throw new RangeError(`pollIntervalMs must be greater than 0 (received ${pollIntervalMs})`);
+    }
+    const startLedgerLookback = options.startLedgerLookback ?? 0;
+    if (!Number.isInteger(startLedgerLookback) || startLedgerLookback < 0) {
+      throw new RangeError(
+        `startLedgerLookback must be a non-negative integer (received ${startLedgerLookback})`,
+      );
+    }
+    if (
+      options.startLedger !== undefined &&
+      (!Number.isInteger(options.startLedger) || options.startLedger < 0)
+    ) {
+      throw new RangeError(
+        `startLedger must be a non-negative integer (received ${options.startLedger})`,
+      );
+    }
 
     this.rpc = options.rpc;
     this.cursorStore = options.cursorStore;
@@ -194,7 +230,9 @@ export class SorobanSubscriber extends EventEmitter {
     this.dedupCacheSize = options.dedupCacheSize ?? DEFAULT_DEDUP_CACHE_SIZE;
     this.endLedger = options.endLedger;
     this.onDone = options.onDone;
-    this.pollIntervalMs = options.pollIntervalMs ?? 2000;
+    this.pollIntervalMs = pollIntervalMs;
+    this.startLedger = options.startLedger;
+    this.startLedgerLookback = startLedgerLookback;
     this.retryDelayMs = options.retryDelayMs ?? 1000;
     this.setTimeoutFn = options.setTimeoutFn ?? globalThis.setTimeout;
     this.clearTimeoutFn = options.clearTimeoutFn ?? globalThis.clearTimeout;
@@ -218,6 +256,7 @@ export class SorobanSubscriber extends EventEmitter {
    */
   start(): void {
     if (this._isRunning) return;
+    this.isStopped = false;
     this._isRunning = true;
     const tick = () => {
       this.inflightPoll = (this.inflightPoll ?? Promise.resolve()).then(() => this.pollOnce());
@@ -355,21 +394,18 @@ export class SorobanSubscriber extends EventEmitter {
       ? this.replayCursor
       : await this.cursorStore.getCursor();
 
-    const promises = rpcCalls.map((filters) =>
-      this.rpc.getEvents(
-        currentCursor,
-        this.pageLimit,
-        signal,
-        filters.length > 0 ? filters : undefined,
-        {
-          xdrFormat: this.xdrFormat,
-          signal,
-        },
-      ),
-    );
-
-    let results: { events: SorobanEvent[]; latestLedger?: number }[];
+    let results: { events: SorobanEvent[]; latestLedger?: number; cursor?: string }[];
     try {
+      if (
+        currentCursor === undefined &&
+        this.startLedger === undefined &&
+        this.rpc.getLatestLedger !== undefined
+      ) {
+        const latestLedger = await this.rpc.getLatestLedger({ signal });
+        this.startLedger = Math.max(0, latestLedger - this.startLedgerLookback);
+      }
+
+      const promises = rpcCalls.map((filters) => this.fetchEvents(currentCursor, filters, signal));
       results = await Promise.all(promises);
     } catch (err) {
       // An aborted request is expected during shutdown — swallow it silently.
@@ -467,12 +503,16 @@ export class SorobanSubscriber extends EventEmitter {
         await this.dispatch(event);
         this.lastEventAt = new Date().toISOString();
         this.recordSeen(event.id);
+      }
 
+      const responseCursor = results.find((result) => result.cursor !== undefined)?.cursor;
+      const fallbackCursor = uniqueEvents[uniqueEvents.length - 1]?.pagingToken;
+      const nextCursor = responseCursor ?? fallbackCursor;
+      if (nextCursor !== undefined) {
         if (this.isReplayMode) {
-          // Replay progress is ephemeral and must never touch the durable store.
-          this.replayCursor = event.pagingToken;
+          this.replayCursor = nextCursor;
         } else {
-          await this.cursorStore.saveCursor(event.pagingToken);
+          await this.cursorStore.saveCursor(nextCursor);
         }
       }
     } finally {
@@ -488,7 +528,13 @@ export class SorobanSubscriber extends EventEmitter {
    *   filters match the event, falling back to the constructor `onEvent`.
    */
   private async dispatch(event: SorobanEvent): Promise<void> {
-    const eventToEmit = { ...event };
+    const normalizedType =
+      event.type === "contract"
+        ? "contract.emitted"
+        : event.type === "system" || event.type === "diagnostic"
+          ? "contract.invoked"
+          : event.type;
+    const eventToEmit = { ...event, type: normalizedType };
     if (this.xdrFormat === "json") {
       eventToEmit.decodedData = event.value;
     }
@@ -504,6 +550,50 @@ export class SorobanSubscriber extends EventEmitter {
         if (handler) await handler(eventToEmit);
       }
     }
+  }
+
+  /** Fetch one page using modern start-ledger/cursor pagination when supported. */
+  private async fetchEvents(
+    currentCursor: string | undefined,
+    filters: ContractSubscriptionFilter[],
+    signal: AbortSignal,
+  ): Promise<{ events: SorobanEvent[]; latestLedger?: number; cursor?: string }> {
+    if (this.rpc.getLatestLedger !== undefined) {
+      const pagination: NonNullable<SorobanGetEventsParams["pagination"]> = {
+        limit: this.pageLimit,
+      };
+      const params: SorobanGetEventsParams = {
+        ...(filters.length > 0 ? { filters } : {}),
+        pagination,
+        xdrFormat: this.xdrFormat,
+      };
+
+      if (currentCursor !== undefined) {
+        pagination.cursor = currentCursor;
+      } else if (this.startLedger !== undefined) {
+        params.startLedger = this.startLedger;
+      }
+
+      const rpc = this.rpc as unknown as {
+        getEvents(
+          params: SorobanGetEventsParams,
+          options?: SorobanRpcCallOptions,
+        ): Promise<SorobanGetEventsResult>;
+      };
+      return (await rpc.getEvents(params, { signal })) as {
+        events: SorobanEvent[];
+        latestLedger?: number;
+        cursor?: string;
+      };
+    }
+
+    return this.rpc.getEvents(
+      currentCursor,
+      this.pageLimit,
+      signal,
+      filters.length > 0 ? filters : undefined,
+      { xdrFormat: this.xdrFormat, signal },
+    );
   }
 
   /** True when any of the subscription's filters matches the event. */

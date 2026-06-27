@@ -54,6 +54,10 @@ export type SorobanGetEventsParams = {
   startCursor?: string;
   filters?: SorobanEventFilter[] | ContractSubscriptionFilter[];
   limit?: number;
+  pagination?: {
+    cursor?: string;
+    limit?: number;
+  };
   xdrFormat?: SorobanEventXdrFormat;
 };
 
