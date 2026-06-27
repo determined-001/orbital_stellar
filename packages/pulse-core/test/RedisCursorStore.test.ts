@@ -53,13 +53,13 @@ describe("RedisCursorStore", () => {
   describe("get", () => {
     it("delegates to redis.get and returns the stored value", async () => {
       const { redis, getCalls } = makeMockRedis();
-      redis.set("stream-1", "cursor-abc");
+      await redis.set("orbital:cursor:stream-1", "cursor-abc");
       const store = new RedisCursorStore(redis);
 
       const result = await store.get("stream-1");
 
       expect(result).toBe("cursor-abc");
-      expect(getCalls).toContain("stream-1");
+      expect(getCalls).toContain("orbital:cursor:stream-1");
     });
 
     it("returns null for a key that has no stored cursor", async () => {
@@ -79,7 +79,7 @@ describe("RedisCursorStore", () => {
 
       await store.set("stream-1", "cursor-xyz");
 
-      expect(setCalls).toContainEqual({ key: "stream-1", value: "cursor-xyz" });
+      expect(setCalls).toContainEqual({ key: "orbital:cursor:stream-1", value: "cursor-xyz" });
       expect(await store.get("stream-1")).toBe("cursor-xyz");
     });
   });
@@ -102,13 +102,17 @@ describe("RedisCursorStore", () => {
       await store.getMany(["key-a", "key-b", "key-c"]);
 
       expect(mgetCalls).toHaveLength(1);
-      expect(mgetCalls[0]).toEqual(["key-a", "key-b", "key-c"]);
+      expect(mgetCalls[0]).toEqual([
+        "orbital:cursor:key-a",
+        "orbital:cursor:key-b",
+        "orbital:cursor:key-c",
+      ]);
     });
 
     it("maps positional results back to keys correctly", async () => {
       const { redis } = makeMockRedis();
-      await redis.set("key-a", "cursor-1");
-      await redis.set("key-b", "cursor-2");
+      await redis.set("orbital:cursor:key-a", "cursor-1");
+      await redis.set("orbital:cursor:key-b", "cursor-2");
       const store = new RedisCursorStore(redis);
 
       const result = await store.getMany(["key-a", "key-b"]);
@@ -127,7 +131,7 @@ describe("RedisCursorStore", () => {
 
     it("handles a mix of present and missing keys", async () => {
       const { redis } = makeMockRedis();
-      await redis.set("exists", "val");
+      await redis.set("orbital:cursor:exists", "val");
       const store = new RedisCursorStore(redis);
 
       const result = await store.getMany(["exists", "missing"]);
@@ -169,7 +173,12 @@ describe("RedisCursorStore", () => {
 
       expect(msetCalls).toHaveLength(1);
       // Flat interleaved: [k1, v1, k2, v2]
-      expect(msetCalls[0]).toEqual(["key-a", "val-1", "key-b", "val-2"]);
+      expect(msetCalls[0]).toEqual([
+        "orbital:cursor:key-a",
+        "val-1",
+        "orbital:cursor:key-b",
+        "val-2",
+      ]);
     });
 
     it("persists values so they are retrievable via getMany", async () => {
