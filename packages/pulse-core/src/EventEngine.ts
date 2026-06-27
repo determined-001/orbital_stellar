@@ -578,19 +578,37 @@ export class EventEngine {
 
   async healthCheck(thresholdMs = 5 * 60 * 1000): Promise<HealthCheckResult> {
     const reasons: string[] = [];
+
     if (!this.isRunning) {
-      reasons.push("engine is not running");
+      reasons.push("horizon source is not running");
     }
     if (this.lastEventAt === null) {
-      reasons.push("no events received yet");
+      reasons.push("horizon source: no events received yet");
     } else {
       const age = Date.now() - new Date(this.lastEventAt).getTime();
       if (age > thresholdMs) {
         reasons.push(
-          `last event was ${Math.floor(age / 1000)}s ago (threshold ${Math.floor(thresholdMs / 1000)}s)`,
+          `horizon source: last event was ${Math.floor(age / 1000)}s ago (threshold ${Math.floor(thresholdMs / 1000)}s)`,
         );
       }
     }
+
+    if (this.sorobanSubscriber) {
+      if (!this.sorobanSubscriber.isRunning) {
+        reasons.push("soroban subscriber is not running");
+      }
+      if (this.sorobanSubscriber.lastEventAt === null) {
+        reasons.push("soroban subscriber: no events received yet");
+      } else {
+        const age = Date.now() - new Date(this.sorobanSubscriber.lastEventAt).getTime();
+        if (age > thresholdMs) {
+          reasons.push(
+            `soroban subscriber: last event was ${Math.floor(age / 1000)}s ago (threshold ${Math.floor(thresholdMs / 1000)}s)`,
+          );
+        }
+      }
+    }
+
     if (this.cursorStore?.ping) {
       try {
         await this.cursorStore.ping();
