@@ -111,6 +111,17 @@ const MAX_PAGE_LIMIT = 10_000;
 const DEFAULT_PAGE_LIMIT = 100;
 const DEFAULT_DEDUP_CACHE_SIZE = 1024;
 
+/** @internal Resolve and validate the pagination limit used by Soroban polls. */
+export function resolveSorobanPageLimit(pageLimit?: number): number {
+  const resolved = pageLimit ?? DEFAULT_PAGE_LIMIT;
+  if (!Number.isInteger(resolved) || resolved < MIN_PAGE_LIMIT || resolved > MAX_PAGE_LIMIT) {
+    throw new RangeError(
+      `soroban.pageLimit must be an integer between 1 and 10,000 (received ${resolved})`,
+    );
+  }
+  return resolved;
+}
+
 export class SorobanSubscriber extends EventEmitter {
   private readonly rpc: SorobanRpc;
   private readonly cursorStore: CursorStore;
@@ -173,10 +184,7 @@ export class SorobanSubscriber extends EventEmitter {
 
   constructor(options: SorobanSubscriberOptions) {
     super();
-    const pageLimit = options.pageLimit ?? options.pageSize ?? DEFAULT_PAGE_LIMIT;
-    if (!Number.isFinite(pageLimit) || pageLimit < MIN_PAGE_LIMIT || pageLimit > MAX_PAGE_LIMIT) {
-      throw new RangeError(`pageLimit must be between 1 and 10,000 (received ${pageLimit})`);
-    }
+    const pageLimit = resolveSorobanPageLimit(options.pageLimit ?? options.pageSize);
 
     this.rpc = options.rpc;
     this.cursorStore = options.cursorStore;
@@ -376,7 +384,7 @@ export class SorobanSubscriber extends EventEmitter {
           this.emit("engine.cursor_expired", { source: "soroban", lostCursor });
 
           try {
-            const fallbackPage = await this.rpc.getEvents(undefined, 1, signal);
+            const fallbackPage = await this.rpc.getEvents(undefined, this.pageLimit, signal);
             const latestLedger = fallbackPage.latestLedger;
             if (latestLedger !== undefined) {
               console.warn(

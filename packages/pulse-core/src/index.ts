@@ -453,6 +453,14 @@ export interface AbiRegistryClientLike {
   getSpec(contractId: string): Promise<unknown>;
 }
 
+export type SorobanConfig = {
+  /**
+   * Pagination limit for each Soroban RPC `getEvents` call.
+   * Must be an integer from 1 through 10,000. Defaults to 100.
+   */
+  pageLimit?: number;
+};
+
 export type CoreConfig = {
   /** The Stellar network to connect to. */
   network: Network;
@@ -470,10 +478,7 @@ export type CoreConfig = {
   /** Optional ABI registry client used to enrich `contract.emitted` events with `decodedData`. */
   abiRegistry?: AbiRegistryClientLike;
   /** Soroban RPC configuration. */
-  soroban?: {
-    /** Pagination limit for RPC `getEvents` calls. Must be 1–10,000. Defaults to 100. */
-    pageLimit?: number;
-  };
+  soroban?: SorobanConfig;
 };
 
 // Error class for invalid network validation

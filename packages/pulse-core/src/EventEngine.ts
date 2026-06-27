@@ -1,7 +1,7 @@
 import { Horizon } from "@stellar/stellar-sdk";
 import { Watcher } from "./Watcher.js";
 import { EngineAlreadyStartedError, NetworkMismatchError } from "./errors.js";
-import { SorobanSubscriber } from "./SorobanSubscriber.js";
+import { resolveSorobanPageLimit, SorobanSubscriber } from "./SorobanSubscriber.js";
 import { SorobanRpcClient } from "./SorobanRpcClient.js";
 import type { SorobanRpcLike, SorobanEvent } from "./SorobanSubscriber.js";
 import { toAccountAddress, toContractAddress } from "./address.js";
@@ -176,6 +176,7 @@ export class EventEngine {
   private log: Logger;
   private cursorStore?: CursorStoreLike;
   private readonly network: Network;
+  private readonly sorobanPageLimit: number;
   private streamKey: string;
   private streamEpoch = 0;
   private cursorFailureThreshold: number;
@@ -205,6 +206,8 @@ export class EventEngine {
       };
     },
   ) {
+    this.sorobanPageLimit = resolveSorobanPageLimit(config.soroban?.pageLimit);
+
     let horizonUrl: string;
     if (config.horizonUrl !== undefined) {
       try {
@@ -526,7 +529,7 @@ export class EventEngine {
       onEvent: options.onEvent,
       endLedger: options.endLedger,
       onDone: options.onDone,
-      pageSize: options.pageSize,
+      pageLimit: options.pageSize ?? this.sorobanPageLimit,
     });
 
     return subscriber;
