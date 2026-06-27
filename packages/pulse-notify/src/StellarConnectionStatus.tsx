@@ -103,10 +103,9 @@ export function StellarConnectionStatus({
     [status],
   );
 
-  return createElement(
-    StellarEventBoundary,
-    { fallback: null },
-    createElement(
+  return createElement(StellarEventBoundary, {
+    fallback: null,
+    children: createElement(
       "span",
       {
         ...spanProps,
@@ -124,5 +123,5 @@ export function StellarConnectionStatus({
       }),
       createElement("span", { className: "stellar-connection-status__label" }, label),
     ),
-  );
+  });
 }
