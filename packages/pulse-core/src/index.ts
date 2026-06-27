@@ -16,6 +16,7 @@ export type {
 
 export { validateContractFilters } from "./contractFilters.js";
 export { Watcher } from "./Watcher.js";
+export { toStellarAmount, toBigInt } from "./amount.js";
 export type { StellarAmount } from "./amount.js";
 export type { AccountAddress, MuxedAddress, ContractAddress } from "./address.js";
 export { EngineAlreadyStartedError, HorizonStreamError } from "./errors.js";
