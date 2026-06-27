@@ -211,6 +211,14 @@ function amountToStroop(amount: string): bigint | null {
   }
 }
 
+export type PaymentState = {
+  event: PaymentEvent | null;
+  connected: boolean;
+  error: string | null;
+  lastEventAt: string | null;
+  amountStroop: bigint | null;
+};
+
 export function useStellarPayment(
   serverUrl: string,
   address: string,
@@ -220,7 +228,7 @@ export function useStellarPayment(
     withCredentials?: boolean;
     hideAfterMs?: number;
   },
-) {
+): PaymentState {
   const base = useStellarEvent(serverUrl, address, {
     event: "payment.received",
     initialEvent: (options?.initialEvent ?? undefined) as NormalizedEvent | undefined,

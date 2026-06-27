@@ -116,6 +116,12 @@ export class WebhookDelivery {
   // Monotonic counter for durable RetryRecord ids.
   private retrySeq = 0;
 
+  // Timers that fire a durable-queue drain at each record's due time (only used
+  // when `config.retryQueue` is set).
+  private queueDrainTimers = new Set<ReturnType<typeof setTimeout>>();
+
+  // Monotonic counter for durable RetryRecord ids.
+  private retrySeq = 0;
   constructor(watcher: Watcher, config: WebhookConfig, dlq?: DeadLetterStore) {
     this.watcher = watcher;
     this.dlq = dlq ?? new DeadLetterStore();
@@ -201,9 +207,12 @@ export class WebhookDelivery {
     const spanAttrs: Record<string, string | number | boolean> = {
       "webhook.url": url,
       "webhook.attempt": attempt,
+      url: url,
+      attempt: attempt,
     };
     if (parentTraceId !== undefined) {
       spanAttrs["webhook.parent_trace_id"] = parentTraceId;
+      spanAttrs["parent_trace_id"] = parentTraceId;
     }
     const span = this.config.tracer?.startSpan("webhook.delivery", spanAttrs);
     const startMs = Date.now();
@@ -226,14 +235,18 @@ export class WebhookDelivery {
 
       const successMs = Date.now() - startMs;
       span?.setAttribute("webhook.status", res.status);
+      span?.setAttribute("status", res.status);
       span?.setAttribute("webhook.latency_ms", successMs);
+      span?.setAttribute("latency", successMs);
       this.config.metrics?.recordAttempt(url, attempt, successMs, "success");
       this.config.metrics?.recordTerminal(url, "success");
       this.dlq.recordSuccess(url);
     } catch (err) {
       const failureMs = Date.now() - startMs;
       span?.setAttribute("webhook.latency_ms", failureMs);
+      span?.setAttribute("latency", failureMs);
       span?.setAttribute("webhook.error", this.getErrorMessage(err));
+      span?.setAttribute("error", this.getErrorMessage(err));
 
       if (this.watcher.stopped) return;
 

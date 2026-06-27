@@ -715,6 +715,11 @@ export class EventEngine {
     }
   }
 
+  /**
+   * Returns the current status of the event engine.
+   * Reports top-level aggregated status as well as individual source status
+   * for both Horizon and Soroban subscribers.
+   */
   status(): EngineStatus {
     const horizon = {
       running: this.isRunning,
