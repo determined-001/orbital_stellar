@@ -54,8 +54,8 @@ function withDevtools(run: (mod: DevtoolsModule) => void): void {
   });
 }
 
-function getConnectionKey({ serverUrl, address, token, withCredentials }: ConnectionKey): string {
-  return JSON.stringify([serverUrl, address, token ?? "", withCredentials ?? false]);
+function getConnectionKey({ serverUrl, address, token }: ConnectionKey): string {
+  return JSON.stringify([serverUrl, address, token ?? ""]);
 }
 
 function getEventSourceUrl({ serverUrl, address, token }: ConnectionKey): string {
