@@ -387,8 +387,9 @@ export class SorobanSubscriber extends EventEmitter {
               this.scheduleRetry();
               return;
             }
-          } catch {
-            // fallback fetch failed; continue with the original cursor-expired error
+          } catch (fallbackErr) {
+            // Let fallback errors fall through to the retryable/terminal handler logic below.
+            handledError = fallbackErr;
           }
         }
 

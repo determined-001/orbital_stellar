@@ -91,3 +91,36 @@ test("multiple hook instances share one EventSource and keep independent filters
   view.unmount();
   expect(__getConnectionPoolSizeForTests()).toBe(0);
 });
+
+test("multiple hook instances share one EventSource and keep independent filters", () => {
+  const view = render(
+    <>
+      <FilteredSubscriber event="payment.received" testId="payment" />
+      <FilteredSubscriber event="trustline.added" testId="trustline" />
+    </>,
+  );
+
+  expect(MockEventSource.instances).toHaveLength(1);
+  expect(__getConnectionPoolSizeForTests()).toBe(1);
+
+  act(() => {
+    MockEventSource.instances[0]?.onmessage?.({
+      data: JSON.stringify({ type: "payment.received", timestamp: "2026-01-01T00:00:00Z" }),
+    });
+  });
+
+  expect(view.getByTestId("payment").textContent).toBe("payment.received");
+  expect(view.getByTestId("trustline").textContent).toBe("none");
+
+  act(() => {
+    MockEventSource.instances[0]?.onmessage?.({
+      data: JSON.stringify({ type: "trustline.added", timestamp: "2026-01-01T00:00:01Z" }),
+    });
+  });
+
+  expect(view.getByTestId("payment").textContent).toBe("payment.received");
+  expect(view.getByTestId("trustline").textContent).toBe("trustline.added");
+
+  view.unmount();
+  expect(__getConnectionPoolSizeForTests()).toBe(0);
+});
