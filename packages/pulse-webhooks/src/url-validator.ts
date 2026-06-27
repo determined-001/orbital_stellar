@@ -48,9 +48,9 @@ export class UrlValidator {
       const response = await fetch(`https://rdap.db.ripe.net/autnum/lookup?hostname=${hostname}`);
       if (!response.ok) return null;
 
-      const data = await response.json();
-      // This is a simplified extraction; actual RDAP response structure varies.
-      return data.asn || null;
+      const data = (await response.json()) as { asn?: string };
+
+      return data.asn ?? null;
     } catch {
       return null;
     }
