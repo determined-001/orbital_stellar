@@ -25,6 +25,8 @@ export type UseEventConfig<T extends NormalizedEvent = NormalizedEvent> = {
   onEvent?: (event: NormalizedEvent) => void;
   /** Transport to use. Defaults to 'sse'. */
   transport?: "sse" | "websocket";
+  /** Wait time before pausing active connection when document becomes hidden (ms). Defaults to 30000. */
+  hideAfterMs?: number;
 };
 
 export type EventState<T extends NormalizedEvent = NormalizedEvent> = {
@@ -34,6 +36,45 @@ export type EventState<T extends NormalizedEvent = NormalizedEvent> = {
   lastEventAt: string | null;
 };
 
+function useVisibilityState(hideAfterMs = 30000): boolean {
+  const [isActive, setIsActive] = useState(true);
+
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+
+    let timer: any = null;
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "hidden") {
+        timer = setTimeout(() => {
+          setIsActive(false);
+        }, hideAfterMs);
+      } else {
+        if (timer) {
+          clearTimeout(timer);
+          timer = null;
+        }
+        setIsActive(true);
+      }
+    };
+
+    if (document.visibilityState === "hidden") {
+      timer = setTimeout(() => {
+        setIsActive(false);
+      }, hideAfterMs);
+    }
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      if (timer) clearTimeout(timer);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [hideAfterMs]);
+
+  return isActive;
+}
+
 export function useStellarEvent<T extends NormalizedEvent = NormalizedEvent>(
   config: UseEventConfig<T>,
 ): EventState<T>;
@@ -42,7 +83,7 @@ export function useStellarEvent<T extends NormalizedEvent = NormalizedEvent>(
   address: string,
   options?: Pick<
     UseEventConfig<T>,
-    "event" | "token" | "initialEvent" | "filter" | "withCredentials" | "onEvent"
+    "event" | "token" | "initialEvent" | "filter" | "withCredentials" | "onEvent" | "hideAfterMs"
   >,
 ): EventState<T>;
 export function useStellarEvent<T extends NormalizedEvent = NormalizedEvent>(
@@ -50,7 +91,7 @@ export function useStellarEvent<T extends NormalizedEvent = NormalizedEvent>(
   address?: string,
   options?: Pick<
     UseEventConfig<T>,
-    "event" | "token" | "initialEvent" | "filter" | "withCredentials" | "onEvent"
+    "event" | "token" | "initialEvent" | "filter" | "withCredentials" | "onEvent" | "hideAfterMs"
   >,
 ): EventState<T> {
   const serverUrl = typeof configOrUrl === "string" ? configOrUrl : configOrUrl.serverUrl;
@@ -65,6 +106,8 @@ export function useStellarEvent<T extends NormalizedEvent = NormalizedEvent>(
     typeof configOrUrl === "string" ? options?.withCredentials : configOrUrl.withCredentials;
   const onEvent = typeof configOrUrl === "string" ? options?.onEvent : configOrUrl.onEvent;
   const transport = typeof configOrUrl === "string" ? "sse" : (configOrUrl.transport ?? "sse");
+  const hideAfterMs =
+    typeof configOrUrl === "string" ? options?.hideAfterMs : configOrUrl.hideAfterMs;
 
   const eventKey = Array.isArray(eventType) ? [...eventType].sort().join(",") : eventType;
 
@@ -85,7 +128,14 @@ export function useStellarEvent<T extends NormalizedEvent = NormalizedEvent>(
     lastEventAt: null,
   });
 
+  const isActive = useVisibilityState(hideAfterMs ?? 30000);
+
   useEffect(() => {
+    if (!isActive) {
+      setState((prev) => ({ ...prev, connected: false }));
+      return;
+    }
+
     const acquire = transport === "websocket" ? acquireWsConnection : acquireEventConnection;
     const connection = acquire(
       { serverUrl, address: addr, token, ...(transport === "sse" ? { withCredentials } : {}) },
@@ -133,7 +183,7 @@ export function useStellarEvent<T extends NormalizedEvent = NormalizedEvent>(
     };
     // ✅ eventKey is a serialised string — stable even when the caller passes
     // an array literal, which would otherwise be a new reference every render.
-  }, [serverUrl, addr, eventKey, token, withCredentials, transport]);
+  }, [serverUrl, addr, eventKey, token, withCredentials, transport, isActive]);
 
   return state;
 }
@@ -168,6 +218,7 @@ export function useStellarPayment(
     initialEvent?: PaymentEvent | null;
     filter?: (event: NormalizedEvent) => boolean;
     withCredentials?: boolean;
+    hideAfterMs?: number;
   },
 ) {
   const base = useStellarEvent(serverUrl, address, {
@@ -175,6 +226,7 @@ export function useStellarPayment(
     initialEvent: (options?.initialEvent ?? undefined) as NormalizedEvent | undefined,
     filter: options?.filter,
     withCredentials: options?.withCredentials,
+    hideAfterMs: options?.hideAfterMs,
   });
   // The "payment.received" stream only ever delivers PaymentEvents; narrow the
   // generic NormalizedEvent so we can read `amount`.
@@ -191,6 +243,7 @@ export function useStellarActivity<T extends NormalizedEvent = NormalizedEvent>(
     initialEvent?: T | null;
     filter?: (event: NormalizedEvent) => boolean;
     withCredentials?: boolean;
+    hideAfterMs?: number;
   },
 ): EventState<T> {
   return useStellarEvent<T>(serverUrl, address, {
@@ -198,6 +251,7 @@ export function useStellarActivity<T extends NormalizedEvent = NormalizedEvent>(
     initialEvent: options?.initialEvent,
     filter: options?.filter,
     withCredentials: options?.withCredentials,
+    hideAfterMs: options?.hideAfterMs,
   });
 }
 
@@ -222,6 +276,8 @@ export type UseContractEventConfig<T extends NormalizedEvent = NormalizedEvent> 
   withCredentials?: boolean;
   /** Side-effect callback fired for every incoming event, before filter is applied */
   onEvent?: (event: NormalizedEvent) => void;
+  /** Wait time before pausing active connection when document becomes hidden (ms). Defaults to 30000. */
+  hideAfterMs?: number;
 };
 
 /** Hook for subscribing to Soroban contract events */
@@ -231,8 +287,17 @@ export function useContractEvent<
     { type: "contract.invoked" | "contract.emitted" }
   >,
 >(config: UseContractEventConfig<T>): EventState<T> {
-  const { serverUrl, contractId, topics, token, initialEvent, filter, withCredentials, onEvent } =
-    config;
+  const {
+    serverUrl,
+    contractId,
+    topics,
+    token,
+    initialEvent,
+    filter,
+    withCredentials,
+    onEvent,
+    hideAfterMs,
+  } = config;
 
   const filterRef = useRef(filter);
   useEffect(() => {
@@ -251,7 +316,14 @@ export function useContractEvent<
     lastEventAt: null,
   });
 
+  const isActive = useVisibilityState(hideAfterMs ?? 30000);
+
   useEffect(() => {
+    if (!isActive) {
+      setState((prev) => ({ ...prev, connected: false }));
+      return;
+    }
+
     const connection = acquireContractEventConnection(
       { serverUrl, contractId, topics, token, withCredentials },
       {
@@ -295,7 +367,7 @@ export function useContractEvent<
     return () => {
       connection.unsubscribe();
     };
-  }, [serverUrl, contractId, JSON.stringify(topics ?? []), token, withCredentials]);
+  }, [serverUrl, contractId, JSON.stringify(topics ?? []), token, withCredentials, isActive]);
 
   return state;
 }
@@ -312,6 +384,7 @@ export type UseHistoryOptions = {
   token?: string;
   /** Maximum number of events to retain in FIFO order. Defaults to 100. */
   capacity?: number;
+  hideAfterMs?: number;
 };
 
 export type HistoryState<T extends NormalizedEvent = NormalizedEvent> = EventState<T> & {
@@ -470,7 +543,10 @@ export function useStellarHistory<T extends NormalizedEvent = NormalizedEvent>(
 ): HistoryState<T> {
   const [history, setHistory] = useState<T[]>([]);
   const capacity = options?.capacity ?? 100;
-  const base = useStellarActivity<T>(serverUrl, address, { initialEvent: null });
+  const base = useStellarActivity<T>(serverUrl, address, {
+    initialEvent: null,
+    hideAfterMs: options?.hideAfterMs,
+  });
 
   useEffect(() => {
     if (base.event) {
