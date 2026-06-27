@@ -1,5 +1,5 @@
-'use client';
-import { useEffect, useState, ReactElement, ReactNode } from 'react';
+"use client";
+import { useEffect, useState, ReactElement, ReactNode } from "react";
 
 export type StellarEventBoundaryProps = {
   /**
