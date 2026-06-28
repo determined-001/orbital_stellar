@@ -22,6 +22,7 @@ export const docSections: DocSection[] = [
     items: [
       { title: 'Webhooks', href: '/docs/guides/webhooks' },
       { title: 'Real-time Events', href: '/docs/guides/real-time-events' },
+      { title: 'Cursor Persistence', href: '/docs/guides/cursor-persistence' },
     ],
   },
   {
