@@ -235,6 +235,13 @@ export class EventEngine {
         headers: config.soroban.rpcHeaders,
         logger: this.log,
       });
+      // Warm the per-process network cache so start() can check the passphrase
+      // synchronously against the cache before opening subscriptions.
+      rpc.getNetwork().catch((err) => {
+        this.log.warn?.("[pulse-core] failed to warm Soroban RPC network cache", {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      });
       const sorobanCursorKey = `${this.streamKey}:soroban`;
       let inMemoryCursor: string | undefined;
       const cursorStore = {

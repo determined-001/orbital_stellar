@@ -173,7 +173,9 @@ describe("SorobanSubscriber startLedger to cursor polling", () => {
       const result =
         body.method === "getLatestLedger"
           ? { sequence: 200 }
-          : { events: [], cursor: `engine-cursor-${requests.length}` };
+          : body.method === "getNetwork"
+            ? { passphrase: "Test SDF Network ; September 2015", protocolVersion: 22 }
+            : { events: [], cursor: `engine-cursor-${requests.length}` };
       return new Response(JSON.stringify({ jsonrpc: "2.0", id: body.id, result }), {
         status: 200,
         headers: { "content-type": "application/json" },
@@ -199,8 +201,12 @@ describe("SorobanSubscriber startLedger to cursor polling", () => {
 
     engine.start();
     await flushPoll();
-    expect(requests.map((request) => request.method)).toEqual(["getLatestLedger", "getEvents"]);
-    expect(requests[1]?.params).toMatchObject({
+    expect(requests.map((request) => request.method)).toEqual([
+      "getNetwork",
+      "getLatestLedger",
+      "getEvents",
+    ]);
+    expect(requests[2]?.params).toMatchObject({
       startLedger: 190,
       pagination: { limit: 100 },
     });

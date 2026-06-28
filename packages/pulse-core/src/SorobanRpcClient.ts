@@ -199,8 +199,13 @@ export class SorobanRpcClient {
     return SorobanRpcClient.cachedNetwork;
   }
 
-  static async fetchAndCacheNetwork(_url: string): Promise<SorobanNetworkInfo> {
-    throw new Error("fetchAndCacheNetwork not implemented");
+  static async fetchAndCacheNetwork(
+    url: string,
+    headers?: Record<string, string>,
+    fetchImpl?: typeof fetch,
+  ): Promise<SorobanNetworkInfo> {
+    const client = new SorobanRpcClient({ url, headers, fetch: fetchImpl });
+    return await client.getNetwork();
   }
 
   private readonly url: string;
