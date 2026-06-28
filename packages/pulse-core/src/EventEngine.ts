@@ -599,22 +599,7 @@ export class EventEngine {
     return true;
   }
 
-<<<<<<< HEAD
   async healthCheck(thresholdMs = 5 * 60 * 1000): Promise<HealthCheckResult> {
-=======
-  status(): EngineStatus {
-    return {
-      running: this.isRunning,
-      watcherCount: this.registry.size,
-      contractWatcherCount: this.contractRegistry.size,
-      lastEventAt: this.lastEventAt,
-      reconnectAttempt: this.reconnectAttempt,
-      pausedSources: this.pausedSources.size > 0 ? Array.from(this.pausedSources) : undefined,
-    };
-  }
-
-  healthCheck(thresholdMs = 5 * 60 * 1000): HealthCheckResult {
->>>>>>> c4d0792 (feat(#312): add per-source pause/resume with cursor persistence and status tracking (#526))
     const reasons: string[] = [];
 
     if (!this.isRunning) {
@@ -1017,16 +1002,12 @@ export class EventEngine {
       const requiredFields = ["to", "from", "amount", "created_at"] as const;
       for (const field of requiredFields) {
         if (typeof r[field] !== "string" || r[field] === "") {
-<<<<<<< HEAD
           this.log.warn("[pulse-core] normalize() dropping payment record.", {
             field,
             record,
             source: r.from,
             address: r.to,
           });
-=======
-          this.log.warn("[pulse-core] normalize() dropping payment record.", { field, record });
->>>>>>> c4d0792 (feat(#312): add per-source pause/resume with cursor persistence and status tracking (#526))
           return null;
         }
       }
@@ -1626,7 +1607,6 @@ export class EventEngine {
     });
   }
 
-<<<<<<< HEAD
   /** Dispatch a contract event (invoked or emitted) to all matching contract watchers. */
   private dispatchContractEvent(
     event: Timestamped<ContractInvokedEvent | ContractEmittedEvent>,
@@ -1665,24 +1645,15 @@ export class EventEngine {
       (event.type === "contract.invoked" || event.type === "contract.emitted") &&
       this.pausedSources.has("soroban")
     ) {
-=======
-  private route(event: NormalizedEventOrPending): void {
-    // Check if Soroban source is paused for contract events
-    if ((event.type === "contract.invoked" || event.type === "contract.emitted") && this.pausedSources.has("soroban")) {
->>>>>>> c4d0792 (feat(#312): add per-source pause/resume with cursor persistence and status tracking (#526))
       return;
     }
 
     // Check if Horizon source is paused for all other events
-<<<<<<< HEAD
     if (
       event.type !== "contract.invoked" &&
       event.type !== "contract.emitted" &&
       this.pausedSources.has("horizon")
     ) {
-=======
-    if (event.type !== "contract.invoked" && event.type !== "contract.emitted" && this.pausedSources.has("horizon")) {
->>>>>>> c4d0792 (feat(#312): add per-source pause/resume with cursor persistence and status tracking (#526))
       return;
     }
 

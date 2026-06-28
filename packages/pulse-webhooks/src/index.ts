@@ -115,13 +115,6 @@ export class WebhookDelivery {
 
   // Monotonic counter for durable RetryRecord ids.
   private retrySeq = 0;
-
-  // Timers that fire a durable-queue drain at each record's due time (only used
-  // when `config.retryQueue` is set).
-  private queueDrainTimers = new Set<ReturnType<typeof setTimeout>>();
-
-  // Monotonic counter for durable RetryRecord ids.
-  private retrySeq = 0;
   constructor(watcher: Watcher, config: WebhookConfig, dlq?: DeadLetterStore) {
     this.watcher = watcher;
     this.dlq = dlq ?? new DeadLetterStore();
