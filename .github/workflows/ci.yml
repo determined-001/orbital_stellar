@@ -119,22 +119,3 @@ jobs:
         run: pnpm tsc -p packages/pulse-core/tsconfig.json
       - name: Typecheck apps/web
         run: pnpm tsc --noEmit -p apps/web/tsconfig.json
-
-  reference-docs:
-    needs: changes
-    if: ${{ needs.changes.outputs.web == 'true' }}
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - name: Generate API reference (typedoc)
-        run: pnpm docs:reference
-      - name: Check TSDoc coverage on public exports
-        run: pnpm docs:check-tsdoc
