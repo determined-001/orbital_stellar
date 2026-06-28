@@ -396,11 +396,9 @@ export class SorobanSubscriber extends EventEmitter {
           }
         }
         if ((err as SorobanRpcError).retryable) {
-          if (this.onRetryableError) {
-            this.onRetryableError(err as SorobanRpcError);
-            this.scheduleRetry();
-            return;
-          }
+          this.onRetryableError?.(err as SorobanRpcError);
+          this.scheduleRetry();
+          return;
         } else if (this.onTerminalError) {
           this.onTerminalError(err);
           return;
