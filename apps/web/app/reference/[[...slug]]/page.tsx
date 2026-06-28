@@ -39,7 +39,10 @@ export default async function ReferencePage({ params }: Props) {
         <ul className="space-y-2">
           {packages.map((pkg) => (
             <li key={pkg}>
-              <Link href={`/reference/${pkg}`} className="text-accent hover:underline">
+              <Link
+                href={`/reference/${encodeURIComponent(pkg)}`}
+                className="text-accent hover:underline"
+              >
                 {pkg}
               </Link>
             </li>
