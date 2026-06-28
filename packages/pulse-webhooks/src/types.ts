@@ -41,12 +41,14 @@ export type WebhookConfig = {
   /** Optional metrics recorder for per-URL delivery observability. */
   metrics?: WebhookMetrics;
   /**
-   * Optional durable retry queue. When provided, retryable delivery failures are
-   * persisted to it (instead of the in-process timer set) so pending retries can
-   * survive a process restart. See {@link import("./RetryQueue.js").RetryQueue}
-   * and {@link import("./MemoryRetryQueue.js").MemoryRetryQueue}.
+   * Optional durable retry queue. When set, every retry is enqueued into
+   * this queue instead of scheduled via setTimeout. A separate poller
+   * dequeues records at `retryQueuePollIntervalMs` and drives delivery.
+   * Persists retries across restarts when backed by a durable store.
    */
   retryQueue?: import("./RetryQueue.js").RetryQueue;
+  /** Poll interval for the retry queue dequeue loop. Defaults to 1000ms. */
+  retryQueuePollIntervalMs?: number;
 };
 
 export const DEFAULT_MAX_AGE_MS = 300_000;

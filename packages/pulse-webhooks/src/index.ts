@@ -24,6 +24,8 @@ export { RedisRetryQueue } from "./RedisRetryQueue.js";
 export { MemoryRetryQueue } from "./MemoryRetryQueue.js";
 export { SqsRetryQueue } from "./SqsRetryQueue.js";
 export { verifyWebhookEdge, verifyWebhookEdgeRaw } from "./edge.js";
+export { dedupReceiver, MemoryDedupStore } from "./dedup.js";
+export type { DedupStore, DedupReceiverOptions } from "./dedup.js";
 export type {
   DeadLetterEntry,
   DeadLetterFilter as MemoryDeadLetterFilter,
@@ -106,6 +108,8 @@ export class WebhookDelivery {
   // Map of timer -> event so we can evict the newest entry when the cap is hit.
   private retryTimers: Map<ReturnType<typeof setTimeout>, { event: NormalizedEvent; url: string }> =
     new Map();
+  private retryQueue?: RetryQueue;
+  private pollerTimer?: ReturnType<typeof setInterval>;
   // Map to store idempotency delivery IDs per event and URL
   private deliveryIds: Map<NormalizedEvent, Map<string, string>> = new Map();
 
@@ -124,15 +128,22 @@ export class WebhookDelivery {
       maxConcurrentRetries: 100,
       random: Math.random,
       backoff: exponentialJittered,
+      retryQueuePollIntervalMs: 1000,
       ...config,
       tracer: config.tracer,
       urls: Array.isArray(config.url) ? [...config.url] : [config.url],
     };
     this.config.maxConcurrentRetries = Math.max(1, this.config.maxConcurrentRetries);
+    this.retryQueue = config.retryQueue;
 
     this.watcher.addStopHandler(() => {
       this.clearRetryTimers();
+      this.stopPoller();
     });
+
+    if (this.retryQueue) {
+      this.startPoller();
+    }
 
     this.watcher.on(
       "*",
@@ -150,30 +161,31 @@ export class WebhookDelivery {
     return this.dlq;
   }
 
-  private async deliverToUrl(event: NormalizedEvent, url: string, attempt = 1): Promise<void> {
-    if (this.watcher.stopped) return;
+  private async doAttempt(
+    event: NormalizedEvent,
+    url: string,
+    attempt: number,
+  ): Promise<{ ok: true } | { ok: false; error: string; terminal?: boolean }> {
+    if (this.watcher.stopped) return { ok: false, error: "stopped", terminal: true };
 
     const builtInValidationError = this.validateUrl(url);
     if (builtInValidationError) {
       this.emitFailure(event, url, builtInValidationError, attempt);
-      return;
+      return { ok: false, error: builtInValidationError, terminal: true };
     }
 
     let customValidationError: string | null = null;
     try {
       customValidationError = this.config.urlValidator ? await this.config.urlValidator(url) : null;
     } catch (err) {
-      if (this.watcher.stopped) return;
-
-      this.emitFailure(event, url, this.getErrorMessage(err), attempt);
-      return;
+      if (this.watcher.stopped) return { ok: false, error: "stopped", terminal: true };
+      return { ok: false, error: this.getErrorMessage(err), terminal: true };
     }
 
-    if (this.watcher.stopped) return;
+    if (this.watcher.stopped) return { ok: false, error: "stopped", terminal: true };
 
     if (customValidationError) {
-      this.emitFailure(event, url, customValidationError, attempt);
-      return;
+      return { ok: false, error: customValidationError, terminal: true };
     }
 
     const payload = JSON.stringify(event);
@@ -234,6 +246,7 @@ export class WebhookDelivery {
       this.config.metrics?.recordAttempt(url, attempt, successMs, "success");
       this.config.metrics?.recordTerminal(url, "success");
       this.dlq.recordSuccess(url);
+      return { ok: true };
     } catch (err) {
       const failureMs = Date.now() - startMs;
       span?.setAttribute("webhook.latency_ms", failureMs);
@@ -241,42 +254,85 @@ export class WebhookDelivery {
       span?.setAttribute("webhook.error", this.getErrorMessage(err));
       span?.setAttribute("error", this.getErrorMessage(err));
 
-      if (this.watcher.stopped) return;
+      if (this.watcher.stopped) return { ok: false, error: "stopped" };
 
       const errorMessage = this.getErrorMessage(err);
       this.config.metrics?.recordAttempt(url, attempt, failureMs, "failure");
       this.dlq.recordFailure(url);
-
-      if (attempt < this.config.retries) {
-        if (this.config.retryQueue) {
-          // Durable path: persist the pending retry to the queue so it survives a
-          // process restart. A drain timer fires the redelivery at its due time.
-          await this.persistRetry(this.config.retryQueue, event, url, attempt + 1, errorMessage);
-        } else {
-          // In-process path: enforce the retry cap by evicting the newest pending
-          // retry when at limit.
-          if (this.retryTimers.size >= this.config.maxConcurrentRetries) {
-            // Evict the newest (last-inserted) retry — it has waited the least, so dropping it wastes the least elapsed time.
-            const newestTimer = [...this.retryTimers.keys()].at(-1)!;
-            const newest = this.retryTimers.get(newestTimer)!;
-            clearTimeout(newestTimer);
-            this.retryTimers.delete(newestTimer);
-            this.emitDropped(newest.event, newest.url);
-          }
-
-          const delay = this.config.backoff(attempt, this.config.random);
-          const retryTimer = setTimeout(() => {
-            this.retryTimers.delete(retryTimer);
-            void this.deliverToUrl(event, url, attempt + 1);
-          }, delay);
-          this.retryTimers.set(retryTimer, { event, url });
-        }
-      } else {
-        this.emitFailure(event, url, errorMessage, attempt);
-      }
+      return { ok: false, error: errorMessage };
     } finally {
       clearTimeout(abortTimer);
       span?.end();
+    }
+  }
+
+  private async deliverToUrl(event: NormalizedEvent, url: string, attempt = 1): Promise<void> {
+    const result = await this.doAttempt(event, url, attempt);
+    if (result.ok) return;
+    if (this.watcher.stopped) return;
+
+    const errorMessage = result.error;
+
+    if (!result.terminal && attempt < this.config.retries) {
+      if (this.config.retryQueue) {
+        await this.persistRetry(this.config.retryQueue, event, url, attempt + 1, errorMessage);
+      } else {
+        if (this.retryTimers.size >= this.config.maxConcurrentRetries) {
+          const newestTimer = [...this.retryTimers.keys()].at(-1)!;
+          const newest = this.retryTimers.get(newestTimer)!;
+          clearTimeout(newestTimer);
+          this.retryTimers.delete(newestTimer);
+          this.emitDropped(newest.event, newest.url);
+        }
+
+        const delay = this.config.backoff(attempt, this.config.random);
+        const retryTimer = setTimeout(() => {
+          this.retryTimers.delete(retryTimer);
+          void this.deliverToUrl(event, url, attempt + 1);
+        }, delay);
+        this.retryTimers.set(retryTimer, { event, url });
+      }
+    } else {
+      this.emitFailure(event, url, errorMessage, attempt);
+    }
+  }
+
+  private startPoller(): void {
+    const intervalMs = this.config.retryQueuePollIntervalMs;
+    this.pollerTimer = setInterval(() => {
+      this.retryQueue!.dequeue().then((record) => {
+        if (record) {
+          void this.processQueueRecord(record);
+        }
+      });
+    }, intervalMs);
+  }
+
+  private stopPoller(): void {
+    if (this.pollerTimer !== undefined) {
+      clearInterval(this.pollerTimer);
+      this.pollerTimer = undefined;
+    }
+  }
+
+  private async processQueueRecord(record: RetryRecord): Promise<void> {
+    if (this.watcher.stopped) return;
+
+    const result = await this.doAttempt(
+      record.event as NormalizedEvent,
+      record.url,
+      record.attempt,
+    );
+    if (this.watcher.stopped) return;
+
+    if (result.ok) {
+      await this.retryQueue!.ack(record.id);
+    } else if (!result.terminal && record.attempt < this.config.retries) {
+      const delay = this.config.backoff(record.attempt, this.config.random);
+      await this.retryQueue!.nack(record.id, delay);
+    } else {
+      await this.retryQueue!.ack(record.id);
+      this.emitFailure(record.event as NormalizedEvent, record.url, result.error, record.attempt);
     }
   }
 
