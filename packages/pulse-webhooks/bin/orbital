@@ -1,0 +1,54 @@
+#!/usr/bin/env node
+
+import { DeadLetterStore } from '../src/MemoryDeadLetterStore.js';
+import { listDLQ, dumpDLQ, replayDLQ } from '../src/cli.js';
+
+function printUsage() {
+  console.error(`Usage: orbital dlq <command> [options]\n\nCommands:\n  list  --url <url> [--since <ISO8601>] [--limit <n>]\n  dump\n  replay <id>\n`);
+  process.exit(1);
+}
+
+const args = process.argv.slice(2);
+if (args.length < 2 || args[0] !== 'dlq') {
+  printUsage();
+}
+
+const command = args[1];
+const store = new DeadLetterStore();
+
+switch (command) {
+  case 'list': {
+    const options: any = {};
+    for (let i = 2; i < args.length; i++) {
+      const arg = args[i];
+      if (arg === '--url' && i + 1 < args.length) {
+        options.url = args[++i];
+      } else if (arg === '--since' && i + 1 < args.length) {
+        options.since = args[++i];
+      } else if (arg === '--limit' && i + 1 < args.length) {
+        options.limit = parseInt(args[++i], 10);
+      } else {
+        console.error(`Unknown option ${arg}`);
+        printUsage();
+      }
+    }
+    listDLQ(store, options);
+    break;
+  }
+  case 'dump': {
+    dumpDLQ(store);
+    break;
+  }
+  case 'replay': {
+    const id = args[2];
+    if (!id) {
+      console.error('Missing dlq id');
+      printUsage();
+    }
+    replayDLQ(store, id);
+    break;
+  }
+  default:
+    console.error(`Unknown subcommand ${command}`);
+    printUsage();
+}

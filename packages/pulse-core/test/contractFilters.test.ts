@@ -55,16 +55,32 @@ describe("validateContractFilters", () => {
       expect(result).toBeNull();
     });
 
+    it("accepts RPC type 'contract'", () => {
+      expect(validateContractFilters([{ type: "contract" }])).toBeNull();
+    });
+
+    it("accepts RPC type 'system'", () => {
+      expect(validateContractFilters([{ type: "system" }])).toBeNull();
+    });
+
+    it("accepts RPC type 'diagnostic'", () => {
+      expect(validateContractFilters([{ type: "diagnostic" }])).toBeNull();
+    });
+
     it("rejects invalid type", () => {
       const filters = [{ type: "invalid.type" }];
       const result = validateContractFilters(filters);
-      expect(result).toContain('Filter[0].type must be "contract.invoked" or "contract.emitted"');
+      expect(result).toContain(
+        "Filter[0].type must be one of: contract.invoked, contract.emitted, system, contract, diagnostic",
+      );
     });
 
     it("rejects non-string type", () => {
       const filters = [{ type: 123 }];
       const result = validateContractFilters(filters);
-      expect(result).toContain('Filter[0].type must be "contract.invoked" or "contract.emitted"');
+      expect(result).toContain(
+        "Filter[0].type must be one of: contract.invoked, contract.emitted, system, contract, diagnostic",
+      );
     });
   });
 
@@ -250,6 +266,62 @@ describe("validateContractFilters", () => {
       const filters = [{ topicFilters: ["YWJjK2QvZQ=="] }];
       const result = validateContractFilters(filters);
       expect(result).toBeNull();
+    });
+  });
+
+  describe("topics segment-array validation", () => {
+    it("returns null when topics is omitted", () => {
+      expect(validateContractFilters([{ contractIds: ["C1"] }])).toBeNull();
+    });
+
+    it("returns error when topics is not an array", () => {
+      const result = validateContractFilters([{ topics: "nope" }]);
+      expect(result).toContain("Filter[0].topics must be an array of segment arrays");
+    });
+
+    it("returns null for an empty topics array", () => {
+      expect(validateContractFilters([{ topics: [] }])).toBeNull();
+    });
+
+    it("accepts a '*' single-segment wildcard pattern", () => {
+      expect(validateContractFilters([{ topics: [["*"]] }])).toBeNull();
+    });
+
+    it("accepts a '**' multi-segment wildcard pattern", () => {
+      expect(validateContractFilters([{ topics: [["**"]] }])).toBeNull();
+    });
+
+    it("accepts a base64 XDR scval segment", () => {
+      expect(validateContractFilters([{ topics: [["AAAADwAAAAV0cmFuc2Zlcg=="]] }])).toBeNull();
+    });
+
+    it("accepts multiple patterns mixing wildcards and scvals", () => {
+      const filters = [{ topics: [["*", "**"], ["AAAADwAAAAV0cmFuc2Zlcg=="]] }];
+      expect(validateContractFilters(filters)).toBeNull();
+    });
+
+    it("rejects a pattern that is not a segment array", () => {
+      const result = validateContractFilters([{ topics: ["*"] }]);
+      expect(result).toContain("Filter[0].topics[0] must be a segment array");
+    });
+
+    it("rejects a non-string segment", () => {
+      const result = validateContractFilters([{ topics: [[123]] }]);
+      expect(result).toContain("Filter[0].topics[0][0] must be a string segment");
+    });
+
+    it("rejects an invalid segment (not *, **, or base64)", () => {
+      const result = validateContractFilters([{ topics: [["not valid!"]] }]);
+      expect(result).toContain(
+        "Filter[0].topics[0][0] must be '*', '**', or a base64-encoded XDR scval, but got 'not valid!'",
+      );
+    });
+
+    it("reports the position of an invalid segment within a pattern", () => {
+      const result = validateContractFilters([{ topics: [["*", "bad seg!"]] }]);
+      expect(result).toContain(
+        "Filter[0].topics[0][1] must be '*', '**', or a base64-encoded XDR scval, but got 'bad seg!'",
+      );
     });
   });
 

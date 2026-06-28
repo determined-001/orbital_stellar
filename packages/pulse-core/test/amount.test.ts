@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { toBigInt } from "../src/amount.js";
+import type { StellarAmount } from "../src/amount.js";
 
 describe("amount.toBigInt", () => {
   it("converts simple decimals to stroops", () => {
@@ -7,6 +8,9 @@ describe("amount.toBigInt", () => {
     expect(toBigInt("0.0000001" as any)).toBe(1n);
     expect(toBigInt("2" as any)).toBe(20000000n);
     expect(toBigInt("-2.5" as any)).toBe(-25000000n);
+
+    const amount = "1.2345678" as StellarAmount;
+    expect(toBigInt(amount)).toBe(12345678n);
   });
 
   it("truncates extra fractional precision", () => {

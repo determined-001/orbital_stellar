@@ -228,4 +228,46 @@ describe("SorobanSubscriber – deduplication", () => {
     expect(emitted).toHaveLength(10);
     expect(emitted.map((e) => e.id)).toEqual(page.map((e) => e.id));
   });
+
+  // ── 8. True LRU semantics ───────────────────────────────────────────────
+
+  it("refreshes recency on a repeat so a re-seen ID survives eviction (LRU, not FIFO)", async () => {
+    // cap=3, fill with a,b,c (a is least-recently-used).
+    const sub = makeSubscriber(3);
+
+    stub.page = [makeEvent("a"), makeEvent("b"), makeEvent("c")];
+    await sub.pollOnce(); // window: a(lru) b c(mru)
+
+    stub.page = [makeEvent("a")];
+    await sub.pollOnce(); // dedup hit on "a" refreshes it → b becomes the LRU
+
+    stub.page = [makeEvent("d")];
+    await sub.pollOnce(); // "d" added → evicts the LRU ("b"), "a" survives
+
+    stub.page = [makeEvent("a")]; // still in the window → suppressed
+    await sub.pollOnce();
+
+    stub.page = [makeEvent("b")]; // was evicted → emitted again
+    await sub.pollOnce();
+
+    // Under FIFO "a" would have been evicted by "d" and re-emitted; under LRU the
+    // refresh keeps "a" and evicts "b" instead.
+    expect(emitted.map((e) => e.id)).toEqual(["a", "b", "c", "d", "b"]);
+  });
+
+  it("uses a default dedup window of 1024", async () => {
+    const sub = makeSubscriber(); // default cap
+
+    // 1025 distinct events — adding the 1025th evicts the first.
+    stub.page = Array.from({ length: 1025 }, (_, i) => makeEvent(`d-${i}`));
+    await sub.pollOnce();
+    expect(emitted).toHaveLength(1025);
+
+    // The first ID fell out of the window (re-emittable); the last is still in it.
+    stub.page = [makeEvent("d-0"), makeEvent("d-1024")];
+    await sub.pollOnce();
+
+    expect(emitted.filter((e) => e.id === "d-0")).toHaveLength(2); // evicted → re-emitted
+    expect(emitted.filter((e) => e.id === "d-1024")).toHaveLength(1); // suppressed
+  });
 });

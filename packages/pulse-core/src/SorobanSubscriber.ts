@@ -1,5 +1,11 @@
 import type { ContractSubscriptionFilter, ContractAddress } from "./index.js";
+import type {
+  SorobanGetEventsParams,
+  SorobanGetEventsResult,
+  SorobanRpcCallOptions,
+} from "./SorobanRpcClient.js";
 import { SorobanRpcError } from "./errors.js";
+import { EventEmitter } from "events";
 
 /**
  * SorobanSubscriber — polls a Soroban RPC for contract events and forwards
@@ -33,6 +39,12 @@ export interface SorobanEvent {
   contractId?: string;
   type?: string;
   decodedData?: unknown;
+  ledger?: number;
+  ledgerClosedAt?: string;
+  txHash?: string;
+  inSuccessfulContractCall?: boolean;
+  function?: string;
+  args?: unknown[];
 }
 
 /** Minimal interface for a Soroban RPC client. */
@@ -44,6 +56,7 @@ export interface SorobanRpc {
     filters?: ContractSubscriptionFilter[],
     options?: { xdrFormat?: "base64" | "json"; signal?: AbortSignal } | AbortSignal,
   ): Promise<{ events: SorobanEvent[]; [key: string]: any }>;
+  getLatestLedger?(options?: SorobanRpcCallOptions): Promise<number>;
 }
 
 /** Alias for {@link SorobanRpc}; the name used by EventEngine's replay API. */
@@ -83,10 +96,19 @@ export interface SorobanSubscriberOptions {
   pageLimit?: number;
   /** @deprecated Alias for {@link SorobanSubscriberOptions.pageLimit}. */
   pageSize?: number;
-  /** Max distinct event IDs remembered for cross-poll de-duplication. Defaults to 10,000. */
+  /**
+   * Size of the LRU window of recent event IDs used for cross-poll
+   * de-duplication. Within this window a repeated event ID (e.g. the same page
+   * re-returned under retry) is suppressed, so downstream consumers see each
+   * event exactly once. Defaults to 1024.
+   */
   dedupCacheSize?: number;
   /** Interval for the self-driving {@link SorobanSubscriber.start} poll loop. Defaults to 2000ms. */
   pollIntervalMs?: number;
+  /** Explicit ledger for the first poll. Primarily used by bounded replay. */
+  startLedger?: number;
+  /** Ledgers subtracted from `getLatestLedger()` for the first live poll. Defaults to 0. */
+  startLedgerLookback?: number;
   /** Delay before retrying after a retryable RPC error. Defaults to 1000ms. */
   retryDelayMs?: number;
   /** Injectable timer scheduler (for testing). Defaults to `globalThis.setTimeout`. */
@@ -103,9 +125,20 @@ export interface SorobanSubscriberOptions {
 const MIN_PAGE_LIMIT = 1;
 const MAX_PAGE_LIMIT = 10_000;
 const DEFAULT_PAGE_LIMIT = 100;
-const DEFAULT_DEDUP_CACHE_SIZE = 10_000;
+const DEFAULT_DEDUP_CACHE_SIZE = 1024;
 
-export class SorobanSubscriber {
+/** @internal Resolve and validate the pagination limit used by Soroban polls. */
+export function resolveSorobanPageLimit(pageLimit?: number): number {
+  const resolved = pageLimit ?? DEFAULT_PAGE_LIMIT;
+  if (!Number.isInteger(resolved) || resolved < MIN_PAGE_LIMIT || resolved > MAX_PAGE_LIMIT) {
+    throw new RangeError(
+      `soroban.pageLimit must be an integer between 1 and 10,000 (received ${resolved})`,
+    );
+  }
+  return resolved;
+}
+
+export class SorobanSubscriber extends EventEmitter {
   private readonly rpc: SorobanRpc;
   private readonly cursorStore: CursorStore;
   private readonly onEvent?: (event: SorobanEvent) => Promise<void>;
@@ -131,7 +164,12 @@ export class SorobanSubscriber {
   subscriptions: SorobanSubscription[] = [];
 
   // --- Cross-poll de-duplication state ---
-  /** Insertion-ordered set of recently-delivered event IDs (bounded FIFO window). */
+  /**
+   * LRU window of recently-delivered event IDs (insertion order = recency).
+   * Re-seeing an ID refreshes its recency; once the window exceeds
+   * `dedupCacheSize` the least-recently-used ID is evicted. Guarantee: an event
+   * ID is delivered downstream at most once while it remains in this window.
+   */
   private readonly seen = new Set<string>();
   private readonly dedupCacheSize: number;
 
@@ -149,6 +187,8 @@ export class SorobanSubscriber {
   private _isRunning = false;
   private pollTimer: ReturnType<typeof setInterval> | null = null;
   private readonly pollIntervalMs: number;
+  private startLedger: number | undefined;
+  private readonly startLedgerLookback: number;
   /** ISO timestamp of the most recently delivered event, or null. */
   lastEventAt: string | null = null;
 
@@ -161,9 +201,25 @@ export class SorobanSubscriber {
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(options: SorobanSubscriberOptions) {
-    const pageLimit = options.pageLimit ?? options.pageSize ?? DEFAULT_PAGE_LIMIT;
-    if (!Number.isFinite(pageLimit) || pageLimit < MIN_PAGE_LIMIT || pageLimit > MAX_PAGE_LIMIT) {
-      throw new RangeError(`pageLimit must be between 1 and 10,000 (received ${pageLimit})`);
+    super();
+    const pageLimit = resolveSorobanPageLimit(options.pageLimit ?? options.pageSize);
+    const pollIntervalMs = options.pollIntervalMs ?? 2000;
+    if (!Number.isFinite(pollIntervalMs) || pollIntervalMs <= 0) {
+      throw new RangeError(`pollIntervalMs must be greater than 0 (received ${pollIntervalMs})`);
+    }
+    const startLedgerLookback = options.startLedgerLookback ?? 0;
+    if (!Number.isInteger(startLedgerLookback) || startLedgerLookback < 0) {
+      throw new RangeError(
+        `startLedgerLookback must be a non-negative integer (received ${startLedgerLookback})`,
+      );
+    }
+    if (
+      options.startLedger !== undefined &&
+      (!Number.isInteger(options.startLedger) || options.startLedger < 0)
+    ) {
+      throw new RangeError(
+        `startLedger must be a non-negative integer (received ${options.startLedger})`,
+      );
     }
 
     this.rpc = options.rpc;
@@ -174,7 +230,9 @@ export class SorobanSubscriber {
     this.dedupCacheSize = options.dedupCacheSize ?? DEFAULT_DEDUP_CACHE_SIZE;
     this.endLedger = options.endLedger;
     this.onDone = options.onDone;
-    this.pollIntervalMs = options.pollIntervalMs ?? 2000;
+    this.pollIntervalMs = pollIntervalMs;
+    this.startLedger = options.startLedger;
+    this.startLedgerLookback = startLedgerLookback;
     this.retryDelayMs = options.retryDelayMs ?? 1000;
     this.setTimeoutFn = options.setTimeoutFn ?? globalThis.setTimeout;
     this.clearTimeoutFn = options.clearTimeoutFn ?? globalThis.clearTimeout;
@@ -198,6 +256,7 @@ export class SorobanSubscriber {
    */
   start(): void {
     if (this._isRunning) return;
+    this.isStopped = false;
     this._isRunning = true;
     const tick = () => {
       this.inflightPoll = (this.inflightPoll ?? Promise.resolve()).then(() => this.pollOnce());
@@ -315,11 +374,17 @@ export class SorobanSubscriber {
         flatFilters.push(...sub.filters);
       }
 
-      if (flatFilters.length === 0) {
+      // Coalesce identical filters (order-preserving) so duplicate subscriptions
+      // share a single filter slot. This minimises the number of getEvents calls
+      // under the 5-filter cap — e.g. 6 subscriptions on the same contract collapse
+      // to one filter, hence one call instead of two.
+      const uniqueFilters = this.coalesceFilters(flatFilters);
+
+      if (uniqueFilters.length === 0) {
         rpcCalls = [[]];
       } else {
-        for (let i = 0; i < flatFilters.length; i += 5) {
-          rpcCalls.push(flatFilters.slice(i, i + 5));
+        for (let i = 0; i < uniqueFilters.length; i += 5) {
+          rpcCalls.push(uniqueFilters.slice(i, i + 5));
         }
       }
     }
@@ -329,30 +394,54 @@ export class SorobanSubscriber {
       ? this.replayCursor
       : await this.cursorStore.getCursor();
 
-    const promises = rpcCalls.map((filters) =>
-      this.rpc.getEvents(
-        currentCursor,
-        this.pageLimit,
-        signal,
-        filters.length > 0 ? filters : undefined,
-        {
-          xdrFormat: this.xdrFormat,
-          signal,
-        },
-      ),
-    );
-
-    let results: { events: SorobanEvent[] }[];
+    let results: { events: SorobanEvent[]; latestLedger?: number; cursor?: string }[];
     try {
+      if (
+        currentCursor === undefined &&
+        this.startLedger === undefined &&
+        this.rpc.getLatestLedger !== undefined
+      ) {
+        const latestLedger = await this.rpc.getLatestLedger({ signal });
+        this.startLedger = Math.max(0, latestLedger - this.startLedgerLookback);
+      }
+
+      const promises = rpcCalls.map((filters) => this.fetchEvents(currentCursor, filters, signal));
       results = await Promise.all(promises);
     } catch (err) {
       // An aborted request is expected during shutdown — swallow it silently.
       if (this.isAbortError(err)) return;
       // Route classified RPC errors to the retry/terminal handlers when present.
       if (err instanceof SorobanRpcError) {
-        if (err.retryable) {
+        if (
+          err.code === "invalid_request" &&
+          (err.message.includes("startCursor") || err.message.includes("oldest ledger"))
+        ) {
+          const lostCursor = currentCursor || "unknown";
+          this.emit("engine.cursor_expired", { source: "soroban", lostCursor });
+
+          try {
+            const fallbackPage = await this.rpc.getEvents(undefined, this.pageLimit, signal);
+            const latestLedger = fallbackPage.latestLedger;
+            if (latestLedger !== undefined) {
+              console.warn(
+                `[pulse-core] Soroban subscriber cursor expired (lost: ${lostCursor}). ` +
+                  `Falling back to startLedger = ${latestLedger}. Data loss occurred.`,
+              );
+              if (!this.isReplayMode) {
+                await this.cursorStore.saveCursor(latestLedger.toString());
+              } else {
+                this.replayCursor = latestLedger.toString();
+              }
+              this.scheduleRetry();
+              return;
+            }
+          } catch {
+            // fallback fetch failed; continue with the original cursor-expired error
+          }
+        }
+        if ((err as SorobanRpcError).retryable) {
           if (this.onRetryableError) {
-            this.onRetryableError(err);
+            this.onRetryableError(err as SorobanRpcError);
             this.scheduleRetry();
             return;
           }
@@ -402,20 +491,28 @@ export class SorobanSubscriber {
           }
         }
 
-        // Cross-poll de-duplication: suppress IDs we've already delivered.
-        if (this.seen.has(event.id)) continue;
+        // Cross-poll de-duplication: suppress IDs we've already delivered, and
+        // refresh their recency so a repeated ID stays alive in the LRU window.
+        if (this.seen.has(event.id)) {
+          this.touchSeen(event.id);
+          continue;
+        }
 
         // Deliver before recording so a throwing handler leaves the ID
         // un-recorded (and therefore re-deliverable on a later poll).
         await this.dispatch(event);
         this.lastEventAt = new Date().toISOString();
         this.recordSeen(event.id);
+      }
 
+      const responseCursor = results.find((result) => result.cursor !== undefined)?.cursor;
+      const fallbackCursor = uniqueEvents[uniqueEvents.length - 1]?.pagingToken;
+      const nextCursor = responseCursor ?? fallbackCursor;
+      if (nextCursor !== undefined) {
         if (this.isReplayMode) {
-          // Replay progress is ephemeral and must never touch the durable store.
-          this.replayCursor = event.pagingToken;
+          this.replayCursor = nextCursor;
         } else {
-          await this.cursorStore.saveCursor(event.pagingToken);
+          await this.cursorStore.saveCursor(nextCursor);
         }
       }
     } finally {
@@ -431,7 +528,13 @@ export class SorobanSubscriber {
    *   filters match the event, falling back to the constructor `onEvent`.
    */
   private async dispatch(event: SorobanEvent): Promise<void> {
-    const eventToEmit = { ...event };
+    const normalizedType =
+      event.type === "contract"
+        ? "contract.emitted"
+        : event.type === "system" || event.type === "diagnostic"
+          ? "contract.invoked"
+          : event.type;
+    const eventToEmit = { ...event, type: normalizedType };
     if (this.xdrFormat === "json") {
       eventToEmit.decodedData = event.value;
     }
@@ -447,6 +550,50 @@ export class SorobanSubscriber {
         if (handler) await handler(eventToEmit);
       }
     }
+  }
+
+  /** Fetch one page using modern start-ledger/cursor pagination when supported. */
+  private async fetchEvents(
+    currentCursor: string | undefined,
+    filters: ContractSubscriptionFilter[],
+    signal: AbortSignal,
+  ): Promise<{ events: SorobanEvent[]; latestLedger?: number; cursor?: string }> {
+    if (this.rpc.getLatestLedger !== undefined) {
+      const pagination: NonNullable<SorobanGetEventsParams["pagination"]> = {
+        limit: this.pageLimit,
+      };
+      const params: SorobanGetEventsParams = {
+        ...(filters.length > 0 ? { filters } : {}),
+        pagination,
+        xdrFormat: this.xdrFormat,
+      };
+
+      if (currentCursor !== undefined) {
+        pagination.cursor = currentCursor;
+      } else if (this.startLedger !== undefined) {
+        params.startLedger = this.startLedger;
+      }
+
+      const rpc = this.rpc as unknown as {
+        getEvents(
+          params: SorobanGetEventsParams,
+          options?: SorobanRpcCallOptions,
+        ): Promise<SorobanGetEventsResult>;
+      };
+      return (await rpc.getEvents(params, { signal })) as {
+        events: SorobanEvent[];
+        latestLedger?: number;
+        cursor?: string;
+      };
+    }
+
+    return this.rpc.getEvents(
+      currentCursor,
+      this.pageLimit,
+      signal,
+      filters.length > 0 ? filters : undefined,
+      { xdrFormat: this.xdrFormat, signal },
+    );
   }
 
   /** True when any of the subscription's filters matches the event. */
@@ -468,14 +615,50 @@ export class SorobanSubscriber {
     return true;
   }
 
-  /** Records a delivered event ID, evicting the oldest entries past the cap. */
+  /**
+   * Collapses identical filters into a single entry, preserving first-seen order.
+   * Two filters are identical when they target the same event `type`, the same set
+   * of contract IDs (order-independent), and the same positional topic filters.
+   * This is what lets N subscriptions sharing a filter coalesce into one RPC slot,
+   * so the poll issues the minimum number of getEvents calls.
+   */
+  private coalesceFilters(filters: ContractSubscriptionFilter[]): ContractSubscriptionFilter[] {
+    const byKey = new Map<string, ContractSubscriptionFilter>();
+    for (const filter of filters) {
+      const key = this.filterKey(filter);
+      if (!byKey.has(key)) byKey.set(key, filter);
+    }
+    return [...byKey.values()];
+  }
+
+  /** Stable identity key for a filter; contract IDs are sorted so order doesn't matter. */
+  private filterKey(filter: ContractSubscriptionFilter): string {
+    const contractIds = filter.contractIds ? [...filter.contractIds].sort() : undefined;
+    return JSON.stringify({
+      type: filter.type,
+      contractIds,
+      topicFilters: filter.topicFilters,
+    });
+  }
+
+  /**
+   * Records a delivered event ID at the most-recently-used end of the LRU
+   * window, evicting the least-recently-used IDs once the cap is exceeded.
+   */
   private recordSeen(id: string): void {
+    // Re-insert so the ID moves to the MRU position even if already present.
+    this.seen.delete(id);
     this.seen.add(id);
     while (this.seen.size > this.dedupCacheSize) {
-      const oldest = this.seen.values().next().value;
-      if (oldest === undefined) break;
-      this.seen.delete(oldest);
+      const lru = this.seen.values().next().value;
+      if (lru === undefined) break;
+      this.seen.delete(lru);
     }
+  }
+
+  /** Marks an already-seen ID as most-recently-used (LRU touch on a dedup hit). */
+  private touchSeen(id: string): void {
+    if (this.seen.delete(id)) this.seen.add(id);
   }
 
   /** Schedules a single deferred re-poll using the injectable timer. */

@@ -169,6 +169,86 @@ describe("SorobanSubscriber — coalescing and parallel filters", () => {
     expect(await cursorStore.getCursor()).toBe("0000000002");
   });
 
+  it("coalesces duplicate filters so identical subscriptions cost one filter slot", async () => {
+    const subscriber = new SorobanSubscriber({ rpc, cursorStore });
+
+    // 8 subscriptions, but only two distinct contracts between them.
+    subscriber.subscriptions = Array.from({ length: 8 }, (_, i) => ({
+      id: `sub-${i}`,
+      filters: [{ contractIds: [i % 2 === 0 ? "C1" : "C2"] }],
+    }));
+
+    await subscriber.pollOnce();
+
+    // Two unique filters → a single RPC call, not ceil(8 / 5) = 2.
+    expect(rpc.calls).toHaveLength(1);
+    expect(rpc.calls[0].filters).toEqual([{ contractIds: ["C1"] }, { contractIds: ["C2"] }]);
+  });
+
+  it("treats contractId order as identical when coalescing", async () => {
+    const subscriber = new SorobanSubscriber({ rpc, cursorStore });
+
+    subscriber.subscriptions = [
+      { id: "a", filters: [{ contractIds: ["C1", "C2"] }] },
+      { id: "b", filters: [{ contractIds: ["C2", "C1"] }] },
+    ];
+
+    await subscriber.pollOnce();
+
+    expect(rpc.calls).toHaveLength(1);
+    expect(rpc.calls[0].filters).toHaveLength(1);
+  });
+
+  it("uses the minimum number of calls when unique filters exceed the 5-filter cap", async () => {
+    const subscriber = new SorobanSubscriber({ rpc, cursorStore });
+
+    // 12 subscriptions across 6 distinct contracts (each watched twice).
+    subscriber.subscriptions = Array.from({ length: 12 }, (_, i) => ({
+      id: `sub-${i}`,
+      filters: [{ contractIds: [`C${i % 6}`] }],
+    }));
+
+    await subscriber.pollOnce();
+
+    // 6 unique filters → ceil(6 / 5) = 2 calls, not ceil(12 / 5) = 3.
+    expect(rpc.calls).toHaveLength(2);
+    expect(rpc.calls[0].filters).toHaveLength(5);
+    expect(rpc.calls[1].filters).toHaveLength(1);
+  });
+
+  it("delivers a coalesced event to every subscription that matches it", async () => {
+    const subscriber = new SorobanSubscriber({ rpc, cursorStore });
+
+    const received: Record<string, string[]> = { a: [], b: [] };
+    subscriber.subscriptions = [
+      {
+        id: "a",
+        filters: [{ contractIds: ["C1"] }],
+        onEvent: async (evt) => {
+          received.a.push(evt.id);
+        },
+      },
+      {
+        id: "b",
+        filters: [{ contractIds: ["C1"] }],
+        onEvent: async (evt) => {
+          received.b.push(evt.id);
+        },
+      },
+    ];
+
+    rpc.responseMap.set(JSON.stringify({ contractIds: ["C1"] }), [
+      makeEvent("evt-1", "0000000001", "C1"),
+    ]);
+
+    await subscriber.pollOnce();
+
+    // One coalesced filter → one call, but both subscriptions receive the event.
+    expect(rpc.calls).toHaveLength(1);
+    expect(received.a).toEqual(["evt-1"]);
+    expect(received.b).toEqual(["evt-1"]);
+  });
+
   it("maintains backward compatibility with constructor onEvent option", async () => {
     const emitted: SorobanEvent[] = [];
     const subscriber = new SorobanSubscriber({
