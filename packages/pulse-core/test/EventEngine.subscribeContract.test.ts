@@ -288,6 +288,20 @@ describe("engine.subscribeContract(config)", () => {
     expect(() => engine.subscribeContract({ filters: [{ type: "diagnostic" }] })).not.toThrow();
   });
 
+  it("accepts '*' and '**' topic wildcards", () => {
+    const engine = makeEngine();
+    expect(() =>
+      engine.subscribeContract({ filters: [{ topics: [["*"], ["**"]] }] }),
+    ).not.toThrow();
+  });
+
+  it("throws synchronously for a malformed topic segment", () => {
+    const engine = makeEngine();
+    expect(() =>
+      engine.subscribeContract({ filters: [{ topics: [["not valid base64!"]] }] }),
+    ).toThrow(/topics|base64|scval/i);
+  });
+
   it("does not interfere with the legacy string-id subscribeContract", () => {
     const engine = makeEngine();
     const legacyWatcher = engine.subscribeContract("my-sub");

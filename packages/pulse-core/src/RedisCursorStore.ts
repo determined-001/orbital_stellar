@@ -19,8 +19,14 @@ export interface RedisLike {
  * call, reducing N cursor updates to one network round-trip.
  */
 export class RedisCursorStore extends CursorStore {
+  private static readonly PREFIX = "orbital:cursor:";
+
   constructor(private readonly redis: RedisLike) {
     super();
+  }
+
+  private prefixed(key: string): string {
+    return `${RedisCursorStore.PREFIX}${key}`;
   }
 
   /**
@@ -28,14 +34,14 @@ export class RedisCursorStore extends CursorStore {
    * Returns null if no cursor has been stored yet.
    */
   async get(streamKey: string): Promise<string | null> {
-    return this.redis.get(streamKey);
+    return this.redis.get(this.prefixed(streamKey));
   }
 
   /**
    * Stores or updates the cursor for a given stream key.
    */
   async set(streamKey: string, cursor: string): Promise<void> {
-    await this.redis.set(streamKey, cursor);
+    await this.redis.set(this.prefixed(streamKey), cursor);
   }
 
   /**
@@ -46,11 +52,10 @@ export class RedisCursorStore extends CursorStore {
    */
   async getMany(keys: string[]): Promise<Record<string, string | null>> {
     if (keys.length === 0) return {};
-    const values = await this.redis.mget(...keys);
+    const prefixedKeys = keys.map((key) => this.prefixed(key));
+    const values = await this.redis.mget(...prefixedKeys);
     const result: Record<string, string | null> = {};
     for (let i = 0; i < keys.length; i++) {
-      // keys[i] and values[i] are always defined here because i < keys.length
-      // and mget returns an array of the same length as the input keys.
       result[keys[i]!] = values[i] ?? null;
     }
     return result;
@@ -66,8 +71,7 @@ export class RedisCursorStore extends CursorStore {
   async setMany(entries: Record<string, string>): Promise<void> {
     const pairs = Object.entries(entries);
     if (pairs.length === 0) return;
-    // Flatten to [key1, val1, key2, val2, …] for MSET
-    const args = pairs.flat();
+    const args = pairs.flatMap(([key, value]) => [this.prefixed(key), value]);
     await this.redis.mset(...args);
   }
 }

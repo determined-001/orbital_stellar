@@ -15,6 +15,7 @@ import {
   type SorobanRpcLike,
   type CursorStoreLike,
 } from "../src/SorobanSubscriber.js";
+import { EventEngine } from "../src/EventEngine.js";
 
 // ---------------------------------------------------------------------------
 // Test helpers
@@ -204,7 +205,18 @@ describe("SorobanSubscriber – pagination limit", () => {
         onEvent: async () => {},
         pageLimit: 50000,
       });
-    }).toThrow(/pageLimit must be between 1 and 10,000/);
+    }).toThrow(/soroban\.pageLimit must be an integer between 1 and 10,000/);
+  });
+
+  it("rejects a non-integer pageLimit", () => {
+    expect(
+      () =>
+        new SorobanSubscriber({
+          rpc: stub,
+          cursorStore,
+          pageLimit: 1.5,
+        }),
+    ).toThrow(/soroban\.pageLimit must be an integer between 1 and 10,000/);
   });
 
   // ── 9. pageLimit works with multiple events ─────────────────────────────
@@ -228,5 +240,36 @@ describe("SorobanSubscriber – pagination limit", () => {
 
     expect(stub.recordedLimits).toEqual([7500]);
     expect(emitted).toHaveLength(3);
+  });
+
+  it("validates CoreConfig.soroban.pageLimit at EventEngine construction", () => {
+    expect(
+      () =>
+        new EventEngine({
+          network: "testnet",
+          soroban: { rpcUrl: "https://soroban-rpc.example.com", pageLimit: 0 },
+        }),
+    ).toThrow(/soroban\.pageLimit must be an integer between 1 and 10,000/);
+  });
+
+  it("passes CoreConfig.soroban.pageLimit through to Soroban replay polls", async () => {
+    const engine = new EventEngine({
+      network: "testnet",
+      soroban: { rpcUrl: "https://soroban-rpc.example.com", pageLimit: 4321 },
+    });
+    const subscriber = engine.replayContracts({
+      rpc: stub,
+      startLedger: 1,
+      endLedger: 100,
+      onEvent: async () => {},
+      onDone: () => {},
+    });
+
+    stub.page = [makeEvent("evt-1", "tok-1")];
+    await subscriber.pollOnce();
+    stub.page = [makeEvent("evt-2", "tok-2")];
+    await subscriber.pollOnce();
+
+    expect(stub.recordedLimits).toEqual([4321, 4321]);
   });
 });

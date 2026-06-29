@@ -36,10 +36,19 @@ export type WebhookConfig = {
   backoff?: import("./backoff.js").BackoffStrategy;
   /** Optional OpenTelemetry-compatible tracer. When provided, one span is emitted per delivery attempt. */
   tracer?: Tracer;
-  /** Optional custom URL validator for additional block-lists. Return an error message to reject, or null to allow. */
+  /** Optional custom URL validator for additional block-lists. Runs after built-in URL checks. Return an error message to reject, or null to allow. */
   urlValidator?: (url: string) => Promise<string | null>;
   /** Optional metrics recorder for per-URL delivery observability. */
   metrics?: WebhookMetrics;
+  /**
+   * Optional durable retry queue. When set, every retry is enqueued into
+   * this queue instead of scheduled via setTimeout. A separate poller
+   * dequeues records at `retryQueuePollIntervalMs` and drives delivery.
+   * Persists retries across restarts when backed by a durable store.
+   */
+  retryQueue?: import("./RetryQueue.js").RetryQueue;
+  /** Poll interval for the retry queue dequeue loop. Defaults to 1000ms. */
+  retryQueuePollIntervalMs?: number;
 };
 
 export const DEFAULT_MAX_AGE_MS = 300_000;
@@ -60,4 +69,6 @@ export type VerifyWebhookOptions = {
    *  will run this after signature verification and return `null` if it returns `false`.
    */
   schema?: (event: import("@orbital-stellar/pulse-core").NormalizedEvent) => boolean;
+  /** Maximum payload size in bytes. Defaults to 100_000 (~100 KB). */
+  maxBodyBytes?: number;
 };

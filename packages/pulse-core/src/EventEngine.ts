@@ -1,11 +1,12 @@
 import { Horizon } from "@stellar/stellar-sdk";
 import { Watcher } from "./Watcher.js";
 import { EngineAlreadyStartedError, NetworkMismatchError } from "./errors.js";
-import { SorobanSubscriber } from "./SorobanSubscriber.js";
+import { resolveSorobanPageLimit, SorobanSubscriber } from "./SorobanSubscriber.js";
 import { SorobanRpcClient } from "./SorobanRpcClient.js";
 import type { SorobanRpcLike, SorobanEvent } from "./SorobanSubscriber.js";
 import { toAccountAddress, toContractAddress } from "./address.js";
 import { toStellarAmount } from "./amount.js";
+import { validateContractFilters } from "./contractFilters.js";
 import type {
   AccountCreatedEvent,
   AccountMergeEvent,
@@ -45,6 +46,8 @@ import type {
   WatcherNotificationType,
   Logger,
   CursorStore,
+  CursorStoreLike,
+  DecodeFailedNotification,
   RawHorizonPayment,
   RawHorizonSetOptions,
   RawHorizonCreateAccount,
@@ -171,9 +174,11 @@ export class EventEngine {
   private horizonCursor?: string;
   private filters: Map<string, (event: NormalizedEvent) => boolean> = new Map();
   private log: Logger;
-  private cursorStore?: CursorStore;
+  private cursorStore?: CursorStoreLike;
   private readonly network: Network;
+  private readonly sorobanPageLimit: number;
   private streamKey: string;
+  private streamEpoch = 0;
   private cursorFailureThreshold: number;
   private consecutiveCursorFailures = 0;
   private isCursorStoreUnhealthy = false;
@@ -191,16 +196,9 @@ export class EventEngine {
    * Creates a new EventEngine instance.
    * @param config - The core configuration for the engine.
    */
-  constructor(
-    config: CoreConfig & {
-      soroban?: {
-        rpcUrl: string;
-        rpcHeaders?: Record<string, string>;
-        pollIntervalMs?: number;
-        startLedgerLookback?: number;
-      };
-    },
-  ) {
+  constructor(config: CoreConfig) {
+    this.sorobanPageLimit = resolveSorobanPageLimit(config.soroban?.pageLimit);
+
     let horizonUrl: string;
     if (config.horizonUrl !== undefined) {
       try {
@@ -230,6 +228,38 @@ export class EventEngine {
     this.abiRegistry = config.abiRegistry;
     this.cursorStore = config.cursorStore;
     this.network = config.network;
+
+    if (config.soroban) {
+      const rpc = new SorobanRpcClient({
+        url: config.soroban.rpcUrl,
+        headers: config.soroban.rpcHeaders,
+        logger: this.log,
+      });
+      const sorobanCursorKey = `${this.streamKey}:soroban`;
+      let inMemoryCursor: string | undefined;
+      const cursorStore = {
+        getCursor: async (): Promise<string | undefined> => {
+          if (!this.cursorStore) return inMemoryCursor;
+          return (await this.cursorStore.get(sorobanCursorKey)) ?? undefined;
+        },
+        saveCursor: async (cursor: string): Promise<void> => {
+          if (!this.cursorStore) {
+            inMemoryCursor = cursor;
+            return;
+          }
+          await this.cursorStore.set(sorobanCursorKey, cursor);
+        },
+      };
+
+      this.sorobanSubscriber = new SorobanSubscriber({
+        rpc: rpc as unknown as SorobanRpcLike,
+        cursorStore,
+        pollIntervalMs: config.soroban.pollIntervalMs,
+        startLedgerLookback: config.soroban.startLedgerLookback,
+        pageLimit: config.soroban.pageLimit,
+        onEvent: async (event) => this.handleSorobanEvent(event),
+      });
+    }
   }
 
   /**
@@ -392,7 +422,9 @@ export class EventEngine {
    * Subscribes to Soroban contract events using an RPC-shaped filter config.
    * Deduplicates by a stable key over the filter shape — repeated calls with
    * semantically equal configs return the same Watcher instance.
-   * Throws synchronously when filters.length > 5 or any filter's contractIds.length > 5.
+   * Throws synchronously when the filter shape is invalid — more than 5 filters,
+   * a filter with more than 5 contractIds, or a malformed topic segment array
+   * (each segment must be '*', '**', or a base64-encoded XDR scval).
    * @param config - Filter configuration mirroring the RPC getEvents filter shape.
    */
   subscribeContract(config: ContractSubscriptionConfig): Watcher;
@@ -403,18 +435,11 @@ export class EventEngine {
     // New config-object overload
     if (typeof idOrConfig === "object") {
       const config = idOrConfig;
-      if (config.filters.length > 5) {
-        throw new Error(
-          `ContractSubscriptionConfig.filters must have ≤ 5 entries, got ${config.filters.length}`,
-        );
-      }
-      for (let i = 0; i < config.filters.length; i++) {
-        const f = config.filters[i]!;
-        if (f.contractIds !== undefined && f.contractIds.length > 5) {
-          throw new Error(
-            `ContractSubscriptionConfig.filters[${i}].contractIds must have ≤ 5 entries, got ${f.contractIds.length}`,
-          );
-        }
+      // Validate the whole filter shape up front so callers get a clear, synchronous
+      // error instead of a 4xx from the RPC (5-filter / 5-contractId / topic limits).
+      const validationErrors = validateContractFilters(config.filters);
+      if (validationErrors) {
+        throw new Error(`Invalid ContractSubscriptionConfig: ${validationErrors.join("; ")}`);
       }
 
       const key = stableFilterKey(config.filters);
@@ -464,10 +489,24 @@ export class EventEngine {
   }
 
   /**
-   * Removes a contract subscription by its id.
+   * Removes a contract subscription created with the legacy id-based
+   * `subscribeContract(id)`, stopping its watcher.
    */
-  unsubscribeContract(id: string): void {
-    this.contractRegistry.get(id)?.watcher.stop();
+  unsubscribeContract(id: string): void;
+  /**
+   * Removes the contract subscription created with `subscribeContract(config)`,
+   * stopping the watcher registered under the same filter shape. No-op when no
+   * matching subscription exists.
+   */
+  unsubscribeContract(config: ContractSubscriptionConfig): void;
+  unsubscribeContract(idOrConfig: string | ContractSubscriptionConfig): void {
+    if (typeof idOrConfig === "object") {
+      const key = stableFilterKey(idOrConfig.filters);
+      // The watcher's stop handler removes it from contractConfigRegistry.
+      this.contractConfigRegistry.get(key)?.stop();
+      return;
+    }
+    this.contractRegistry.get(idOrConfig)?.watcher.stop();
   }
 
   /**
@@ -513,7 +552,8 @@ export class EventEngine {
       onEvent: options.onEvent,
       endLedger: options.endLedger,
       onDone: options.onDone,
-      pageSize: options.pageSize,
+      startLedger: options.startLedger,
+      pageLimit: options.pageSize ?? this.sorobanPageLimit,
     });
 
     return subscriber;
@@ -526,6 +566,7 @@ export class EventEngine {
    * tearing it down.
    */
   unsubscribeAllContracts(): void {
+    // Legacy id-based subscriptions.
     for (const [id, entry] of this.contractRegistry.entries()) {
       const name = this.subscriptionNames.get(id);
       const notification = {
@@ -536,6 +577,17 @@ export class EventEngine {
       };
       entry.watcher.emit("engine.stopped", notification);
       entry.watcher.stop();
+    }
+
+    // Config-based subscriptions (subscribeContract(config)). Snapshot first —
+    // each watcher's stop handler mutates contractConfigRegistry.
+    for (const watcher of [...this.contractConfigRegistry.values()]) {
+      watcher.emit("engine.stopped", {
+        type: "engine.stopped" as const,
+        attempt: 0,
+        emittedAt: new Date().toISOString(),
+      });
+      watcher.stop();
     }
   }
 
@@ -570,7 +622,7 @@ export class EventEngine {
     }
 
     this.openStream(false);
-    if (this.contractRegistry.size > 0 && this.sorobanSubscriber) {
+    if (this.sorobanSubscriber) {
       this.sorobanSubscriber.start();
     }
     return true;
@@ -578,19 +630,37 @@ export class EventEngine {
 
   async healthCheck(thresholdMs = 5 * 60 * 1000): Promise<HealthCheckResult> {
     const reasons: string[] = [];
+
     if (!this.isRunning) {
-      reasons.push("engine is not running");
+      reasons.push("horizon source is not running");
     }
     if (this.lastEventAt === null) {
-      reasons.push("no events received yet");
+      reasons.push("horizon source: no events received yet");
     } else {
       const age = Date.now() - new Date(this.lastEventAt).getTime();
       if (age > thresholdMs) {
         reasons.push(
-          `last event was ${Math.floor(age / 1000)}s ago (threshold ${Math.floor(thresholdMs / 1000)}s)`,
+          `horizon source: last event was ${Math.floor(age / 1000)}s ago (threshold ${Math.floor(thresholdMs / 1000)}s)`,
         );
       }
     }
+
+    if (this.sorobanSubscriber) {
+      if (!this.sorobanSubscriber.isRunning) {
+        reasons.push("soroban subscriber is not running");
+      }
+      if (this.sorobanSubscriber.lastEventAt === null) {
+        reasons.push("soroban subscriber: no events received yet");
+      } else {
+        const age = Date.now() - new Date(this.sorobanSubscriber.lastEventAt).getTime();
+        if (age > thresholdMs) {
+          reasons.push(
+            `soroban subscriber: last event was ${Math.floor(age / 1000)}s ago (threshold ${Math.floor(thresholdMs / 1000)}s)`,
+          );
+        }
+      }
+    }
+
     if (this.cursorStore?.ping) {
       try {
         await this.cursorStore.ping();
@@ -659,6 +729,11 @@ export class EventEngine {
     }
   }
 
+  /**
+   * Returns the current status of the event engine.
+   * Reports top-level aggregated status as well as individual source status
+   * for both Horizon and Soroban subscribers.
+   */
   status(): EngineStatus {
     const horizon = {
       running: this.isRunning,
@@ -712,6 +787,12 @@ export class EventEngine {
           });
         }
 
+        const cursor = this.getHorizonCursor(record);
+        if (cursor !== null) {
+          this.horizonCursor = cursor;
+          void this.persistHorizonCursor(cursor);
+        }
+
         const event = this.normalize(record);
         if (!event) {
           return;
@@ -726,7 +807,59 @@ export class EventEngine {
       },
     };
 
-    this.stopStream = this.server.operations().cursor("now").stream(callbacks);
+    const streamEpoch = ++this.streamEpoch;
+    if (!this.cursorStore) {
+      this.stopStream = this.server.operations().cursor("now").stream(callbacks);
+      return;
+    }
+
+    void this.resolveStreamCursor().then((streamCursor) => {
+      if (streamEpoch !== this.streamEpoch || !this.isRunning) {
+        return;
+      }
+
+      this.horizonCursor = streamCursor;
+      this.stopStream = this.server.operations().cursor(streamCursor).stream(callbacks);
+    });
+  }
+
+  private getHorizonCursor(record: unknown): string | null {
+    if (!this.isRecord(record)) {
+      return null;
+    }
+
+    const cursor = this.getStringField(record, "paging_token");
+    return cursor ?? this.getStringField(record, "pagingToken");
+  }
+
+  private async resolveStreamCursor(): Promise<string> {
+    if (!this.cursorStore) {
+      return "now";
+    }
+
+    try {
+      const cursor = await this.cursorStore.get(this.streamKey);
+      return cursor ?? "now";
+    } catch (err) {
+      this.log.warn("[pulse-core] cursorStore.get() failed during stream startup.", {
+        key: this.streamKey,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return "now";
+    }
+  }
+
+  private async persistHorizonCursor(cursor: string): Promise<void> {
+    if (!this.cursorStore) {
+      return;
+    }
+
+    try {
+      await this.cursorStore.set(this.streamKey, cursor);
+      this.consecutiveCursorFailures = 0;
+    } catch (err) {
+      this.handleCursorFailure(err);
+    }
   }
 
   private handleStreamError(error?: unknown): void {
@@ -1501,9 +1634,19 @@ export class EventEngine {
       data: r.data ?? null,
       decodedData: r.decodedData,
       ...(typeof r.ledger === "number" ? { ledger: r.ledger } : {}),
-      ...(typeof r.eventId === "string" ? { eventId: r.eventId } : {}),
-      ...(typeof r.txHash === "string" ? { txHash: r.txHash } : {}),
-      inSuccessfulContractCall: Boolean(r.inSuccessfulContractCall),
+      ...(typeof r.eventId === "string"
+        ? { eventId: r.eventId }
+        : typeof r.event_id === "string"
+          ? { eventId: r.event_id }
+          : {}),
+      ...(typeof r.txHash === "string"
+        ? { txHash: r.txHash }
+        : typeof r.tx_hash === "string"
+          ? { txHash: r.tx_hash }
+          : {}),
+      inSuccessfulContractCall: Boolean(
+        r.inSuccessfulContractCall ?? r.in_successful_contract_call,
+      ),
       timestamp: r.created_at,
       raw: raw as RawSorobanEvent,
     };
@@ -1521,6 +1664,51 @@ export class EventEngine {
         error: err,
       });
       return false;
+    }
+  }
+
+  /** Converts a polled Soroban RPC event into the public normalized event shape. */
+  private handleSorobanEvent(event: SorobanEvent): void {
+    if (!event.contractId) {
+      this.log.warn("[pulse-core] Dropping Soroban event without a contractId.", {
+        eventId: event.id,
+      });
+      return;
+    }
+
+    const timestamp = event.ledgerClosedAt ?? new Date().toISOString();
+    if (event.type === "contract.invoked") {
+      this.route(
+        withTimestampDate({
+          type: "contract.invoked",
+          contractId: toContractAddress(event.contractId),
+          function: event.function ?? "",
+          args: event.args ?? [],
+          ...(event.ledger !== undefined ? { ledger: event.ledger } : {}),
+          ...(event.txHash !== undefined ? { txHash: event.txHash } : {}),
+          timestamp,
+          raw: event as RawSorobanEvent,
+        }),
+      );
+      return;
+    }
+
+    if (event.type === "contract.emitted") {
+      this.route(
+        withTimestampDate({
+          type: "contract.emitted",
+          contractId: toContractAddress(event.contractId),
+          topics: event.topic,
+          data: event.decodedData ?? event.value,
+          decodedData: event.decodedData,
+          ...(event.ledger !== undefined ? { ledger: event.ledger } : {}),
+          eventId: event.id,
+          ...(event.txHash !== undefined ? { txHash: event.txHash } : {}),
+          inSuccessfulContractCall: event.inSuccessfulContractCall ?? false,
+          timestamp,
+          raw: event as RawSorobanEvent,
+        }),
+      );
     }
   }
 
@@ -1561,6 +1749,24 @@ export class EventEngine {
       if (this.matchesContractFilters(event, filters) && this.passesFilter(id, event)) {
         watcher.emit(event.type, event);
         watcher.emit("*", event);
+      }
+    }
+  }
+
+  private emitDecodeFailedNotification(
+    event: Timestamped<ContractEmittedEvent>,
+    error: string,
+  ): void {
+    const notification: DecodeFailedNotification = {
+      type: "event.decode_failed",
+      contractId: event.contractId,
+      eventId: event.eventId,
+      error,
+    };
+
+    for (const [id, { watcher, filters }] of this.contractRegistry.entries()) {
+      if (this.matchesContractFilters(event, filters) && this.passesFilter(id, event)) {
+        watcher.emit("event.decode_failed", notification);
       }
     }
   }
@@ -1745,13 +1951,22 @@ export class EventEngine {
             if (spec !== null && spec !== undefined) {
               (event as ContractEmittedEvent).decodedData =
                 (spec as { entries?: unknown }).entries ?? spec;
+            } else {
+              (event as ContractEmittedEvent).decodedData = undefined;
+              this.emitDecodeFailedNotification(
+                event,
+                `No ABI spec found for contract ${contractId}`,
+              );
             }
             this.dispatchContractEvent(event);
           },
           (err: unknown) => {
+            (event as ContractEmittedEvent).decodedData = undefined;
+            const errorMessage = err instanceof Error ? err.message : String(err);
+            this.emitDecodeFailedNotification(event, errorMessage);
             this.log.warn("ABI registry lookup failed for contract.emitted event", {
               contractId,
-              error: err instanceof Error ? err.message : String(err),
+              error: errorMessage,
             });
             this.dispatchContractEvent(event);
           },

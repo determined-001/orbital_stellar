@@ -82,25 +82,44 @@ describe("EventEngine — ABI registry integration", () => {
     expect(received[0]!.decodedData).toEqual(spec.entries);
   });
 
-  it("leaves decodedData undefined on a registry miss (null spec)", async () => {
+  it("emits event.decode_failed and leaves decodedData undefined on a registry miss", async () => {
     const abiRegistry: AbiRegistryClientLike = {
       getSpec: vi.fn().mockResolvedValue(null),
     };
 
     const { engine, simulateRecord } = buildEngine(abiRegistry);
     const received: ContractEmittedEvent[] = [];
+    const notifications: Array<{
+      type: string;
+      contractId: string;
+      eventId?: string;
+      error: string;
+    }> = [];
 
     const watcher = engine.subscribeContract("sub1");
     watcher.on("contract.emitted", (e) => received.push(e as ContractEmittedEvent));
+    watcher.on("event.decode_failed", (e) => {
+      notifications.push(
+        e as { type: string; contractId: string; eventId?: string; error: string },
+      );
+    });
 
-    simulateRecord(makeEmittedRecord());
+    simulateRecord(makeEmittedRecord({ event_id: "evt-miss" }));
 
     await vi.waitFor(() => expect(received).toHaveLength(1));
 
     expect(received[0]!.decodedData).toBeUndefined();
+    expect(notifications).toEqual([
+      {
+        type: "event.decode_failed",
+        contractId: "CABC1234",
+        eventId: "evt-miss",
+        error: "No ABI spec found for contract CABC1234",
+      },
+    ]);
   });
 
-  it("routes the event without decodedData and logs a warning when getSpec rejects", async () => {
+  it("routes the event without decodedData and emits event.decode_failed when getSpec rejects", async () => {
     const warnSpy = vi.fn();
     const abiRegistry: AbiRegistryClientLike = {
       getSpec: vi.fn().mockRejectedValue(new Error("network timeout")),
@@ -124,14 +143,33 @@ describe("EventEngine — ABI registry integration", () => {
     engine.start();
 
     const received: ContractEmittedEvent[] = [];
+    const notifications: Array<{
+      type: string;
+      contractId: string;
+      eventId?: string;
+      error: string;
+    }> = [];
     const watcher = engine.subscribeContract("sub1");
     watcher.on("contract.emitted", (e) => received.push(e as ContractEmittedEvent));
+    watcher.on("event.decode_failed", (e) => {
+      notifications.push(
+        e as { type: string; contractId: string; eventId?: string; error: string },
+      );
+    });
 
-    capturedOnMessage!(makeEmittedRecord());
+    capturedOnMessage!(makeEmittedRecord({ event_id: "evt-reject" }));
 
     await vi.waitFor(() => expect(received).toHaveLength(1));
 
     expect(received[0]!.decodedData).toBeUndefined();
+    expect(notifications).toEqual([
+      {
+        type: "event.decode_failed",
+        contractId: "CABC1234",
+        eventId: "evt-reject",
+        error: "network timeout",
+      },
+    ]);
     expect(warnSpy).toHaveBeenCalledWith(
       expect.stringContaining("ABI registry lookup failed"),
       expect.objectContaining({ contractId: "CABC1234" }),
