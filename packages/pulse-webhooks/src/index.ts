@@ -107,6 +107,22 @@ export type WebhookDroppedRaw = {
   originalEvent: NormalizedEvent;
 };
 
+/**
+ * Payload for the `raw` field of a `webhook.backpressure` event.
+ */
+export type WebhookBackpressureRaw = {
+  /** The reason backpressure was triggered. */
+  reason: "concurrent_delivery_cap_exceeded";
+  /** The target URL that was queued. */
+  url: string;
+  /** The `maxConcurrentDeliveries` limit that was hit. */
+  maxConcurrentDeliveries: number;
+  /** Number of events currently queued due to backpressure. */
+  pendingCount: number;
+  /** The original event that triggered backpressure. */
+  originalEvent: NormalizedEvent;
+};
+
 type ResolvedWebhookConfig = Omit<
   Required<WebhookConfig>,
   "url" | "tracer" | "urlValidator" | "metrics" | "backoff" | "retryQueue"
@@ -137,6 +153,11 @@ export class WebhookDelivery {
 
   // Monotonic counter for durable RetryRecord ids.
   private retrySeq = 0;
+
+  // Track active in-flight deliveries for the concurrent delivery cap.
+  private activeDeliveries = 0;
+  // Overflow queue for deliveries that exceed the concurrent delivery cap.
+  private overflowQueue: Array<{ event: NormalizedEvent; url: string }> = [];
   constructor(watcher: Watcher, config: WebhookConfig, dlq?: DeadLetterStore) {
     this.watcher = watcher;
     this.dlq = dlq ?? new DeadLetterStore();
@@ -144,6 +165,7 @@ export class WebhookDelivery {
       retries: 3,
       deliveryTimeoutMs: 10000,
       maxConcurrentRetries: 100,
+      maxConcurrentDeliveries: 100,
       random: Math.random,
       backoff: exponentialJittered,
       retryQueuePollIntervalMs: 1000,
@@ -152,6 +174,7 @@ export class WebhookDelivery {
       urls: Array.isArray(config.url) ? [...config.url] : [config.url],
     };
     this.config.maxConcurrentRetries = Math.max(1, this.config.maxConcurrentRetries);
+    this.config.maxConcurrentDeliveries = Math.max(1, this.config.maxConcurrentDeliveries);
     this.retryQueue = config.retryQueue;
 
     this.watcher.addStopHandler(() => {
@@ -168,7 +191,7 @@ export class WebhookDelivery {
       (event: NormalizedEvent | WatcherNotification | DecodeFailedNotification) => {
         if ("raw" in event) {
           for (const url of this.config.urls) {
-            void this.deliverToUrl(event, url);
+            this.dispatchDelivery(event, url);
           }
         }
       },
@@ -207,11 +230,11 @@ export class WebhookDelivery {
     }
 
     const resolvedHostnameError = await this.validateResolvedHostname(url);
-    if (this.watcher.stopped) return;
+    if (this.watcher.stopped) return { ok: false, error: "stopped", terminal: true };
 
     if (resolvedHostnameError) {
       this.emitFailure(event, url, resolvedHostnameError, attempt);
-      return;
+      return { ok: false, error: resolvedHostnameError, terminal: true };
     }
 
     const payload = JSON.stringify(event);
@@ -455,6 +478,55 @@ export class WebhookDelivery {
         originalEvent: event,
         dlqId,
       } satisfies WebhookFailureRaw,
+    } as unknown as NormalizedEvent);
+  }
+
+  /**
+   * Dispatches a first-attempt delivery through the concurrency cap.
+   * If at capacity, the event is queued and a `webhook.backpressure` notification is emitted.
+   */
+  private dispatchDelivery(event: NormalizedEvent, url: string): void {
+    if (this.activeDeliveries >= this.config.maxConcurrentDeliveries) {
+      this.overflowQueue.push({ event, url });
+      this.emitBackpressure(event, url);
+      return;
+    }
+    this.activeDeliveries++;
+    this.deliverToUrl(event, url).finally(() => {
+      this.activeDeliveries--;
+      this.drainOverflowQueue();
+    });
+  }
+
+  /**
+   * Drains the overflow queue into active delivery slots until the cap is reached
+   * or the queue is empty.
+   */
+  private drainOverflowQueue(): void {
+    while (
+      this.overflowQueue.length > 0 &&
+      this.activeDeliveries < this.config.maxConcurrentDeliveries
+    ) {
+      const { event, url } = this.overflowQueue.shift()!;
+      this.activeDeliveries++;
+      this.deliverToUrl(event, url).finally(() => {
+        this.activeDeliveries--;
+        this.drainOverflowQueue();
+      });
+    }
+  }
+
+  /** Emits `webhook.backpressure` when the delivery cap is exceeded. */
+  private emitBackpressure(event: NormalizedEvent, url: string): void {
+    this.watcher.emit("webhook.backpressure", {
+      ...event,
+      raw: {
+        reason: "concurrent_delivery_cap_exceeded",
+        url,
+        maxConcurrentDeliveries: this.config.maxConcurrentDeliveries,
+        pendingCount: this.overflowQueue.length,
+        originalEvent: event,
+      } satisfies WebhookBackpressureRaw,
     } as unknown as NormalizedEvent);
   }
 
