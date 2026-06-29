@@ -3,7 +3,7 @@
 // This enables offline or self‑hosted usage without any network calls.
 
 import { LruCache } from "./LruCache.js";
-import type { ContractSpec } from "./types.js";
+import type { XdrContractSpec } from "./types.js";
 
 const DEFAULT_MAX_CACHE_SIZE = 512;
 const DEFAULT_CACHE_TTL_MS = 5 * 60 * 1000;
@@ -23,7 +23,7 @@ export interface LocalAbiRegistryClientConfig {
 }
 
 type CacheEntry = {
-  value: ContractSpec | null;
+  value: XdrContractSpec | null;
   expiresAt: number;
 };
 
@@ -40,7 +40,7 @@ export class LocalAbiRegistryClient {
   }
 
   /** Fetch a single contract spec from the local directory (cached). */
-  async getSpec(contractId: string): Promise<ContractSpec | null> {
+  async getSpec(contractId: string): Promise<XdrContractSpec | null> {
     const cached = this.getCached(contractId);
     if (cached !== undefined) return cached;
     const spec = await this.loadFromDisk(contractId);
@@ -49,8 +49,8 @@ export class LocalAbiRegistryClient {
   }
 
   /** Fetch multiple specs, loading only those not present in the cache. */
-  async getSpecs(contractIds: string[]): Promise<Record<string, ContractSpec | null>> {
-    const result: Record<string, ContractSpec | null> = {};
+  async getSpecs(contractIds: string[]): Promise<Record<string, XdrContractSpec | null>> {
+    const result: Record<string, XdrContractSpec | null> = {};
     const uncached: string[] = [];
 
     for (const id of contractIds) {
@@ -66,14 +66,14 @@ export class LocalAbiRegistryClient {
 
     const loaded = await Promise.all(uncached.map((id) => this.loadFromDisk(id)));
     for (const [i, id] of uncached.entries()) {
-      const spec = loaded[i] as ContractSpec | null;
+      const spec = loaded[i] as XdrContractSpec | null;
       this.setCache(id, spec);
       result[id] = spec;
     }
     return result;
   }
 
-  private getCached(contractId: string): ContractSpec | null | undefined {
+  private getCached(contractId: string): XdrContractSpec | null | undefined {
     const entry = this.cache.get(contractId);
     if (!entry) return undefined;
     if (Date.now() > entry.expiresAt) {
@@ -83,16 +83,16 @@ export class LocalAbiRegistryClient {
     return entry.value;
   }
 
-  private setCache(contractId: string, value: ContractSpec | null): void {
+  private setCache(contractId: string, value: XdrContractSpec | null): void {
     this.cache.set(contractId, { value, expiresAt: Date.now() + this.ttlMs });
   }
 
-  private async loadFromDisk(contractId: string): Promise<ContractSpec | null> {
+  private async loadFromDisk(contractId: string): Promise<XdrContractSpec | null> {
     const path = `${this.specsDir}/${contractId}.json`;
     try {
       const { readFile } = await import("node:fs/promises");
       const data = await readFile(path, { encoding: "utf8" });
-      const spec: ContractSpec = JSON.parse(data);
+      const spec: XdrContractSpec = JSON.parse(data);
       return spec;
     } catch (e) {
       // Missing file or parse error – treat as not found.
