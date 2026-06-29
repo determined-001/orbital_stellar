@@ -30,7 +30,8 @@
     "build": "tsc -p tsconfig.json",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
-    "typecheck": "tsc --noEmit -p tsconfig.json"
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "validate": "node validate.js"
   },
   "dependencies": {
     "@stellar/stellar-sdk": "^15.0.1"
@@ -38,6 +39,7 @@
   "devDependencies": {
     "@types/node": "^25.9.3",
     "@vitest/coverage-v8": "^4.1.9",
+    "ajv": "^8.17.1",
     "tsx": "^4.22.4",
     "vitest": "^4.1.9",
     "zod": "^4.4.3"

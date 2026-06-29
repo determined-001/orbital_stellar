@@ -77,6 +77,8 @@ jobs:
         run: pnpm tsc --noEmit -p packages/pulse-webhooks/tsconfig.json
       - name: Typecheck pulse-notify
         run: pnpm tsc --noEmit -p packages/pulse-notify/tsconfig.json
+      - name: Validate ABI specs
+        run: pnpm --filter @orbital-stellar/abi-registry validate
       - name: Test packages
         run: pnpm -r --if-present test
 
