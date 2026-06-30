@@ -191,9 +191,11 @@ Customize the built-in styles with CSS custom properties:
 
 ```ts
 type EventState<T extends NormalizedEvent = NormalizedEvent> = {
-  event: T | null;     // Latest event, or null before first arrival
-  connected: boolean;  // True once the SSE handshake completes
-  error: string | null; // Error message if the connection fails
+  event: T | null;            // Latest event, or null before first arrival
+  connected: boolean;         // True once the SSE handshake completes
+  error: string | null;       // Error message if the connection fails
+  lastEventAt: string | null; // ISO timestamp of the most recent event
+  caughtUp: boolean;          // See "Offline replay / Last-Event-ID" below
 };
 ```
 
@@ -334,14 +336,53 @@ If the server is cross-origin, it must respond with `Access-Control-Allow-Creden
 
 The hooks are client-only — they rely on `EventSource`, which does not exist in Node. In Next.js App Router, mark the consuming component with `"use client"`. In Remix or Vite SSR, gate the hook behind a client-only boundary.
 
+## Offline replay / Last-Event-ID
+
+When a network drop causes the `EventSource` to reconnect, the browser automatically sends a `Last-Event-ID` request header containing the last `id:` value it received. The server can use this cursor to replay any events the client missed.
+
+### Backend contract
+
+Each SSE event your server emits must include an `id:` line with the event's cursor value:
+
+```
+id: <cursor>
+data: {"type":"payment.received","amount":"10","asset":"XLM",...}
+
+```
+
+The cursor can be a ledger sequence number, a database row ID, or any opaque string your backend can use to resume the stream. Without `id:` fields the browser cannot send `Last-Event-ID` and no replay occurs.
+
+### Hook behaviour
+
+The hook surfaces the catch-up state via `caughtUp` in `EventState`:
+
+| State | `caughtUp` |
+|---|---|
+| Fresh connection, no prior `id:` seen | `true` |
+| Events arriving on a live connection | `true` |
+| Reconnected after a network drop; awaiting first replay event | `false` |
+| First replay event delivered | `true` |
+
+```tsx
+const { event, connected, caughtUp } = useStellarEvent(serverUrl, address);
+
+if (!connected) return <div>Reconnecting…</div>;
+if (!caughtUp)  return <div>Catching up on missed events…</div>;
+// Now live — render event
+```
+
+`caughtUp` transitions `false → true` as soon as the first post-reconnect event arrives. It does not wait for the server to signal "end of replay" (SSE has no such primitive), so additional events may still be in flight.
+
 ## Current limitations
 
 - Hook instances with the same `serverUrl`, `address`, and `token` share one browser `EventSource`; different keys open separate connections.
-- **No offline queue.** Events that arrive while the tab is backgrounded and the connection is closed are not replayed on reconnect.
 - **`EventSource` reconnect is browser-controlled.** Fine-grained retry policy belongs in a future WebSocket-based transport.
+- Offline replay via `Last-Event-ID` only covers automatic `EventSource` reconnects (network interruptions). Explicitly closed connections (e.g. when the tab is hidden past `hideAfterMs`) create a new `EventSource` without a `Last-Event-ID`, so events during that window are still missed.
 
 ## Related documents
 
+- [Offline replay / Last-Event-ID](#offline-replay--last-event-id) — `caughtUp` flag, backend `id:` contract
+- [Migration guide: from raw EventSource to useStellarEvent](../../apps/web/content/guides/migrate-from-eventsource.md) — before/after for the three most common raw `EventSource` patterns
 - [`docs/ARCHITECTURE.md` § 7 React hook internals](../../docs/ARCHITECTURE.md#7-react-hook-internals) — design choices (stable dep-array, dual call signature, generic narrowing)
 - [`docs/COOKBOOK.md` § 10 Render live payments in React with type narrowing](../../docs/COOKBOOK.md#10-render-live-payments-in-react-with-type-narrowing)
 - [`docs/COOKBOOK.md` § 11 Stand up an SSE endpoint in Next.js](../../docs/COOKBOOK.md#11-stand-up-an-sse-endpoint-in-nextjs) — the backend the hooks expect

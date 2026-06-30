@@ -109,8 +109,14 @@ export interface SorobanSubscriberOptions {
   startLedger?: number;
   /** Ledgers subtracted from `getLatestLedger()` for the first live poll. Defaults to 0. */
   startLedgerLookback?: number;
-  /** Delay before retrying after a retryable RPC error. Defaults to 1000ms. */
+  /** Delay before retrying after a cursor-expired recovery. Defaults to 1000ms. */
   retryDelayMs?: number;
+  /** Initial backoff delay for the Full-Jitter reconnect algorithm. Defaults to 1000ms. */
+  initialDelayMs?: number;
+  /** Maximum backoff delay cap for reconnection. Defaults to 30000ms. */
+  maxDelayMs?: number;
+  /** Maximum number of retry attempts before giving up. Defaults to Infinity. */
+  maxRetries?: number;
   /** Injectable timer scheduler (for testing). Defaults to `globalThis.setTimeout`. */
   setTimeoutFn?: typeof setTimeout;
   /** Injectable timer canceller (for testing). Defaults to `globalThis.clearTimeout`. */
@@ -194,6 +200,10 @@ export class SorobanSubscriber extends EventEmitter {
 
   // --- Retry state ---
   private readonly retryDelayMs: number;
+  private readonly initialDelayMs: number;
+  private readonly maxDelayMs: number;
+  private readonly maxRetries: number;
+  private reconnectAttempt = 0;
   private readonly setTimeoutFn: typeof setTimeout;
   private readonly clearTimeoutFn: typeof clearTimeout;
   private readonly onRetryableError?: (error: SorobanRpcError) => void;
@@ -234,6 +244,9 @@ export class SorobanSubscriber extends EventEmitter {
     this.startLedger = options.startLedger;
     this.startLedgerLookback = startLedgerLookback;
     this.retryDelayMs = options.retryDelayMs ?? 1000;
+    this.initialDelayMs = options.initialDelayMs ?? 1000;
+    this.maxDelayMs = options.maxDelayMs ?? 30_000;
+    this.maxRetries = options.maxRetries ?? Number.POSITIVE_INFINITY;
     this.setTimeoutFn = options.setTimeoutFn ?? globalThis.setTimeout;
     this.clearTimeoutFn = options.clearTimeoutFn ?? globalThis.clearTimeout;
     this.onRetryableError = options.onRetryableError;
@@ -439,18 +452,59 @@ export class SorobanSubscriber extends EventEmitter {
             // fallback fetch failed; continue with the original cursor-expired error
           }
         }
-        if ((err as SorobanRpcError).retryable) {
-          if (this.onRetryableError) {
-            this.onRetryableError(err as SorobanRpcError);
-            this.scheduleRetry();
+        if (err.retryable) {
+          this.reconnectAttempt += 1;
+          this.onRetryableError?.(err);
+          if (this.reconnectAttempt > this.maxRetries) {
+            if (this.onTerminalError) this.onTerminalError(err);
             return;
           }
-        } else if (this.onTerminalError) {
-          this.onTerminalError(err);
+          let delayMs: number;
+          if (err.code === "rate_limit") {
+            delayMs = err.retryAfterMs ?? 60_000;
+            this.emit("engine.rate_limited", {
+              type: "engine.rate_limited",
+              attempt: this.reconnectAttempt,
+              delayMs,
+              source: "soroban",
+              emittedAt: new Date().toISOString(),
+            });
+          } else {
+            const exponentialDelay = Math.min(
+              this.initialDelayMs * 2 ** (this.reconnectAttempt - 1),
+              this.maxDelayMs,
+            );
+            delayMs = Math.floor(Math.random() * exponentialDelay);
+            this.emit("engine.reconnecting", {
+              type: "engine.reconnecting",
+              attempt: this.reconnectAttempt,
+              delayMs,
+              cursor: currentCursor,
+              source: "soroban",
+              emittedAt: new Date().toISOString(),
+            });
+          }
+          this.scheduleRetry(delayMs);
           return;
+        } else {
+          if (this.onTerminalError) {
+            this.onTerminalError(err);
+            return;
+          }
         }
       }
       throw err;
+    }
+
+    if (this.reconnectAttempt > 0) {
+      const attempt = this.reconnectAttempt;
+      this.reconnectAttempt = 0;
+      this.emit("engine.reconnected", {
+        type: "engine.reconnected",
+        attempt,
+        source: "soroban",
+        emittedAt: new Date().toISOString(),
+      });
     }
 
     const allEventsMap = new Map<string, SorobanEvent>();
@@ -662,13 +716,13 @@ export class SorobanSubscriber extends EventEmitter {
   }
 
   /** Schedules a single deferred re-poll using the injectable timer. */
-  private scheduleRetry(): void {
+  private scheduleRetry(delayMs?: number): void {
     if (this.isStopped) return;
     this.retryTimer = this.setTimeoutFn(() => {
       this.retryTimer = null;
       if (this.isStopped) return;
       this.inflightPoll = (this.inflightPoll ?? Promise.resolve()).then(() => this.pollOnce());
-    }, this.retryDelayMs);
+    }, delayMs ?? this.retryDelayMs);
   }
 
   /**

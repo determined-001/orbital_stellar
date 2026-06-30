@@ -1,7 +1,7 @@
 /**
  * XDR → typed JSON decoder for Soroban contract events.
  *
- * Decodes a raw Soroban contract event against a known {@link ContractSpec},
+ * Decodes a raw Soroban contract event against a known {@link XdrContractSpec},
  * mapping each topic and the data payload to a typed JavaScript value.
  *
  * The decoder never throws — shape mismatches and unknown types are returned
@@ -30,7 +30,7 @@
  * | custom struct | `Record<string, DecodedValue>`            |
  */
 
-import type { ContractSpec } from "./types.js";
+import type { XdrContractSpec } from "./types.js";
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -80,14 +80,14 @@ export type DecodeResult = DecodedEvent | DecodeError;
 /**
  * Decode a raw Soroban contract event against a known contract spec.
  *
- * @param spec - The {@link ContractSpec} describing the contract's ABI.
+ * @param spec - The {@link XdrContractSpec} describing the contract's ABI.
  * @param rawEvent - The raw event object as emitted by pulse-core
  *   (`ContractEmittedEvent` or `ContractInvokedEvent`). Must have `topics`
  *   (array) and `data` fields.
  * @returns A {@link DecodedEvent} on success, or `{ error: string }` on
  *   any shape mismatch or unsupported type — never throws.
  */
-export function decodeContractEvent(spec: ContractSpec, rawEvent: unknown): DecodeResult {
+export function decodeContractEvent(spec: XdrContractSpec, rawEvent: unknown): DecodeResult {
   try {
     return _decode(spec, rawEvent);
   } catch (err) {
@@ -97,7 +97,7 @@ export function decodeContractEvent(spec: ContractSpec, rawEvent: unknown): Deco
   }
 }
 
-function _decode(spec: ContractSpec, rawEvent: unknown): DecodeResult {
+function _decode(spec: XdrContractSpec, rawEvent: unknown): DecodeResult {
   // --- Validate rawEvent shape ---
   if (rawEvent === null || typeof rawEvent !== "object") {
     return { error: "rawEvent must be a non-null object" };

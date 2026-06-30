@@ -11,6 +11,7 @@ type ConnectionSubscriber = {
   onEvent: (event: NormalizedEvent) => void;
   onParseError: () => void;
   onError: () => void;
+  onAuthExpired?: () => void;
 };
 
 type WsEntry = {
@@ -49,7 +50,13 @@ export function acquireWsConnection(key: ConnectionKey, subscriber: ConnectionSu
 
     ws.onmessage = (msg) => {
       try {
-        const event = JSON.parse(msg.data as string) as NormalizedEvent;
+        const data = JSON.parse(msg.data as string);
+        if (data && typeof data === "object" && data.type === "auth_expired") {
+          newEntry.connected = false;
+          notify(newEntry, (s) => s.onAuthExpired?.());
+          return;
+        }
+        const event = data as NormalizedEvent;
         notify(newEntry, (s) => s.onEvent(event));
       } catch {
         notify(newEntry, (s) => s.onParseError());

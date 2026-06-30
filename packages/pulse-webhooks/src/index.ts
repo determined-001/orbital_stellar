@@ -13,7 +13,7 @@ import { DeadLetterStore } from "./MemoryDeadLetterStore.js";
 import { exponentialJittered } from "./backoff.js";
 import type { BackoffStrategy } from "./backoff.js";
 import type { RetryQueue, RetryRecord } from "./RetryQueue.js";
-import type { Tracer, VerifyWebhookOptions, WebhookConfig } from "./types.js";
+import type { Tracer, UrlEntry, VerifyWebhookOptions, WebhookConfig } from "./types.js";
 import { DEFAULT_MAX_AGE_MS, DEFAULT_CLOCK_SKEW_MS } from "./types.js";
 
 const BLOCKED_WEBHOOK_ADDRESSES = new BlockList();
@@ -72,6 +72,7 @@ export type { RetryQueue, RetryRecord } from "./RetryQueue.js";
 export type {
   Span,
   Tracer,
+  UrlEntry,
   VerifierSignatureVersion,
   VerifyWebhookOptions,
   WebhookConfig,
@@ -107,17 +108,51 @@ export type WebhookDroppedRaw = {
   originalEvent: NormalizedEvent;
 };
 
+/**
+ * Payload for the `raw` field of a `webhook.backpressure` event.
+ */
+export type WebhookBackpressureRaw = {
+  /** The reason backpressure was triggered. */
+  reason: "concurrent_delivery_cap_exceeded";
+  /** The target URL that was queued. */
+  url: string;
+  /** The `maxConcurrentDeliveries` limit that was hit. */
+  maxConcurrentDeliveries: number;
+  /** Number of events currently queued due to backpressure. */
+  pendingCount: number;
+  /** The original event that triggered backpressure. */
+  originalEvent: NormalizedEvent;
+};
+
 type ResolvedWebhookConfig = Omit<
   Required<WebhookConfig>,
   "url" | "tracer" | "urlValidator" | "metrics" | "backoff" | "retryQueue"
 > & {
   urls: string[];
+  urlTimeouts: Map<string, number>;
   backoff: BackoffStrategy;
   tracer?: Tracer;
   urlValidator?: WebhookConfig["urlValidator"];
   metrics?: WebhookConfig["metrics"];
   retryQueue?: RetryQueue;
 };
+
+function normalizeUrlConfig(url: WebhookConfig["url"]): {
+  urls: string[];
+  urlTimeouts: Map<string, number>;
+} {
+  if (!Array.isArray(url)) return { urls: [url], urlTimeouts: new Map() };
+  if (url.length === 0 || typeof url[0] === "string") {
+    return { urls: url as string[], urlTimeouts: new Map() };
+  }
+  const entries = url as UrlEntry[];
+  const urls = entries.map((e) => e.url);
+  const urlTimeouts = new Map<string, number>();
+  for (const e of entries) {
+    if (e.timeoutMs !== undefined) urlTimeouts.set(e.url, e.timeoutMs);
+  }
+  return { urls, urlTimeouts };
+}
 
 export class WebhookDelivery {
   private config: ResolvedWebhookConfig;
@@ -137,21 +172,30 @@ export class WebhookDelivery {
 
   // Monotonic counter for durable RetryRecord ids.
   private retrySeq = 0;
+
+  // Track active in-flight deliveries for the concurrent delivery cap.
+  private activeDeliveries = 0;
+  // Overflow queue for deliveries that exceed the concurrent delivery cap.
+  private overflowQueue: Array<{ event: NormalizedEvent; url: string }> = [];
   constructor(watcher: Watcher, config: WebhookConfig, dlq?: DeadLetterStore) {
     this.watcher = watcher;
     this.dlq = dlq ?? new DeadLetterStore();
+    const { urls, urlTimeouts } = normalizeUrlConfig(config.url);
     this.config = {
       retries: 3,
       deliveryTimeoutMs: 10000,
       maxConcurrentRetries: 100,
+      maxConcurrentDeliveries: 100,
       random: Math.random,
       backoff: exponentialJittered,
       retryQueuePollIntervalMs: 1000,
       ...config,
       tracer: config.tracer,
-      urls: Array.isArray(config.url) ? [...config.url] : [config.url],
+      urls,
+      urlTimeouts,
     };
     this.config.maxConcurrentRetries = Math.max(1, this.config.maxConcurrentRetries);
+    this.config.maxConcurrentDeliveries = Math.max(1, this.config.maxConcurrentDeliveries);
     this.retryQueue = config.retryQueue;
 
     this.watcher.addStopHandler(() => {
@@ -168,7 +212,7 @@ export class WebhookDelivery {
       (event: NormalizedEvent | WatcherNotification | DecodeFailedNotification) => {
         if ("raw" in event) {
           for (const url of this.config.urls) {
-            void this.deliverToUrl(event, url);
+            this.dispatchDelivery(event, url);
           }
         }
       },
@@ -207,18 +251,18 @@ export class WebhookDelivery {
     }
 
     const resolvedHostnameError = await this.validateResolvedHostname(url);
-    if (this.watcher.stopped) return;
+    if (this.watcher.stopped) return { ok: false, error: "stopped", terminal: true };
 
     if (resolvedHostnameError) {
       this.emitFailure(event, url, resolvedHostnameError, attempt);
-      return;
+      return { ok: false, error: resolvedHostnameError, terminal: true };
     }
 
     const payload = JSON.stringify(event);
     const timestamp = Date.now().toString();
     const signature = this.sign(payload, timestamp);
     const controller = new AbortController();
-    const timeoutMs = this.config.deliveryTimeoutMs;
+    const timeoutMs = this.config.urlTimeouts.get(url) ?? this.config.deliveryTimeoutMs;
     const abortTimer = setTimeout(() => controller.abort(), timeoutMs);
 
     // Idempotency header: generate or reuse UUID per event-URL pair
@@ -279,12 +323,12 @@ export class WebhookDelivery {
       const failureMs = Date.now() - startMs;
       span?.setAttribute("webhook.latency_ms", failureMs);
       span?.setAttribute("latency", failureMs);
-      span?.setAttribute("webhook.error", this.getErrorMessage(err));
-      span?.setAttribute("error", this.getErrorMessage(err));
+      span?.setAttribute("webhook.error", this.getErrorMessage(err, timeoutMs));
+      span?.setAttribute("error", this.getErrorMessage(err, timeoutMs));
 
       if (this.watcher.stopped) return { ok: false, error: "stopped" };
 
-      const errorMessage = this.getErrorMessage(err);
+      const errorMessage = this.getErrorMessage(err, timeoutMs);
       this.config.metrics?.recordAttempt(url, attempt, failureMs, "failure");
       this.dlq.recordFailure(url);
       return { ok: false, error: errorMessage };
@@ -458,6 +502,55 @@ export class WebhookDelivery {
     } as unknown as NormalizedEvent);
   }
 
+  /**
+   * Dispatches a first-attempt delivery through the concurrency cap.
+   * If at capacity, the event is queued and a `webhook.backpressure` notification is emitted.
+   */
+  private dispatchDelivery(event: NormalizedEvent, url: string): void {
+    if (this.activeDeliveries >= this.config.maxConcurrentDeliveries) {
+      this.overflowQueue.push({ event, url });
+      this.emitBackpressure(event, url);
+      return;
+    }
+    this.activeDeliveries++;
+    this.deliverToUrl(event, url).finally(() => {
+      this.activeDeliveries--;
+      this.drainOverflowQueue();
+    });
+  }
+
+  /**
+   * Drains the overflow queue into active delivery slots until the cap is reached
+   * or the queue is empty.
+   */
+  private drainOverflowQueue(): void {
+    while (
+      this.overflowQueue.length > 0 &&
+      this.activeDeliveries < this.config.maxConcurrentDeliveries
+    ) {
+      const { event, url } = this.overflowQueue.shift()!;
+      this.activeDeliveries++;
+      this.deliverToUrl(event, url).finally(() => {
+        this.activeDeliveries--;
+        this.drainOverflowQueue();
+      });
+    }
+  }
+
+  /** Emits `webhook.backpressure` when the delivery cap is exceeded. */
+  private emitBackpressure(event: NormalizedEvent, url: string): void {
+    this.watcher.emit("webhook.backpressure", {
+      ...event,
+      raw: {
+        reason: "concurrent_delivery_cap_exceeded",
+        url,
+        maxConcurrentDeliveries: this.config.maxConcurrentDeliveries,
+        pendingCount: this.overflowQueue.length,
+        originalEvent: event,
+      } satisfies WebhookBackpressureRaw,
+    } as unknown as NormalizedEvent);
+  }
+
   private clearRetryTimers(): void {
     for (const timer of this.retryTimers.keys()) {
       clearTimeout(timer);
@@ -543,9 +636,9 @@ export class WebhookDelivery {
     }
   }
 
-  private getErrorMessage(err: unknown): string {
+  private getErrorMessage(err: unknown, timeoutMs?: number): string {
     if (err instanceof Error && err.name === "AbortError") {
-      return `Delivery timed out after ${this.config.deliveryTimeoutMs}ms`;
+      return `Delivery timed out after ${timeoutMs ?? this.config.deliveryTimeoutMs}ms`;
     }
 
     return err instanceof Error ? err.message : "Unknown error";
