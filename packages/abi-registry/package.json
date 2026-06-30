@@ -33,7 +33,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
-    "@stellar/stellar-sdk": "^15.0.1"
+    "@stellar/stellar-sdk": "^16.0.1"
   },
   "devDependencies": {
     "@types/node": "^25.9.3",
