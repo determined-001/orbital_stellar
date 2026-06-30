@@ -22,7 +22,11 @@
 export const REGISTRY_SPEC_VERSION = 1;
 
 import { LruCache } from "./LruCache.js";
-import type { AbiRegistryClientConfig, AbiRegistryClientTransport, XdrContractSpec } from "./types.js";
+import type {
+  AbiRegistryClientConfig,
+  AbiRegistryClientTransport,
+  XdrContractSpec,
+} from "./types.js";
 
 const DEFAULT_MAX_CACHE_SIZE = 512;
 const DEFAULT_CACHE_TTL_MS = 5 * 60 * 1000;

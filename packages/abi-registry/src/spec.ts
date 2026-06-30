@@ -11,47 +11,47 @@
 
 /** All atomic Soroban scalar types. */
 export type PrimitiveType =
-  | 'bool'
-  | 'u32'
-  | 'i32'
-  | 'u64'
-  | 'i64'
-  | 'u128'
-  | 'i128'
-  | 'u256'
-  | 'i256'
-  | 'bytes'
-  | 'string'
-  | 'symbol'
-  | 'address'
-  | 'void';
+  | "bool"
+  | "u32"
+  | "i32"
+  | "u64"
+  | "i64"
+  | "u128"
+  | "i128"
+  | "u256"
+  | "i256"
+  | "bytes"
+  | "string"
+  | "symbol"
+  | "address"
+  | "void";
 
 /** Fixed-length byte array, e.g. `bytes_n<32>`. */
-export type BytesNType = { readonly type: 'bytes_n'; readonly size: number };
+export type BytesNType = { readonly type: "bytes_n"; readonly size: number };
 
 /** Soroban `Option<T>` — a value that may be present or absent. */
-export type OptionType = { readonly type: 'option'; readonly inner: TypeSpec };
+export type OptionType = { readonly type: "option"; readonly inner: TypeSpec };
 
 /** Soroban `Result<T, E>` — either an `Ok` value or an `Err` value. */
 export type ResultType = {
-  readonly type: 'result';
+  readonly type: "result";
   readonly ok: TypeSpec;
   readonly err: TypeSpec;
 };
 
 /** Homogeneous variable-length sequence. */
-export type VecType = { readonly type: 'vec'; readonly item: TypeSpec };
+export type VecType = { readonly type: "vec"; readonly item: TypeSpec };
 
 /** Ordered key–value map. */
 export type MapType = {
-  readonly type: 'map';
+  readonly type: "map";
   readonly key: TypeSpec;
   readonly value: TypeSpec;
 };
 
 /** Fixed-length heterogeneous sequence (Soroban `Tuple`). Minimum 2 elements. */
 export type TupleType = {
-  readonly type: 'tuple';
+  readonly type: "tuple";
   readonly elements: ReadonlyArray<TypeSpec>;
 };
 
@@ -59,7 +59,7 @@ export type TupleType = {
  * Reference to a user-defined type (struct, enum, or union) declared in
  * {@link ContractSpec.types}.
  */
-export type NamedType = { readonly type: 'named'; readonly name: string };
+export type NamedType = { readonly type: "named"; readonly name: string };
 
 /**
  * Union of every representable Soroban type.
@@ -122,7 +122,7 @@ export type StructFieldSpec = FieldSpec;
 
 /** Descriptor for a user-defined struct type. */
 export type StructTypeSpec = {
-  readonly kind: 'struct';
+  readonly kind: "struct";
   readonly name: string;
   readonly doc?: string;
   readonly fields: ReadonlyArray<StructFieldSpec>;
@@ -140,7 +140,7 @@ export type EnumVariantSpec = {
 
 /** Descriptor for a user-defined enum (C-style or tuple-variant) type. */
 export type EnumTypeSpec = {
-  readonly kind: 'enum';
+  readonly kind: "enum";
   readonly name: string;
   readonly doc?: string;
   readonly variants: ReadonlyArray<EnumVariantSpec>;
@@ -156,7 +156,7 @@ export type UnionCaseSpec = {
 
 /** Descriptor for a user-defined discriminated union type. */
 export type UnionTypeSpec = {
-  readonly kind: 'union';
+  readonly kind: "union";
   readonly name: string;
   readonly doc?: string;
   readonly cases: ReadonlyArray<UnionCaseSpec>;
@@ -184,7 +184,7 @@ export type ContractSpec = {
   /** Bech32-encoded Soroban contract address (`C…`). */
   readonly contractId?: string;
   /** Network the spec was generated from. */
-  readonly network?: 'mainnet' | 'testnet' | 'futurenet';
+  readonly network?: "mainnet" | "testnet" | "futurenet";
   /** All exported Soroban contract functions. */
   readonly functions: ReadonlyArray<FunctionSpec>;
   /** All events emitted by the contract. */
@@ -206,12 +206,30 @@ export type ValidationResult =
   | { readonly valid: false; readonly errors: ReadonlyArray<string> };
 
 const PRIMITIVE_TYPES: ReadonlySet<string> = new Set<PrimitiveType>([
-  'bool', 'u32', 'i32', 'u64', 'i64', 'u128', 'i128',
-  'u256', 'i256', 'bytes', 'string', 'symbol', 'address', 'void',
+  "bool",
+  "u32",
+  "i32",
+  "u64",
+  "i64",
+  "u128",
+  "i128",
+  "u256",
+  "i256",
+  "bytes",
+  "string",
+  "symbol",
+  "address",
+  "void",
 ]);
 
 const COMPOSITE_TYPE_TAGS = new Set([
-  'bytes_n', 'option', 'result', 'vec', 'map', 'tuple', 'named',
+  "bytes_n",
+  "option",
+  "result",
+  "vec",
+  "map",
+  "tuple",
+  "named",
 ]);
 
 const SEMVER_RE = /^\d+\.\d+\.\d+$/;
@@ -219,11 +237,11 @@ const CONTRACT_ID_RE = /^C[A-Z2-7]{55}$/;
 const IDENTIFIER_RE = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
 
 function isRecord(v: unknown): v is Record<string, unknown> {
-  return typeof v === 'object' && v !== null && !Array.isArray(v);
+  return typeof v === "object" && v !== null && !Array.isArray(v);
 }
 
 function validateTypeSpec(t: unknown, path: string, errors: string[]): void {
-  if (typeof t === 'string') {
+  if (typeof t === "string") {
     if (!PRIMITIVE_TYPES.has(t)) {
       errors.push(`${path}: unknown primitive type "${t}"`);
     }
@@ -233,35 +251,37 @@ function validateTypeSpec(t: unknown, path: string, errors: string[]): void {
     errors.push(`${path}: TypeSpec must be a string or object`);
     return;
   }
-  const tag = t['type'];
-  if (typeof tag !== 'string' || !COMPOSITE_TYPE_TAGS.has(tag)) {
-    errors.push(`${path}.type: expected one of ${[...COMPOSITE_TYPE_TAGS].join(', ')}, got ${JSON.stringify(tag)}`);
+  const tag = t["type"];
+  if (typeof tag !== "string" || !COMPOSITE_TYPE_TAGS.has(tag)) {
+    errors.push(
+      `${path}.type: expected one of ${[...COMPOSITE_TYPE_TAGS].join(", ")}, got ${JSON.stringify(tag)}`,
+    );
     return;
   }
   switch (tag) {
-    case 'bytes_n': {
-      const size = t['size'];
-      if (typeof size !== 'number' || !Number.isInteger(size) || size < 1) {
+    case "bytes_n": {
+      const size = t["size"];
+      if (typeof size !== "number" || !Number.isInteger(size) || size < 1) {
         errors.push(`${path}.size: must be a positive integer`);
       }
       break;
     }
-    case 'option':
-      validateTypeSpec(t['inner'], `${path}.inner`, errors);
+    case "option":
+      validateTypeSpec(t["inner"], `${path}.inner`, errors);
       break;
-    case 'result':
-      validateTypeSpec(t['ok'], `${path}.ok`, errors);
-      validateTypeSpec(t['err'], `${path}.err`, errors);
+    case "result":
+      validateTypeSpec(t["ok"], `${path}.ok`, errors);
+      validateTypeSpec(t["err"], `${path}.err`, errors);
       break;
-    case 'vec':
-      validateTypeSpec(t['item'], `${path}.item`, errors);
+    case "vec":
+      validateTypeSpec(t["item"], `${path}.item`, errors);
       break;
-    case 'map':
-      validateTypeSpec(t['key'], `${path}.key`, errors);
-      validateTypeSpec(t['value'], `${path}.value`, errors);
+    case "map":
+      validateTypeSpec(t["key"], `${path}.key`, errors);
+      validateTypeSpec(t["value"], `${path}.value`, errors);
       break;
-    case 'tuple': {
-      const elems = t['elements'];
+    case "tuple": {
+      const elems = t["elements"];
       if (!Array.isArray(elems) || elems.length < 2) {
         errors.push(`${path}.elements: tuple requires at least 2 elements`);
       } else {
@@ -271,8 +291,8 @@ function validateTypeSpec(t: unknown, path: string, errors: string[]): void {
       }
       break;
     }
-    case 'named':
-      if (typeof t['name'] !== 'string' || t['name'].length === 0) {
+    case "named":
+      if (typeof t["name"] !== "string" || t["name"].length === 0) {
         errors.push(`${path}.name: must be a non-empty string`);
       }
       break;
@@ -280,46 +300,53 @@ function validateTypeSpec(t: unknown, path: string, errors: string[]): void {
 }
 
 function validateFieldSpec(f: unknown, path: string, errors: string[]): void {
-  if (!isRecord(f)) { errors.push(`${path}: must be an object`); return; }
-  if (typeof f['name'] !== 'string' || !IDENTIFIER_RE.test(f['name'])) {
+  if (!isRecord(f)) {
+    errors.push(`${path}: must be an object`);
+    return;
+  }
+  if (typeof f["name"] !== "string" || !IDENTIFIER_RE.test(f["name"])) {
     errors.push(`${path}.name: must be a valid identifier`);
   }
-  validateTypeSpec(f['type'], `${path}.type`, errors);
+  validateTypeSpec(f["type"], `${path}.type`, errors);
 }
 
 function validateFunctionSpec(fn: unknown, path: string, errors: string[]): void {
-  if (!isRecord(fn)) { errors.push(`${path}: must be an object`); return; }
-  if (typeof fn['name'] !== 'string' || !IDENTIFIER_RE.test(fn['name'])) {
+  if (!isRecord(fn)) {
+    errors.push(`${path}: must be an object`);
+    return;
+  }
+  if (typeof fn["name"] !== "string" || !IDENTIFIER_RE.test(fn["name"])) {
     errors.push(`${path}.name: must be a valid identifier`);
   }
-  if (!Array.isArray(fn['params'])) {
+  if (!Array.isArray(fn["params"])) {
     errors.push(`${path}.params: must be an array`);
   } else {
-    (fn['params'] as unknown[]).forEach((p, i) =>
+    (fn["params"] as unknown[]).forEach((p, i) =>
       validateFieldSpec(p, `${path}.params[${i}]`, errors),
     );
   }
-  validateTypeSpec(fn['returns'], `${path}.returns`, errors);
+  validateTypeSpec(fn["returns"], `${path}.returns`, errors);
 }
 
 function validateEventSpec(ev: unknown, path: string, errors: string[]): void {
-  if (!isRecord(ev)) { errors.push(`${path}: must be an object`); return; }
-  if (typeof ev['name'] !== 'string' || ev['name'].length === 0) {
+  if (!isRecord(ev)) {
+    errors.push(`${path}: must be an object`);
+    return;
+  }
+  if (typeof ev["name"] !== "string" || ev["name"].length === 0) {
     errors.push(`${path}.name: must be a non-empty string`);
   }
-  if (!Array.isArray(ev['topics'])) {
+  if (!Array.isArray(ev["topics"])) {
     errors.push(`${path}.topics: must be an array`);
   } else {
-    (ev['topics'] as unknown[]).forEach((t, i) =>
+    (ev["topics"] as unknown[]).forEach((t, i) =>
       validateFieldSpec(t, `${path}.topics[${i}]`, errors),
     );
   }
-  if (!Array.isArray(ev['data'])) {
+  if (!Array.isArray(ev["data"])) {
     errors.push(`${path}.data: must be an array`);
   } else {
-    (ev['data'] as unknown[]).forEach((d, i) =>
-      validateFieldSpec(d, `${path}.data[${i}]`, errors),
-    );
+    (ev["data"] as unknown[]).forEach((d, i) => validateFieldSpec(d, `${path}.data[${i}]`, errors));
   }
 }
 
@@ -334,59 +361,50 @@ export function validateSpec(spec: unknown): ValidationResult {
   const errors: string[] = [];
 
   if (!isRecord(spec)) {
-    return { valid: false, errors: ['root: ContractSpec must be an object'] };
+    return { valid: false, errors: ["root: ContractSpec must be an object"] };
   }
 
-  if (typeof spec['version'] !== 'string' || !SEMVER_RE.test(spec['version'])) {
+  if (typeof spec["version"] !== "string" || !SEMVER_RE.test(spec["version"])) {
     errors.push('version: must be a semver string (e.g. "1.0.0")');
   }
-  if (
-    typeof spec['name'] !== 'string' ||
-    spec['name'].length === 0 ||
-    spec['name'].length > 100
-  ) {
-    errors.push('name: must be a non-empty string of at most 100 characters');
+  if (typeof spec["name"] !== "string" || spec["name"].length === 0 || spec["name"].length > 100) {
+    errors.push("name: must be a non-empty string of at most 100 characters");
   }
-  if (spec['description'] !== undefined && typeof spec['description'] !== 'string') {
-    errors.push('description: must be a string');
+  if (spec["description"] !== undefined && typeof spec["description"] !== "string") {
+    errors.push("description: must be a string");
   }
-  if (spec['contractId'] !== undefined) {
-    if (
-      typeof spec['contractId'] !== 'string' ||
-      !CONTRACT_ID_RE.test(spec['contractId'])
-    ) {
-      errors.push('contractId: must be a C-prefixed 56-character Stellar strkey');
+  if (spec["contractId"] !== undefined) {
+    if (typeof spec["contractId"] !== "string" || !CONTRACT_ID_RE.test(spec["contractId"])) {
+      errors.push("contractId: must be a C-prefixed 56-character Stellar strkey");
     }
   }
-  if (spec['network'] !== undefined) {
-    const validNetworks = new Set(['mainnet', 'testnet', 'futurenet']);
-    if (!validNetworks.has(spec['network'] as string)) {
+  if (spec["network"] !== undefined) {
+    const validNetworks = new Set(["mainnet", "testnet", "futurenet"]);
+    if (!validNetworks.has(spec["network"] as string)) {
       errors.push('network: must be "mainnet", "testnet", or "futurenet"');
     }
   }
-  if (!Array.isArray(spec['functions'])) {
-    errors.push('functions: must be an array');
+  if (!Array.isArray(spec["functions"])) {
+    errors.push("functions: must be an array");
   } else {
-    (spec['functions'] as unknown[]).forEach((fn, i) =>
+    (spec["functions"] as unknown[]).forEach((fn, i) =>
       validateFunctionSpec(fn, `functions[${i}]`, errors),
     );
   }
-  if (!Array.isArray(spec['events'])) {
-    errors.push('events: must be an array');
+  if (!Array.isArray(spec["events"])) {
+    errors.push("events: must be an array");
   } else {
-    (spec['events'] as unknown[]).forEach((ev, i) =>
-      validateEventSpec(ev, `events[${i}]`, errors),
-    );
+    (spec["events"] as unknown[]).forEach((ev, i) => validateEventSpec(ev, `events[${i}]`, errors));
   }
-  if (!isRecord(spec['types'])) {
-    errors.push('types: must be an object');
+  if (!isRecord(spec["types"])) {
+    errors.push("types: must be an object");
   }
-  if (spec['xdrEntries'] !== undefined) {
+  if (spec["xdrEntries"] !== undefined) {
     if (
-      !Array.isArray(spec['xdrEntries']) ||
-      !(spec['xdrEntries'] as unknown[]).every((e) => typeof e === 'string')
+      !Array.isArray(spec["xdrEntries"]) ||
+      !(spec["xdrEntries"] as unknown[]).every((e) => typeof e === "string")
     ) {
-      errors.push('xdrEntries: must be an array of strings');
+      errors.push("xdrEntries: must be an array of strings");
     }
   }
 
