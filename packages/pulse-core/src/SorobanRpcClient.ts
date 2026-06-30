@@ -1,5 +1,9 @@
 import type { ContractSubscriptionFilter, Logger } from "./index.js";
-import { SorobanRpcError, type SorobanRpcErrorCode } from "./errors.js";
+import {
+  SorobanRpcError,
+  type SorobanRpcErrorCode,
+  type SorobanRpcErrorOptions,
+} from "./errors.js";
 
 const DEFAULT_TIMEOUT_MS = 10_000;
 
@@ -136,6 +140,14 @@ function classifyJsonRpcCode(code: number): {
 } {
   if (code <= -32000 && code >= -32099) return { code: "server", retryable: true };
   return { code: "invalid_request", retryable: false };
+}
+
+function parseRetryAfterHeader(header: string | null): number | null {
+  if (!header) return null;
+  const seconds = Number.parseInt(header, 10);
+  if (!Number.isNaN(seconds)) return seconds * 1000;
+  const date = new Date(header).getTime();
+  return Number.isNaN(date) ? null : Math.max(date - Date.now(), 0);
 }
 
 function isAbortError(err: unknown): boolean {
@@ -303,9 +315,14 @@ export class SorobanRpcClient {
 
     if (!response.ok) {
       const { code, retryable } = classifyHttpStatus(response.status);
+      const opts: SorobanRpcErrorOptions = { code, retryable, status: response.status };
+      if (response.status === 429) {
+        const retryAfterMs = parseRetryAfterHeader(response.headers.get("Retry-After"));
+        if (retryAfterMs !== null) opts.retryAfterMs = retryAfterMs;
+      }
       throw new SorobanRpcError(
         `Soroban RPC request failed: ${response.status} ${response.statusText}`,
-        { code, retryable, status: response.status },
+        opts,
       );
     }
 
