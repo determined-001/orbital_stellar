@@ -236,6 +236,11 @@ export class EventEngine {
         headers: config.soroban.rpcHeaders,
         logger: this.log,
       });
+      rpc.getNetwork().catch((err) => {
+        this.log.warn?.("[pulse-core] failed to warm Soroban RPC network cache", {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      });
       const sorobanCursorKey = `${this.streamKey}:soroban`;
       let inMemoryCursor: string | undefined;
       const cursorStore = {
