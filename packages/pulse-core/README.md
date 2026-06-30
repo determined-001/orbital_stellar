@@ -168,6 +168,34 @@ watcher.on("*", (event) => {
 });
 ```
 
+## Registration persistence with `FileRegistryStore`
+
+Self-hosted deployments that run a single process can use `FileRegistryStore` to survive restarts without a database. It maps Stellar addresses to webhook URL lists, persists every change atomically to a JSON file (`.tmp` → rename), and warns-and-starts-empty on a corrupt file.
+
+```ts
+import { FileRegistryStore } from "@orbital-stellar/pulse-core";
+
+const store = new FileRegistryStore("/var/data/registrations.json");
+
+// Register an address with one or more webhook URLs
+await store.register("GABC...", ["https://my-server.example.com/webhook"]);
+
+// Read back
+const urls = await store.get("GABC...");          // ["https://..."]
+const all  = await store.list();                   // { "GABC...": ["https://..."] }
+
+// Remove
+await store.deregister("GABC...");
+```
+
+Pass an optional logger as the second argument to surface parse errors:
+
+```ts
+const store = new FileRegistryStore("/var/data/registrations.json", logger);
+```
+
+`InMemoryRegistryStore` ships as a drop-in for tests and ephemeral deployments where restart-persistence is not needed. Both classes implement `IRegistryStore`.
+
 ## Design principles
 
 - **Amounts are strings.** Stellar uses 7-decimal fixed-point. JavaScript numbers lose precision. Treat all amounts as strings and delegate arithmetic to `bignumber.js` or similar.
