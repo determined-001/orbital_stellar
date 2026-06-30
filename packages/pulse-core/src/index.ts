@@ -57,6 +57,8 @@ export { coalesceCursorStore, CoalescingStore } from "./coalesceCursorStore.js";
 export type { CoalescingStoreOptions } from "./coalesceCursorStore.js";
 export { migrateCursors } from "./migrateCursors.js";
 export type { MigrateCursorsResult } from "./migrateCursors.js";
+export type { IRegistryStore } from "./IRegistryStore.js";
+export { InMemoryRegistryStore } from "./IRegistryStore.js";
 
 export { isEventType } from "./eventTypeGuard.js";
 export * from "./raw-horizon.js";
