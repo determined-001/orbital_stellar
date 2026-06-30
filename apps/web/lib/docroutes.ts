@@ -25,6 +25,7 @@ export const docSections: DocSection[] = [
       { title: 'Webhook Durability', href: '/docs/guides/webhook-durability' },
       { title: 'ABI Registry & Typed Event Decoding', href: '/docs/guides/abi-registry' },
       { title: 'Migrate from raw EventSource', href: '/docs/guides/migrate-from-eventsource' },
+      { title: 'Soroban Event Subscription', href: '/docs/guides/soroban-subscription' },
     ],
   },
   {
