@@ -15,6 +15,12 @@ export type UseEventConfig<T extends NormalizedEvent = NormalizedEvent> = {
   event?: string | string[];
   /** API key forwarded as ?token= query param — required when the server has authentication enabled */
   token?: string;
+  /**
+   * Async callback that returns a fresh token when the current one expires.
+   * When set, `auth_expired` events trigger a transparent reconnect with the new token
+   * instead of surfacing an error.
+   */
+  tokenProvider?: () => Promise<string>;
   /** SSR initial state; replaced on first live event */
   initialEvent?: T | null;
   /** Client-side predicate; events that return false are suppressed before state update */
@@ -83,7 +89,14 @@ export function useStellarEvent<T extends NormalizedEvent = NormalizedEvent>(
   address: string,
   options?: Pick<
     UseEventConfig<T>,
-    "event" | "token" | "initialEvent" | "filter" | "withCredentials" | "onEvent" | "hideAfterMs"
+    | "event"
+    | "token"
+    | "tokenProvider"
+    | "initialEvent"
+    | "filter"
+    | "withCredentials"
+    | "onEvent"
+    | "hideAfterMs"
   >,
 ): EventState<T>;
 export function useStellarEvent<T extends NormalizedEvent = NormalizedEvent>(
@@ -91,7 +104,14 @@ export function useStellarEvent<T extends NormalizedEvent = NormalizedEvent>(
   address?: string,
   options?: Pick<
     UseEventConfig<T>,
-    "event" | "token" | "initialEvent" | "filter" | "withCredentials" | "onEvent" | "hideAfterMs"
+    | "event"
+    | "token"
+    | "tokenProvider"
+    | "initialEvent"
+    | "filter"
+    | "withCredentials"
+    | "onEvent"
+    | "hideAfterMs"
   >,
 ): EventState<T> {
   const serverUrl = typeof configOrUrl === "string" ? configOrUrl : configOrUrl.serverUrl;
@@ -99,6 +119,8 @@ export function useStellarEvent<T extends NormalizedEvent = NormalizedEvent>(
   const eventType: string | string[] =
     typeof configOrUrl === "string" ? (options?.event ?? "*") : (configOrUrl.event ?? "*");
   const token = typeof configOrUrl === "string" ? options?.token : configOrUrl.token;
+  const tokenProvider =
+    typeof configOrUrl === "string" ? options?.tokenProvider : configOrUrl.tokenProvider;
   const initialEvent: T | null =
     (typeof configOrUrl === "string" ? options?.initialEvent : configOrUrl.initialEvent) ?? null;
   const filter = typeof configOrUrl === "string" ? options?.filter : configOrUrl.filter;
@@ -121,6 +143,18 @@ export function useStellarEvent<T extends NormalizedEvent = NormalizedEvent>(
     onEventRef.current = onEvent;
   });
 
+  const tokenProviderRef = useRef(tokenProvider);
+  useEffect(() => {
+    tokenProviderRef.current = tokenProvider;
+  });
+
+  const [currentToken, setCurrentToken] = useState<string | undefined>(token);
+  useEffect(() => {
+    setCurrentToken(token);
+  }, [token]);
+
+  const [tokenRefreshKey, setTokenRefreshKey] = useState(0);
+
   const [state, setState] = useState<EventState<T>>({
     event: initialEvent,
     connected: false,
@@ -138,7 +172,12 @@ export function useStellarEvent<T extends NormalizedEvent = NormalizedEvent>(
 
     const acquire = transport === "websocket" ? acquireWsConnection : acquireEventConnection;
     const connection = acquire(
-      { serverUrl, address: addr, token, ...(transport === "sse" ? { withCredentials } : {}) },
+      {
+        serverUrl,
+        address: addr,
+        token: currentToken,
+        ...(transport === "sse" ? { withCredentials } : {}),
+      },
       {
         onOpen: () => {
           setState((prev) => ({ ...prev, connected: true, error: null }));
@@ -171,6 +210,25 @@ export function useStellarEvent<T extends NormalizedEvent = NormalizedEvent>(
             error: "Connection lost — retrying...",
           }));
         },
+        onAuthExpired: () => {
+          const provider = tokenProviderRef.current;
+          if (provider) {
+            provider()
+              .then((newToken) => {
+                setCurrentToken(newToken);
+                setTokenRefreshKey((k) => k + 1);
+              })
+              .catch(() => {
+                setState((prev) => ({ ...prev, error: "Token refresh failed" }));
+              });
+          } else {
+            setState((prev) => ({
+              ...prev,
+              connected: false,
+              error: "Token expired",
+            }));
+          }
+        },
       },
     );
 
@@ -183,7 +241,16 @@ export function useStellarEvent<T extends NormalizedEvent = NormalizedEvent>(
     };
     // ✅ eventKey is a serialised string — stable even when the caller passes
     // an array literal, which would otherwise be a new reference every render.
-  }, [serverUrl, addr, eventKey, token, withCredentials, transport, isActive]);
+  }, [
+    serverUrl,
+    addr,
+    eventKey,
+    currentToken,
+    tokenRefreshKey,
+    withCredentials,
+    transport,
+    isActive,
+  ]);
 
   return state;
 }
@@ -276,6 +343,12 @@ export type UseContractEventConfig<T extends NormalizedEvent = NormalizedEvent> 
   contractId: string;
   topics?: string[];
   token?: string;
+  /**
+   * Async callback that returns a fresh token when the current one expires.
+   * When set, `auth_expired` events trigger a transparent reconnect with the new token
+   * instead of surfacing an error.
+   */
+  tokenProvider?: () => Promise<string>;
   /** SSR initial state; replaced on first live event */
   initialEvent?: T | null;
   /** Client-side predicate; events that return false are suppressed before state update */
@@ -300,6 +373,7 @@ export function useContractEvent<
     contractId,
     topics,
     token,
+    tokenProvider,
     initialEvent,
     filter,
     withCredentials,
@@ -317,6 +391,18 @@ export function useContractEvent<
     onEventRef.current = onEvent;
   }, [onEvent]);
 
+  const tokenProviderRef = useRef(tokenProvider);
+  useEffect(() => {
+    tokenProviderRef.current = tokenProvider;
+  });
+
+  const [currentToken, setCurrentToken] = useState<string | undefined>(token);
+  useEffect(() => {
+    setCurrentToken(token);
+  }, [token]);
+
+  const [tokenRefreshKey, setTokenRefreshKey] = useState(0);
+
   const [state, setState] = useState<EventState<T>>({
     event: initialEvent ?? null,
     connected: false,
@@ -333,7 +419,7 @@ export function useContractEvent<
     }
 
     const connection = acquireContractEventConnection(
-      { serverUrl, contractId, topics, token, withCredentials },
+      { serverUrl, contractId, topics, token: currentToken, withCredentials },
       {
         onOpen: () => {
           setState((prev) => ({ ...prev, connected: true, error: null }));
@@ -365,6 +451,25 @@ export function useContractEvent<
             error: "Connection lost — retrying...",
           }));
         },
+        onAuthExpired: () => {
+          const provider = tokenProviderRef.current;
+          if (provider) {
+            provider()
+              .then((newToken) => {
+                setCurrentToken(newToken);
+                setTokenRefreshKey((k) => k + 1);
+              })
+              .catch(() => {
+                setState((prev) => ({ ...prev, error: "Token refresh failed" }));
+              });
+          } else {
+            setState((prev) => ({
+              ...prev,
+              connected: false,
+              error: "Token expired",
+            }));
+          }
+        },
       },
     );
 
@@ -375,7 +480,15 @@ export function useContractEvent<
     return () => {
       connection.unsubscribe();
     };
-  }, [serverUrl, contractId, JSON.stringify(topics ?? []), token, withCredentials, isActive]);
+  }, [
+    serverUrl,
+    contractId,
+    JSON.stringify(topics ?? []),
+    currentToken,
+    tokenRefreshKey,
+    withCredentials,
+    isActive,
+  ]);
 
   return state;
 }
@@ -406,6 +519,12 @@ export type HistoryState<T extends NormalizedEvent = NormalizedEvent> = EventSta
 export type UseAddressesOptions = {
   event?: string | string[];
   token?: string;
+  /**
+   * Async callback that returns a fresh token when the current one expires.
+   * When set, `auth_expired` events trigger a transparent reconnect with the new token
+   * instead of surfacing an error.
+   */
+  tokenProvider?: () => Promise<string>;
   /** Client-side predicate; events that return false are suppressed before state update */
   filter?: (event: NormalizedEvent) => boolean;
   /** Enable cookie-based auth for same-origin or CORS-credentialed SSE */
@@ -436,7 +555,14 @@ export function useStellarAddresses<T extends NormalizedEvent = NormalizedEvent>
   addresses: string[],
   options?: UseAddressesOptions,
 ): Record<string, EventState<T>> {
-  const { event: eventType, token, filter, withCredentials, onEvent } = options ?? {};
+  const {
+    event: eventType,
+    token,
+    tokenProvider,
+    filter,
+    withCredentials,
+    onEvent,
+  } = options ?? {};
 
   // Serialise the addresses array once per render so we can use it as a stable
   // effect dependency even when the caller passes an inline literal.
@@ -463,6 +589,18 @@ export function useStellarAddresses<T extends NormalizedEvent = NormalizedEvent>
     onEventRef.current = onEvent;
   });
 
+  const tokenProviderRef = useRef(tokenProvider);
+  useEffect(() => {
+    tokenProviderRef.current = tokenProvider;
+  });
+
+  const [currentToken, setCurrentToken] = useState<string | undefined>(token);
+  useEffect(() => {
+    setCurrentToken(token);
+  }, [token]);
+
+  const [tokenRefreshKey, setTokenRefreshKey] = useState(0);
+
   useEffect(() => {
     if (addresses.length === 0) return;
 
@@ -471,7 +609,7 @@ export function useStellarAddresses<T extends NormalizedEvent = NormalizedEvent>
 
     const connections = addresses.map((addr) => {
       const connection = acquireEventConnection(
-        { serverUrl, address: addr, token, withCredentials },
+        { serverUrl, address: addr, token: currentToken, withCredentials },
         {
           onOpen: () => {
             setStates((prev) => ({
@@ -518,6 +656,27 @@ export function useStellarAddresses<T extends NormalizedEvent = NormalizedEvent>
               },
             }));
           },
+          onAuthExpired: () => {
+            const provider = tokenProviderRef.current;
+            if (provider) {
+              provider()
+                .then((newToken) => {
+                  setCurrentToken(newToken);
+                  setTokenRefreshKey((k) => k + 1);
+                })
+                .catch(() => {
+                  setStates((prev) => ({
+                    ...prev,
+                    [addr]: { ...prev[addr]!, error: "Token refresh failed" },
+                  }));
+                });
+            } else {
+              setStates((prev) => ({
+                ...prev,
+                [addr]: { ...prev[addr]!, connected: false, error: "Token expired" },
+              }));
+            }
+          },
         },
       );
 
@@ -539,7 +698,7 @@ export function useStellarAddresses<T extends NormalizedEvent = NormalizedEvent>
     };
     // ✅ addressKey and eventKey are stable serialised strings — safe as deps
     // even when the caller passes inline array literals.
-  }, [serverUrl, addressKey, eventKey, token, withCredentials]);
+  }, [serverUrl, addressKey, eventKey, currentToken, tokenRefreshKey, withCredentials]);
 
   return states;
 }
