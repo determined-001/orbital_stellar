@@ -289,6 +289,7 @@ describe("EventEngine — pause/resume per source", () => {
       engine.pauseSource("horizon");
       expect(log.warn).toHaveBeenCalledWith(
         expect.stringContaining('pauseSource("horizon") called but source is already paused'),
+        { source: "horizon" },
       );
     });
 
@@ -300,6 +301,7 @@ describe("EventEngine — pause/resume per source", () => {
       engine.resumeSource("horizon");
       expect(log.warn).toHaveBeenCalledWith(
         expect.stringContaining('resumeSource("horizon") called but source is not paused'),
+        { source: "horizon" },
       );
     });
 

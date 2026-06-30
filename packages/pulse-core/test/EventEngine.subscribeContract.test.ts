@@ -123,6 +123,7 @@ describe("EventEngine.subscribeContract — filter predicate", () => {
     expect(second).toBe(first);
     expect(log.warn).toHaveBeenCalledWith(
       "[pulse-core] subscribeContract() called for address sub1 which already has an active watcher — filter option ignored.",
+      { id: "sub1", hasFilter: true },
     );
   });
 
