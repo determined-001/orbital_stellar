@@ -23,8 +23,10 @@ export type WebhookMetrics = {
   recordTerminal(url: string, outcome: WebhookTerminalOutcome): void;
 };
 
+export type UrlEntry = { url: string; timeoutMs?: number };
+
 export type WebhookConfig = {
-  url: string | string[];
+  url: string | string[] | UrlEntry[];
   secret: string;
   retries?: number;
   deliveryTimeoutMs?: number;

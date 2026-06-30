@@ -5,7 +5,7 @@ const dnsLookupMock = vi.hoisted(() => vi.fn());
 vi.mock("dns/promises", () => ({ lookup: dnsLookupMock }));
 
 import { Watcher } from "@orbital-stellar/pulse-core";
-import type { RetryQueue, WebhookMetrics } from "../src/index.js";
+import type { RetryQueue, UrlEntry, WebhookMetrics } from "../src/index.js";
 import {
   DeadLetterStore,
   MemoryRetryQueue,
@@ -1858,5 +1858,132 @@ describe("pulse-webhooks WebhookDelivery with retryQueue", () => {
     await vi.advanceTimersByTimeAsync(5000);
 
     expect(vi.mocked(queue.dequeue).mock.calls.length).toBe(dequeueCountBefore);
+  });
+});
+
+describe("pulse-webhooks WebhookDelivery per-URL timeout", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    dnsLookupMock.mockResolvedValue([{ address: "93.184.216.34", family: 4 }]);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  it("accepts UrlEntry array and delivers to all URLs", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200 });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const urls: UrlEntry[] = [
+      { url: "https://fast.example.com/hook", timeoutMs: 5000 },
+      { url: "https://slow.example.com/hook", timeoutMs: 30000 },
+    ];
+
+    const watcher = new Watcher("GABC");
+    new WebhookDelivery(watcher, { url: urls, secret: "top-secret" });
+
+    watcher.emit("*", deliveryEvent);
+    await flushAsyncWork();
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://fast.example.com/hook",
+      expect.objectContaining({ method: "POST" }),
+    );
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://slow.example.com/hook",
+      expect.objectContaining({ method: "POST" }),
+    );
+  });
+
+  it("uses per-URL timeoutMs as the abort timeout, not the delivery default", async () => {
+    const setTimeoutSpy = vi.spyOn(globalThis, "setTimeout");
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200 });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const urls: UrlEntry[] = [
+      { url: "https://fast.example.com/hook", timeoutMs: 5000 },
+      { url: "https://slow.example.com/hook", timeoutMs: 30000 },
+    ];
+
+    const watcher = new Watcher("GABC");
+    new WebhookDelivery(watcher, { url: urls, secret: "top-secret", deliveryTimeoutMs: 10000 });
+
+    watcher.emit("*", deliveryEvent);
+    await flushAsyncWork();
+
+    const abortTimerDelays = setTimeoutSpy.mock.calls.map((call) => call[1] as number);
+    expect(abortTimerDelays).toContain(5000);
+    expect(abortTimerDelays).toContain(30000);
+    expect(abortTimerDelays).not.toContain(10000);
+  });
+
+  it("falls back to delivery-level default when a UrlEntry has no timeoutMs", async () => {
+    const setTimeoutSpy = vi.spyOn(globalThis, "setTimeout");
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200 });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const urls: UrlEntry[] = [
+      { url: "https://override.example.com/hook", timeoutMs: 5000 },
+      { url: "https://default.example.com/hook" },
+    ];
+
+    const watcher = new Watcher("GABC");
+    new WebhookDelivery(watcher, { url: urls, secret: "top-secret", deliveryTimeoutMs: 10000 });
+
+    watcher.emit("*", deliveryEvent);
+    await flushAsyncWork();
+
+    const abortTimerDelays = setTimeoutSpy.mock.calls.map((call) => call[1] as number);
+    expect(abortTimerDelays).toContain(5000);
+    expect(abortTimerDelays).toContain(10000);
+  });
+
+  it("includes per-URL timeoutMs in the timeout error message", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockRejectedValue(Object.assign(new Error("AbortError"), { name: "AbortError" }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const watcher = new Watcher("GABC");
+    const failedHandler = vi.fn();
+    watcher.on("webhook.failed", failedHandler);
+
+    const urls: UrlEntry[] = [{ url: "https://slow.example.com/hook", timeoutMs: 25000 }];
+    new WebhookDelivery(watcher, { url: urls, secret: "top-secret", retries: 1 });
+
+    watcher.emit("*", deliveryEvent);
+    await flushAsyncWork();
+
+    expect(failedHandler).toHaveBeenCalledWith(
+      expect.objectContaining({
+        raw: expect.objectContaining({
+          error: "Delivery timed out after 25000ms",
+        }),
+      }),
+    );
+  });
+
+  it("string[] url form still works with delivery default timeout", async () => {
+    const setTimeoutSpy = vi.spyOn(globalThis, "setTimeout");
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200 });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const watcher = new Watcher("GABC");
+    new WebhookDelivery(watcher, {
+      url: ["https://a.example.com/hook", "https://b.example.com/hook"],
+      secret: "top-secret",
+      deliveryTimeoutMs: 7500,
+    });
+
+    watcher.emit("*", deliveryEvent);
+    await flushAsyncWork();
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const abortTimerDelays = setTimeoutSpy.mock.calls.map((call) => call[1] as number);
+    expect(abortTimerDelays.filter((d) => d === 7500)).toHaveLength(2);
   });
 });

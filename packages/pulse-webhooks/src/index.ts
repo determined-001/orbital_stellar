@@ -13,7 +13,7 @@ import { DeadLetterStore } from "./MemoryDeadLetterStore.js";
 import { exponentialJittered } from "./backoff.js";
 import type { BackoffStrategy } from "./backoff.js";
 import type { RetryQueue, RetryRecord } from "./RetryQueue.js";
-import type { Tracer, VerifyWebhookOptions, WebhookConfig } from "./types.js";
+import type { Tracer, UrlEntry, VerifyWebhookOptions, WebhookConfig } from "./types.js";
 import { DEFAULT_MAX_AGE_MS, DEFAULT_CLOCK_SKEW_MS } from "./types.js";
 
 const BLOCKED_WEBHOOK_ADDRESSES = new BlockList();
@@ -72,6 +72,7 @@ export type { RetryQueue, RetryRecord } from "./RetryQueue.js";
 export type {
   Span,
   Tracer,
+  UrlEntry,
   VerifierSignatureVersion,
   VerifyWebhookOptions,
   WebhookConfig,
@@ -112,12 +113,30 @@ type ResolvedWebhookConfig = Omit<
   "url" | "tracer" | "urlValidator" | "metrics" | "backoff" | "retryQueue"
 > & {
   urls: string[];
+  urlTimeouts: Map<string, number>;
   backoff: BackoffStrategy;
   tracer?: Tracer;
   urlValidator?: WebhookConfig["urlValidator"];
   metrics?: WebhookConfig["metrics"];
   retryQueue?: RetryQueue;
 };
+
+function normalizeUrlConfig(url: WebhookConfig["url"]): {
+  urls: string[];
+  urlTimeouts: Map<string, number>;
+} {
+  if (!Array.isArray(url)) return { urls: [url], urlTimeouts: new Map() };
+  if (url.length === 0 || typeof url[0] === "string") {
+    return { urls: url as string[], urlTimeouts: new Map() };
+  }
+  const entries = url as UrlEntry[];
+  const urls = entries.map((e) => e.url);
+  const urlTimeouts = new Map<string, number>();
+  for (const e of entries) {
+    if (e.timeoutMs !== undefined) urlTimeouts.set(e.url, e.timeoutMs);
+  }
+  return { urls, urlTimeouts };
+}
 
 export class WebhookDelivery {
   private config: ResolvedWebhookConfig;
@@ -140,6 +159,7 @@ export class WebhookDelivery {
   constructor(watcher: Watcher, config: WebhookConfig, dlq?: DeadLetterStore) {
     this.watcher = watcher;
     this.dlq = dlq ?? new DeadLetterStore();
+    const { urls, urlTimeouts } = normalizeUrlConfig(config.url);
     this.config = {
       retries: 3,
       deliveryTimeoutMs: 10000,
@@ -149,7 +169,8 @@ export class WebhookDelivery {
       retryQueuePollIntervalMs: 1000,
       ...config,
       tracer: config.tracer,
-      urls: Array.isArray(config.url) ? [...config.url] : [config.url],
+      urls,
+      urlTimeouts,
     };
     this.config.maxConcurrentRetries = Math.max(1, this.config.maxConcurrentRetries);
     this.retryQueue = config.retryQueue;
@@ -218,7 +239,7 @@ export class WebhookDelivery {
     const timestamp = Date.now().toString();
     const signature = this.sign(payload, timestamp);
     const controller = new AbortController();
-    const timeoutMs = this.config.deliveryTimeoutMs;
+    const timeoutMs = this.config.urlTimeouts.get(url) ?? this.config.deliveryTimeoutMs;
     const abortTimer = setTimeout(() => controller.abort(), timeoutMs);
 
     // Idempotency header: generate or reuse UUID per event-URL pair
@@ -279,12 +300,12 @@ export class WebhookDelivery {
       const failureMs = Date.now() - startMs;
       span?.setAttribute("webhook.latency_ms", failureMs);
       span?.setAttribute("latency", failureMs);
-      span?.setAttribute("webhook.error", this.getErrorMessage(err));
-      span?.setAttribute("error", this.getErrorMessage(err));
+      span?.setAttribute("webhook.error", this.getErrorMessage(err, timeoutMs));
+      span?.setAttribute("error", this.getErrorMessage(err, timeoutMs));
 
       if (this.watcher.stopped) return { ok: false, error: "stopped" };
 
-      const errorMessage = this.getErrorMessage(err);
+      const errorMessage = this.getErrorMessage(err, timeoutMs);
       this.config.metrics?.recordAttempt(url, attempt, failureMs, "failure");
       this.dlq.recordFailure(url);
       return { ok: false, error: errorMessage };
@@ -543,9 +564,9 @@ export class WebhookDelivery {
     }
   }
 
-  private getErrorMessage(err: unknown): string {
+  private getErrorMessage(err: unknown, timeoutMs?: number): string {
     if (err instanceof Error && err.name === "AbortError") {
-      return `Delivery timed out after ${this.config.deliveryTimeoutMs}ms`;
+      return `Delivery timed out after ${timeoutMs ?? this.config.deliveryTimeoutMs}ms`;
     }
 
     return err instanceof Error ? err.message : "Unknown error";
