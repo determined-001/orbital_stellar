@@ -37,7 +37,10 @@ When a limit trips, the route returns `429` with a JSON envelope (`{ error: "dem
 
 ## Content authoring
 
-Documentation pages are authored in Markdown under `content/`. Frontmatter is parsed by `gray-matter`; body is rendered by `marked`. Add a new page by dropping a new `.md` file into the appropriate `content/` subdirectory — the route is inferred from the filename.
+Documentation pages are authored in Markdown under `content/`. Frontmatter is parsed by `gray-matter`; body is rendered by `marked`. To add a new page:
+
+1. Drop a `.md` file into the appropriate `content/` subdirectory.
+2. Register it in `lib/docroutes.ts` under the relevant section — this controls the sidebar order, search indexing, and static route generation. Pages not registered there will not appear in the sidebar or search results.
 
 ## Styling
 
