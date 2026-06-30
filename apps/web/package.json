@@ -10,7 +10,7 @@
   },
   "dependencies": {
     "@orbital-stellar/pulse-core": "workspace:*",
-    "framer-motion": "^12.36.0",
+    "framer-motion": "^12.42.1",
     "geist": "^1.7.2",
     "gray-matter": "^4.0.3",
     "marked": "^18.0.2",
