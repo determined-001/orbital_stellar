@@ -66,14 +66,7 @@ export type NamedType = { readonly type: "named"; readonly name: string };
  * Either a {@link PrimitiveType} string literal or a tagged-object composite type.
  */
 export type TypeSpec =
-  | PrimitiveType
-  | BytesNType
-  | OptionType
-  | ResultType
-  | VecType
-  | MapType
-  | TupleType
-  | NamedType;
+  PrimitiveType | BytesNType | OptionType | ResultType | VecType | MapType | TupleType | NamedType;
 
 // ── Shared building-block ─────────────────────────────────────────────────────
 
@@ -202,8 +195,7 @@ export type ContractSpec = {
 
 /** Result returned by {@link validateSpec}. */
 export type ValidationResult =
-  | { readonly valid: true }
-  | { readonly valid: false; readonly errors: ReadonlyArray<string> };
+  { readonly valid: true } | { readonly valid: false; readonly errors: ReadonlyArray<string> };
 
 const PRIMITIVE_TYPES: ReadonlySet<string> = new Set<PrimitiveType>([
   "bool",

@@ -38,13 +38,7 @@ import type { XdrContractSpec } from "./types.js";
 
 /** A successfully decoded Soroban value. */
 export type DecodedValue =
-  | null
-  | boolean
-  | number
-  | string
-  | DecodedValueArray
-  | DecodedValueMap
-  | DecodedValueObject;
+  null | boolean | number | string | DecodedValueArray | DecodedValueMap | DecodedValueObject;
 
 /** Array of decoded values (interface indirection breaks the alias self-reference). */
 export interface DecodedValueArray extends Array<DecodedValue> {}
