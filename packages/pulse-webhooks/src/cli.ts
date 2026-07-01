@@ -1,8 +1,4 @@
-import {
-  DeadLetterStore,
-  type DeadLetterEntry,
-  type DeadLetterFilter,
-} from "./MemoryDeadLetterStore.js";
+import { DeadLetterStore, type DeadLetterFilter } from "./MemoryDeadLetterStore.js";
 
 /**
  * List DLQ entries with optional filters and output each as a line‑delimited JSON string.

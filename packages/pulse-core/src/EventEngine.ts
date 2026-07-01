@@ -1,7 +1,7 @@
 import { Horizon } from "@stellar/stellar-sdk";
 import { Watcher } from "./Watcher.js";
 import { EngineAlreadyStartedError, NetworkMismatchError } from "./errors.js";
-import { SorobanSubscriber } from "./SorobanSubscriber.js";
+import { resolveSorobanPageLimit, SorobanSubscriber } from "./SorobanSubscriber.js";
 import { SorobanRpcClient } from "./SorobanRpcClient.js";
 import type { SorobanRpcLike, SorobanEvent } from "./SorobanSubscriber.js";
 import { toAccountAddress, toContractAddress } from "./address.js";
@@ -91,6 +91,7 @@ type NormalizedEventOrPending =
  * normalized, so every event leaving the engine carries it.
  */
 type Timestamped<T> = T & { readonly timestampDate: Date };
+type Raw<T> = T extends any ? Omit<T, "timestampDate"> : never;
 
 type StreamCallbacks = {
   onmessage: (record: unknown) => void;
@@ -176,6 +177,7 @@ export class EventEngine {
   private log: Logger;
   private cursorStore?: CursorStoreLike;
   private readonly network: Network;
+  private readonly sorobanPageLimit: number;
   private streamKey: string;
   private streamEpoch = 0;
   private cursorFailureThreshold: number;
@@ -195,16 +197,9 @@ export class EventEngine {
    * Creates a new EventEngine instance.
    * @param config - The core configuration for the engine.
    */
-  constructor(
-    config: CoreConfig & {
-      soroban?: {
-        rpcUrl: string;
-        rpcHeaders?: Record<string, string>;
-        pollIntervalMs?: number;
-        startLedgerLookback?: number;
-      };
-    },
-  ) {
+  constructor(config: CoreConfig) {
+    this.sorobanPageLimit = resolveSorobanPageLimit(config.soroban?.pageLimit);
+
     let horizonUrl: string;
     if (config.horizonUrl !== undefined) {
       try {
@@ -234,6 +229,38 @@ export class EventEngine {
     this.abiRegistry = config.abiRegistry;
     this.cursorStore = config.cursorStore;
     this.network = config.network;
+
+    if (config.soroban) {
+      const rpc = new SorobanRpcClient({
+        url: config.soroban.rpcUrl,
+        headers: config.soroban.rpcHeaders,
+        logger: this.log,
+      });
+      const sorobanCursorKey = `${this.streamKey}:soroban`;
+      let inMemoryCursor: string | undefined;
+      const cursorStore = {
+        getCursor: async (): Promise<string | undefined> => {
+          if (!this.cursorStore) return inMemoryCursor;
+          return (await this.cursorStore.get(sorobanCursorKey)) ?? undefined;
+        },
+        saveCursor: async (cursor: string): Promise<void> => {
+          if (!this.cursorStore) {
+            inMemoryCursor = cursor;
+            return;
+          }
+          await this.cursorStore.set(sorobanCursorKey, cursor);
+        },
+      };
+
+      this.sorobanSubscriber = new SorobanSubscriber({
+        rpc: rpc as unknown as SorobanRpcLike,
+        cursorStore,
+        pollIntervalMs: config.soroban.pollIntervalMs,
+        startLedgerLookback: config.soroban.startLedgerLookback,
+        pageLimit: config.soroban.pageLimit,
+        onEvent: async (event) => this.handleSorobanEvent(event),
+      });
+    }
   }
 
   /**
@@ -526,7 +553,8 @@ export class EventEngine {
       onEvent: options.onEvent,
       endLedger: options.endLedger,
       onDone: options.onDone,
-      pageSize: options.pageSize,
+      startLedger: options.startLedger,
+      pageLimit: options.pageSize ?? this.sorobanPageLimit,
     });
 
     return subscriber;
@@ -595,7 +623,7 @@ export class EventEngine {
     }
 
     this.openStream(false);
-    if (this.contractRegistry.size > 0 && this.sorobanSubscriber) {
+    if (this.sorobanSubscriber) {
       this.sorobanSubscriber.start();
     }
     return true;
@@ -1055,7 +1083,7 @@ export class EventEngine {
     return result ? withTimestampDate(result) : null;
   }
 
-  private _normalize(record: unknown): NormalizedEventOrPending | null {
+  private _normalize(record: unknown): Raw<NormalizedEventOrPending> | null {
     const r = record as Record<string, unknown>;
 
     if (r.type === "payment") {
@@ -1155,7 +1183,7 @@ export class EventEngine {
     return null;
   }
 
-  private normalizeOffer(r: Record<string, unknown>, raw: unknown): OfferEvent | null {
+  private normalizeOffer(r: Record<string, unknown>, raw: unknown): Raw<OfferEvent> | null {
     if (typeof r.source_account !== "string" || typeof r.created_at !== "string") {
       return null;
     }
@@ -1198,7 +1226,7 @@ export class EventEngine {
   private normalizeCreateAccount(
     r: Record<string, unknown>,
     raw: unknown,
-  ): AccountCreatedEvent | null {
+  ): Raw<AccountCreatedEvent> | null {
     if (
       typeof r.funder !== "string" ||
       typeof r.account !== "string" ||
@@ -1220,7 +1248,7 @@ export class EventEngine {
   private normalizeBumpSequence(
     r: Record<string, unknown>,
     raw: unknown,
-  ): BumpSequenceEvent | null {
+  ): Raw<BumpSequenceEvent> | null {
     if (typeof r.source_account !== "string" || typeof r.created_at !== "string") {
       return null;
     }
@@ -1233,7 +1261,7 @@ export class EventEngine {
     };
   }
 
-  private normalizeManageData(r: Record<string, unknown>, raw: unknown): DataEvent | null {
+  private normalizeManageData(r: Record<string, unknown>, raw: unknown): Raw<DataEvent> | null {
     if (typeof r.source_account !== "string" || r.source_account === "") {
       this.log.warn("[pulse-core] normalize() dropping manage_data record.", {
         field: "source_account",
@@ -1274,7 +1302,7 @@ export class EventEngine {
     };
   }
 
-  private normalizeChangeTrust(r: Record<string, unknown>, raw: unknown): TrustlineEvent | null {
+  private normalizeChangeTrust(r: Record<string, unknown>, raw: unknown): Raw<TrustlineEvent> | null {
     if (typeof r.source_account !== "string") {
       return null;
     }
@@ -1320,7 +1348,7 @@ export class EventEngine {
   private normalizeSetOptions(
     r: Record<string, unknown>,
     raw: unknown,
-  ): AccountOptionsEvent | null {
+  ): Raw<AccountOptionsEvent> | null {
     const changes: AccountOptionsChanges = {};
 
     if (typeof r.signer_key === "string") {
@@ -1359,7 +1387,7 @@ export class EventEngine {
   private normalizeCreateClaimableBalance(
     r: Record<string, unknown>,
     raw: unknown,
-  ): ClaimableCreatedEvent | null {
+  ): Raw<ClaimableCreatedEvent> | null {
     const requiredStringFields = ["source_account", "created_at", "amount", "balance_id"] as const;
 
     for (const field of requiredStringFields) {
@@ -1412,7 +1440,7 @@ export class EventEngine {
   private normalizeClaimClaimableBalance(
     r: Record<string, unknown>,
     raw: unknown,
-  ): ClaimableClaimedEvent | null {
+  ): Raw<ClaimableClaimedEvent> | null {
     const requiredStringFields = ["source_account", "created_at", "balance_id"] as const;
 
     for (const field of requiredStringFields) {
@@ -1438,7 +1466,7 @@ export class EventEngine {
   private normalizeLiquidityPoolDeposit(
     r: Record<string, unknown>,
     raw: unknown,
-  ): LiquidityPoolDepositEvent | null {
+  ): Raw<LiquidityPoolDepositEvent> | null {
     const requiredFields = [
       "source_account",
       "created_at",
@@ -1480,7 +1508,7 @@ export class EventEngine {
   private normalizeLiquidityPoolWithdraw(
     r: Record<string, unknown>,
     raw: unknown,
-  ): LiquidityPoolWithdrawEvent | null {
+  ): Raw<LiquidityPoolWithdrawEvent> | null {
     const requiredFields = ["source_account", "created_at", "liquidity_pool_id", "shares"] as const;
 
     for (const field of requiredFields) {
@@ -1514,7 +1542,7 @@ export class EventEngine {
     };
   }
 
-  private normalizeAllowTrust(r: Record<string, unknown>, raw: unknown): TrustAuthEvent | null {
+  private normalizeAllowTrust(r: Record<string, unknown>, raw: unknown): Raw<TrustAuthEvent> | null {
     const trustor = r.trustor;
     const issuer = r.trustee ?? r.source_account;
     const authorize = r.authorize;
@@ -1542,7 +1570,7 @@ export class EventEngine {
   private normalizeSetTrustLineFlags(
     r: Record<string, unknown>,
     raw: unknown,
-  ): TrustAuthEvent | null {
+  ): Raw<TrustAuthEvent> | null {
     const trustor = r.trustor;
     const issuer = r.source_account;
 
@@ -1578,7 +1606,7 @@ export class EventEngine {
   private normalizeContractInvoked(
     r: Record<string, unknown>,
     raw: unknown,
-  ): ContractInvokedEvent | null {
+  ): Raw<ContractInvokedEvent> | null {
     if (typeof r.contract_id !== "string" || r.contract_id === "") return null;
     if (typeof r.function !== "string") return null;
     if (typeof r.created_at !== "string") return null;
@@ -1597,7 +1625,7 @@ export class EventEngine {
   private normalizeContractEmitted(
     r: Record<string, unknown>,
     raw: unknown,
-  ): ContractEmittedEvent | null {
+  ): Raw<ContractEmittedEvent> | null {
     if (typeof r.contract_id !== "string" || r.contract_id === "") return null;
     if (typeof r.created_at !== "string") return null;
     return {
@@ -1637,6 +1665,51 @@ export class EventEngine {
         error: err,
       });
       return false;
+    }
+  }
+
+  /** Converts a polled Soroban RPC event into the public normalized event shape. */
+  private handleSorobanEvent(event: SorobanEvent): void {
+    if (!event.contractId) {
+      this.log.warn("[pulse-core] Dropping Soroban event without a contractId.", {
+        eventId: event.id,
+      });
+      return;
+    }
+
+    const timestamp = event.ledgerClosedAt ?? new Date().toISOString();
+    if (event.type === "contract.invoked") {
+      this.route(
+        withTimestampDate({
+          type: "contract.invoked",
+          contractId: toContractAddress(event.contractId),
+          function: event.function ?? "",
+          args: event.args ?? [],
+          ...(event.ledger !== undefined ? { ledger: event.ledger } : {}),
+          ...(event.txHash !== undefined ? { txHash: event.txHash } : {}),
+          timestamp,
+          raw: event as RawSorobanEvent,
+        }),
+      );
+      return;
+    }
+
+    if (event.type === "contract.emitted") {
+      this.route(
+        withTimestampDate({
+          type: "contract.emitted",
+          contractId: toContractAddress(event.contractId),
+          topics: event.topic,
+          data: event.decodedData ?? event.value,
+          decodedData: event.decodedData,
+          ...(event.ledger !== undefined ? { ledger: event.ledger } : {}),
+          eventId: event.id,
+          ...(event.txHash !== undefined ? { txHash: event.txHash } : {}),
+          inSuccessfulContractCall: event.inSuccessfulContractCall ?? false,
+          timestamp,
+          raw: event as RawSorobanEvent,
+        }),
+      );
     }
   }
 
