@@ -4,7 +4,8 @@
     "noEmit": true,
     "declaration": false,
     "declarationMap": false,
-    "sourceMap": false
+    "sourceMap": false,
+    "types": ["node"]
   },
   "include": ["src", "test/types.exhaustive.test-d.ts", "test/types.contract.test-d.ts"]
 }

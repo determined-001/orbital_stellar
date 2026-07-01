@@ -1365,10 +1365,11 @@ describe("pulse-webhooks WebhookDelivery with retryQueue", () => {
     });
 
     watcher.emit("*", deliveryEvent);
-    await vi.advanceTimersByTimeAsync(0);
+    // The delivery path awaits a real DNS lookup before fetch, so wait for the
+    // enqueue to actually happen rather than flushing a fixed number of microtasks.
+    await vi.waitFor(() => expect(queue.enqueue).toHaveBeenCalledTimes(1));
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(queue.enqueue).toHaveBeenCalledTimes(1);
     expect(queue.enqueue).toHaveBeenCalledWith(
       expect.objectContaining({
         url: "https://example.com/hook",
@@ -1533,14 +1534,16 @@ describe("pulse-webhooks WebhookDelivery with retryQueue", () => {
     });
 
     watcher.emit("*", deliveryEvent);
-    await vi.advanceTimersByTimeAsync(0);
-
-    const retryTimeoutCalls = setTimeoutSpy.mock.calls.filter((args) => {
-      const delay = args[1] as number;
-      return delay !== 10000; // exclude the abort timer
+    // The delivery path awaits a real DNS lookup before fetch, so wait for the
+    // retry to actually be scheduled. Filter on the exact retry delay (500 =
+    // exponentialJittered(1, 0.5)) to exclude both the 10000ms abort timer and
+    // vi.waitFor's own polling timers.
+    await vi.waitFor(() => {
+      const retryTimeoutCalls = setTimeoutSpy.mock.calls.filter(
+        (args) => (args[1] as number) === 500,
+      );
+      expect(retryTimeoutCalls).toHaveLength(1);
     });
-    expect(retryTimeoutCalls).toHaveLength(1);
-    expect(retryTimeoutCalls[0][1]).toBe(500); // exponentialJittered(1, 0.5)
   });
 
   it("stops the poller when the watcher stops", async () => {

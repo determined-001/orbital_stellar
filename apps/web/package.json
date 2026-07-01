@@ -3,29 +3,31 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "predev": "pnpm -w run docs:reference",
     "dev": "next dev",
+    "prebuild": "pnpm -w run docs:reference",
     "build": "next build",
     "start": "next start",
     "lint": "next lint"
   },
   "dependencies": {
     "@orbital-stellar/pulse-core": "workspace:*",
-    "framer-motion": "^12.36.0",
-    "geist": "^1.7.0",
+    "framer-motion": "^12.42.1",
+    "geist": "^1.7.2",
     "gray-matter": "^4.0.3",
     "marked": "^18.0.2",
-    "next": "^16.2.6",
+    "next": "^16.2.9",
     "react": "^19.2.5",
     "react-dom": "^19.2.5"
   },
   "devDependencies": {
-    "@tailwindcss/postcss": "^4.3.1",
-    "@types/node": "^25.9.3",
+    "@tailwindcss/postcss": "^4.3.2",
+    "@types/node": "^26.0.1",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
-    "autoprefixer": "^10.5.0",
-    "postcss": "^8.5.15",
-    "tailwindcss": "^4.3.1",
+    "autoprefixer": "^10.5.2",
+    "postcss": "^8.5.16",
+    "tailwindcss": "^4.3.2",
     "typescript": "^6.0.3"
   }
 }

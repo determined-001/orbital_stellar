@@ -25,6 +25,7 @@ export const docSections: DocSection[] = [
       { title: 'Webhook Durability', href: '/docs/guides/webhook-durability' },
       { title: 'ABI Registry & Typed Event Decoding', href: '/docs/guides/abi-registry' },
       { title: 'Migrate from raw EventSource', href: '/docs/guides/migrate-from-eventsource' },
+      { title: 'Soroban Event Subscription', href: '/docs/guides/soroban-subscription' },
     ],
   },
   {
@@ -38,3 +39,14 @@ export const docSections: DocSection[] = [
 ]
 
 export const allDocPages: DocItem[] = docSections.flatMap((s) => s.items)
+
+export const referenceSections: DocSection[] = [
+  {
+    title: 'API Reference',
+    items: [
+      { title: 'pulse-core', href: '/reference/pulse-core' },
+      { title: 'pulse-webhooks', href: '/reference/pulse-webhooks' },
+      { title: 'pulse-notify', href: '/reference/pulse-notify' },
+    ],
+  },
+]

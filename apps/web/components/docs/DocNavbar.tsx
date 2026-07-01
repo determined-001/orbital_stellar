@@ -5,9 +5,13 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import SearchDialog from './SearchDialog'
 import AIPanel from './AIPanel'
-import { docSections } from '@/lib/docroutes'
+import { docSections, type DocSection } from '@/lib/docroutes'
 
-export default function DocNavbar() {
+type Props = {
+  sections?: DocSection[]
+}
+
+export default function DocNavbar({ sections = docSections }: Props) {
   const [searchOpen, setSearchOpen] = useState(false)
   const [aiOpen, setAiOpen] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
@@ -109,7 +113,7 @@ export default function DocNavbar() {
             className="absolute top-16 left-0 bottom-0 w-80 bg-[#0c0c0c] border-r border-white/[0.08] overflow-y-auto py-6"
             onClick={(e) => e.stopPropagation()}
           >
-            {docSections.map((section) => (
+            {sections.map((section) => (
               <div key={section.title} className="mb-6">
                 <p className="px-5 mb-2 text-[11px] font-semibold uppercase tracking-widest text-white/25">
                   {section.title}
