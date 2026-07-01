@@ -5,7 +5,7 @@ const dnsLookupMock = vi.hoisted(() => vi.fn());
 vi.mock("dns/promises", () => ({ lookup: dnsLookupMock }));
 
 import { Watcher } from "@orbital-stellar/pulse-core";
-import type { RetryQueue, WebhookMetrics } from "../src/index.js";
+import type { RetryQueue, UrlEntry, WebhookMetrics } from "../src/index.js";
 import {
   DeadLetterStore,
   MemoryRetryQueue,
@@ -833,292 +833,6 @@ describe("pulse-webhooks WebhookDelivery tracer", () => {
   });
 });
 
-describe.skip("pulse-webhooks verifyWebhook", () => {
-  it("returns parsed event when signature matches timestamped payload", () => {
-    const payload = JSON.stringify(deliveryEvent);
-    const timestamp = "1714176000000";
-    const signature = signWebhookPayload("top-secret", payload, timestamp);
-
-    const event = verifyWebhook(payload, signature, "top-secret", timestamp, {
-      nowMs: Number(timestamp),
-    });
-
-    expect(event).toEqual(deliveryEvent);
-  });
-
-  it("accepts explicit v1 version option", () => {
-    const payload = JSON.stringify(deliveryEvent);
-    const timestamp = "1714176000000";
-    const signature = signWebhookPayload("top-secret", payload, timestamp);
-
-    const event = verifyWebhook(payload, signature, "top-secret", timestamp, {
-      nowMs: Number(timestamp),
-      version: "v1",
-    });
-
-    expect(event).toEqual(deliveryEvent);
-  });
-
-  it("accepts v2 placeholder without changing v1 verification behavior", () => {
-    const payload = JSON.stringify(deliveryEvent);
-    const timestamp = "1714176000000";
-    const signature = signWebhookPayload("top-secret", payload, timestamp);
-
-    const event = verifyWebhook(payload, signature, "top-secret", timestamp, {
-      nowMs: Number(timestamp),
-      version: "v2",
-    });
-
-    expect(event).toEqual(deliveryEvent);
-  });
-
-  it("returns null when timestamp is missing or invalid", () => {
-    const payload = JSON.stringify(deliveryEvent);
-    const signature = signWebhookPayload("top-secret", payload, "1714176000000");
-
-    expect(verifyWebhook(payload, signature, "top-secret", "")).toBeNull();
-    expect(verifyWebhook(payload, signature, "top-secret", "not-a-number")).toBeNull();
-  });
-
-  it("returns null when signature does not match timestamped payload", () => {
-    const payload = JSON.stringify(deliveryEvent);
-    const timestamp = "1714176000000";
-    const signature = signWebhookPayload("top-secret", payload, timestamp);
-
-    expect(verifyWebhook(payload, signature, "wrong-secret", timestamp)).toBeNull();
-    expect(verifyWebhook(`${payload}x`, signature, "top-secret", timestamp)).toBeNull();
-    expect(verifyWebhook(payload, signature, "top-secret", "1714176000001")).toBeNull();
-  });
-
-  it("accepts timestamp within configured clock skew window", () => {
-    const payload = JSON.stringify(deliveryEvent);
-    const nowMs = 1_714_176_000_000;
-    const timestamp = String(nowMs + 20_000);
-    const signature = signWebhookPayload("top-secret", payload, timestamp);
-
-    const event = verifyWebhook(payload, signature, "top-secret", timestamp, {
-      nowMs,
-      maxAgeMs: 60_000,
-      clockSkewMs: 30_000,
-    });
-
-    expect(event).toEqual(deliveryEvent);
-  });
-
-  it("rejects timestamp outside configured skew and maxAge window", () => {
-    const payload = JSON.stringify(deliveryEvent);
-    const nowMs = 1_714_176_000_000;
-    const tooFarFutureTs = String(nowMs + 30_001);
-    const tooOldTs = String(nowMs - 60_000 - 30_001);
-
-    const futureSig = signWebhookPayload("top-secret", payload, tooFarFutureTs);
-    const oldSig = signWebhookPayload("top-secret", payload, tooOldTs);
-
-    expect(
-      verifyWebhook(payload, futureSig, "top-secret", tooFarFutureTs, {
-        nowMs,
-        maxAgeMs: 60_000,
-        clockSkewMs: 30_000,
-      }),
-    ).toBeNull();
-    expect(
-      verifyWebhook(payload, oldSig, "top-secret", tooOldTs, {
-        nowMs,
-        maxAgeMs: 60_000,
-        clockSkewMs: 30_000,
-      }),
-    ).toBeNull();
-  });
-
-  it("returns null when schema validation fails", () => {
-    const payload = JSON.stringify(deliveryEvent);
-    const timestamp = "1714176000000";
-    const signature = signWebhookPayload("top-secret", payload, timestamp);
-
-    const event = verifyWebhook(payload, signature, "top-secret", timestamp, {
-      nowMs: Number(timestamp),
-      schema: (evt) => evt.type === "payment.sent",
-    });
-
-    expect(event).toBeNull();
-  });
-
-  it("returns event when schema validation succeeds", () => {
-    const payload = JSON.stringify(deliveryEvent);
-    const timestamp = "1714176000000";
-    const signature = signWebhookPayload("top-secret", payload, timestamp);
-
-    const event = verifyWebhook(payload, signature, "top-secret", timestamp, {
-      nowMs: Number(timestamp),
-      schema: (evt) => evt.type === "payment.received",
-    });
-
-    expect(event).toEqual(deliveryEvent);
-  });
-
-  it("returns null when schema validator throws", () => {
-    const payload = JSON.stringify(deliveryEvent);
-    const timestamp = "1714176000000";
-    const signature = signWebhookPayload("top-secret", payload, timestamp);
-
-    const event = verifyWebhook(payload, signature, "top-secret", timestamp, {
-      nowMs: Number(timestamp),
-      schema: () => {
-        throw new Error("validator error");
-      },
-    });
-
-    expect(event).toBeNull();
-  });
-});
-
-describe("pulse-webhooks verifyWebhookEdge", () => {
-  it("returns parsed event when signature matches timestamped payload", async () => {
-    const payload = JSON.stringify(deliveryEvent);
-    const timestamp = "1714176000000";
-    const signature = signWebhookPayload("top-secret", payload, timestamp);
-
-    const event = await verifyWebhookEdge(payload, signature, "top-secret", timestamp, {
-      nowMs: Number(timestamp),
-    });
-
-    expect(event).toEqual(deliveryEvent);
-  });
-
-  it("accepts explicit v1 version option", async () => {
-    const payload = JSON.stringify(deliveryEvent);
-    const timestamp = "1714176000000";
-    const signature = signWebhookPayload("top-secret", payload, timestamp);
-
-    const event = await verifyWebhookEdge(payload, signature, "top-secret", timestamp, {
-      nowMs: Number(timestamp),
-      version: "v1",
-    });
-
-    expect(event).toEqual(deliveryEvent);
-  });
-
-  it("accepts v2 placeholder without changing v1 verification behavior", async () => {
-    const payload = JSON.stringify(deliveryEvent);
-    const timestamp = "1714176000000";
-    const signature = signWebhookPayload("top-secret", payload, timestamp);
-
-    const event = await verifyWebhookEdge(payload, signature, "top-secret", timestamp, {
-      nowMs: Number(timestamp),
-      version: "v2",
-    });
-
-    expect(event).toEqual(deliveryEvent);
-  });
-
-  it("returns null when timestamp is missing or invalid", async () => {
-    const payload = JSON.stringify(deliveryEvent);
-    const signature = signWebhookPayload("top-secret", payload, "1714176000000");
-
-    expect(await verifyWebhookEdge(payload, signature, "top-secret", "")).toBeNull();
-    expect(await verifyWebhookEdge(payload, signature, "top-secret", "not-a-number")).toBeNull();
-  });
-
-  it("returns null when signature does not match timestamped payload", async () => {
-    const payload = JSON.stringify(deliveryEvent);
-    const timestamp = "1714176000000";
-    const signature = signWebhookPayload("top-secret", payload, timestamp);
-
-    expect(await verifyWebhookEdge(payload, signature, "wrong-secret", timestamp)).toBeNull();
-    expect(await verifyWebhookEdge(`${payload}x`, signature, "top-secret", timestamp)).toBeNull();
-    expect(await verifyWebhookEdge(payload, signature, "top-secret", "1714176000001")).toBeNull();
-  });
-
-  it("accepts timestamp within configured clock skew window", async () => {
-    const payload = JSON.stringify(deliveryEvent);
-    const nowMs = 1_714_176_000_000;
-    const timestamp = String(nowMs + 20_000);
-    const signature = signWebhookPayload("top-secret", payload, timestamp);
-
-    const event = await verifyWebhookEdge(payload, signature, "top-secret", timestamp, {
-      nowMs,
-      maxAgeMs: 60_000,
-      clockSkewMs: 30_000,
-    });
-
-    expect(event).toEqual(deliveryEvent);
-  });
-
-  it("rejects timestamp outside configured skew and maxAge window", async () => {
-    const payload = JSON.stringify(deliveryEvent);
-    const nowMs = 1_714_176_000_000;
-    const tooFarFutureTs = String(nowMs + 30_001);
-    const tooOldTs = String(nowMs - 60_000 - 30_001);
-
-    const futureSig = signWebhookPayload("top-secret", payload, tooFarFutureTs);
-    const oldSig = signWebhookPayload("top-secret", payload, tooOldTs);
-
-    expect(
-      await verifyWebhookEdge(payload, futureSig, "top-secret", tooFarFutureTs, {
-        nowMs,
-        maxAgeMs: 60_000,
-        clockSkewMs: 30_000,
-      }),
-    ).toBeNull();
-    expect(
-      await verifyWebhookEdge(payload, oldSig, "top-secret", tooOldTs, {
-        nowMs,
-        maxAgeMs: 60_000,
-        clockSkewMs: 30_000,
-      }),
-    ).toBeNull();
-  });
-
-  it("returns null for malformed JSON payload", async () => {
-    const payload = "{ invalid json }";
-    const timestamp = "1714176000000";
-    const signature = signWebhookPayload("top-secret", payload, timestamp);
-
-    expect(await verifyWebhookEdge(payload, signature, "top-secret", timestamp)).toBeNull();
-  });
-
-  it("returns null when schema validation fails", async () => {
-    const payload = JSON.stringify(deliveryEvent);
-    const timestamp = "1714176000000";
-    const signature = signWebhookPayload("top-secret", payload, timestamp);
-
-    const event = await verifyWebhookEdge(payload, signature, "top-secret", timestamp, {
-      nowMs: Number(timestamp),
-      schema: (evt) => evt.type === "payment.sent",
-    });
-
-    expect(event).toBeNull();
-  });
-
-  it("returns event when schema validation succeeds", async () => {
-    const payload = JSON.stringify(deliveryEvent);
-    const timestamp = "1714176000000";
-    const signature = signWebhookPayload("top-secret", payload, timestamp);
-
-    const event = await verifyWebhookEdge(payload, signature, "top-secret", timestamp, {
-      nowMs: Number(timestamp),
-      schema: (evt) => evt.type === "payment.received",
-    });
-
-    expect(event).toEqual(deliveryEvent);
-  });
-
-  it("returns null when schema validator throws", async () => {
-    const payload = JSON.stringify(deliveryEvent);
-    const timestamp = "1714176000000";
-    const signature = signWebhookPayload("top-secret", payload, timestamp);
-
-    const event = await verifyWebhookEdge(payload, signature, "top-secret", timestamp, {
-      nowMs: Number(timestamp),
-      schema: () => {
-        throw new Error("validator error");
-      },
-    });
-
-    expect(event).toBeNull();
-  });
-});
-
 // Parameterized test suite for both verifyWebhook and verifyWebhookEdge
 describe.each([
   [
@@ -1133,7 +847,7 @@ describe.each([
       return await verifyWebhookEdge(payload, signature, secret, timestamp, opts);
     },
   ],
-])("%s verification", (verifierName, verifyFn) => {
+])("%s verification", (_verifierName, verifyFn) => {
   it("returns parsed event when signature matches timestamped payload", async () => {
     const payload = JSON.stringify(deliveryEvent);
     const timestamp = "1714176000000";
@@ -1858,5 +1572,132 @@ describe("pulse-webhooks WebhookDelivery with retryQueue", () => {
     await vi.advanceTimersByTimeAsync(5000);
 
     expect(vi.mocked(queue.dequeue).mock.calls.length).toBe(dequeueCountBefore);
+  });
+});
+
+describe("pulse-webhooks WebhookDelivery per-URL timeout", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    dnsLookupMock.mockResolvedValue([{ address: "93.184.216.34", family: 4 }]);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  it("accepts UrlEntry array and delivers to all URLs", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200 });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const urls: UrlEntry[] = [
+      { url: "https://fast.example.com/hook", timeoutMs: 5000 },
+      { url: "https://slow.example.com/hook", timeoutMs: 30000 },
+    ];
+
+    const watcher = new Watcher("GABC");
+    new WebhookDelivery(watcher, { url: urls, secret: "top-secret" });
+
+    watcher.emit("*", deliveryEvent);
+    await flushAsyncWork();
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://fast.example.com/hook",
+      expect.objectContaining({ method: "POST" }),
+    );
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://slow.example.com/hook",
+      expect.objectContaining({ method: "POST" }),
+    );
+  });
+
+  it("uses per-URL timeoutMs as the abort timeout, not the delivery default", async () => {
+    const setTimeoutSpy = vi.spyOn(globalThis, "setTimeout");
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200 });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const urls: UrlEntry[] = [
+      { url: "https://fast.example.com/hook", timeoutMs: 5000 },
+      { url: "https://slow.example.com/hook", timeoutMs: 30000 },
+    ];
+
+    const watcher = new Watcher("GABC");
+    new WebhookDelivery(watcher, { url: urls, secret: "top-secret", deliveryTimeoutMs: 10000 });
+
+    watcher.emit("*", deliveryEvent);
+    await flushAsyncWork();
+
+    const abortTimerDelays = setTimeoutSpy.mock.calls.map((call) => call[1] as number);
+    expect(abortTimerDelays).toContain(5000);
+    expect(abortTimerDelays).toContain(30000);
+    expect(abortTimerDelays).not.toContain(10000);
+  });
+
+  it("falls back to delivery-level default when a UrlEntry has no timeoutMs", async () => {
+    const setTimeoutSpy = vi.spyOn(globalThis, "setTimeout");
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200 });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const urls: UrlEntry[] = [
+      { url: "https://override.example.com/hook", timeoutMs: 5000 },
+      { url: "https://default.example.com/hook" },
+    ];
+
+    const watcher = new Watcher("GABC");
+    new WebhookDelivery(watcher, { url: urls, secret: "top-secret", deliveryTimeoutMs: 10000 });
+
+    watcher.emit("*", deliveryEvent);
+    await flushAsyncWork();
+
+    const abortTimerDelays = setTimeoutSpy.mock.calls.map((call) => call[1] as number);
+    expect(abortTimerDelays).toContain(5000);
+    expect(abortTimerDelays).toContain(10000);
+  });
+
+  it("includes per-URL timeoutMs in the timeout error message", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockRejectedValue(Object.assign(new Error("AbortError"), { name: "AbortError" }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const watcher = new Watcher("GABC");
+    const failedHandler = vi.fn();
+    watcher.on("webhook.failed", failedHandler);
+
+    const urls: UrlEntry[] = [{ url: "https://slow.example.com/hook", timeoutMs: 25000 }];
+    new WebhookDelivery(watcher, { url: urls, secret: "top-secret", retries: 1 });
+
+    watcher.emit("*", deliveryEvent);
+    await flushAsyncWork();
+
+    expect(failedHandler).toHaveBeenCalledWith(
+      expect.objectContaining({
+        raw: expect.objectContaining({
+          error: "Delivery timed out after 25000ms",
+        }),
+      }),
+    );
+  });
+
+  it("string[] url form still works with delivery default timeout", async () => {
+    const setTimeoutSpy = vi.spyOn(globalThis, "setTimeout");
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200 });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const watcher = new Watcher("GABC");
+    new WebhookDelivery(watcher, {
+      url: ["https://a.example.com/hook", "https://b.example.com/hook"],
+      secret: "top-secret",
+      deliveryTimeoutMs: 7500,
+    });
+
+    watcher.emit("*", deliveryEvent);
+    await flushAsyncWork();
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const abortTimerDelays = setTimeoutSpy.mock.calls.map((call) => call[1] as number);
+    expect(abortTimerDelays.filter((d) => d === 7500)).toHaveLength(2);
   });
 });

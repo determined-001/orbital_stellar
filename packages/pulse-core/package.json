@@ -37,17 +37,17 @@
     "bench:soroban-throughput": "tsx bench/soroban-throughput.ts"
   },
   "dependencies": {
-    "@stellar/stellar-sdk": "^15.0.1",
+    "@stellar/stellar-sdk": "^16.0.1",
     "yargs": "^18.0.0"
   },
   "devDependencies": {
-    "@types/node": "^25.9.3",
+    "@types/node": "^26.0.1",
     "@types/pg": "^8.11.11",
     "@vitest/coverage-v8": "^4.1.9",
     "fast-check": "^4.8.0",
-    "pg": "^8.11.5",
+    "pg": "^8.22.0",
     "tsx": "^4.22.4",
-    "vite": "^8.0.16",
+    "vite": "^8.1.1",
     "vitest": "^4.1.9"
   }
 }

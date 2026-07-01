@@ -23,13 +23,17 @@ export type WebhookMetrics = {
   recordTerminal(url: string, outcome: WebhookTerminalOutcome): void;
 };
 
+export type UrlEntry = { url: string; timeoutMs?: number };
+
 export type WebhookConfig = {
-  url: string | string[];
+  url: string | string[] | UrlEntry[];
   secret: string;
   retries?: number;
   deliveryTimeoutMs?: number;
   /** Maximum number of concurrent in-flight retries. Defaults to 100. */
   maxConcurrentRetries?: number;
+  /** Maximum number of concurrent in-flight first-attempt deliveries. Defaults to 100. */
+  maxConcurrentDeliveries?: number;
   /** Optional RNG for testing jitter. Defaults to `Math.random`. */
   random?: () => number;
   /** Retry delay strategy. Defaults to `exponentialJittered`. */
