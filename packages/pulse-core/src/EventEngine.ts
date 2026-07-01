@@ -3,6 +3,7 @@ import { Watcher } from "./Watcher.js";
 import { EngineAlreadyStartedError, NetworkMismatchError } from "./errors.js";
 import { resolveSorobanPageLimit, SorobanSubscriber } from "./SorobanSubscriber.js";
 import { SorobanRpcClient } from "./SorobanRpcClient.js";
+import type { SorobanNetworkInfo } from "./SorobanRpcClient.js";
 import type { SorobanRpcLike, SorobanEvent } from "./SorobanSubscriber.js";
 import { toAccountAddress, toContractAddress } from "./address.js";
 import { toStellarAmount } from "./amount.js";
@@ -161,6 +162,12 @@ export class EventEngine {
   private pendingReconnectSuccessAttempt: number | null = null;
   private readonly reconnectConfig: Required<ReconnectConfig>;
   private isRunning = false;
+  /**
+   * Incremented only by an explicit `stop()` call. Used to invalidate a deferred
+   * Soroban network-mismatch check (see `start()`) without confusing it with
+   * `isRunning` toggling during an unrelated Horizon reconnect cycle.
+   */
+  private stopGeneration = 0;
   // Waiters for contract subscription activation: map contractId -> array of waiters
   private contractPollWaiters: Map<
     string,
@@ -190,6 +197,14 @@ export class EventEngine {
    * throughout the engine are no-ops.
    */
   private sorobanSubscriber?: SorobanSubscriber;
+  /**
+   * Resolves once the constructor's Soroban `getNetwork()` probe settles.
+   * `start()` awaits this before opening the Soroban subscriber so a network
+   * mismatch is caught before any subscriptions/polling begin, even though
+   * the probe itself is kicked off asynchronously from the constructor.
+   * Resolves to `undefined` (with a warning logged) if the probe fails.
+   */
+  private sorobanNetworkReady?: Promise<SorobanNetworkInfo | undefined>;
   /** Optional ABI registry used to enrich `contract.emitted` events with `decodedData`. */
   private abiRegistry?: AbiRegistryClientLike;
 
@@ -236,10 +251,11 @@ export class EventEngine {
         headers: config.soroban.rpcHeaders,
         logger: this.log,
       });
-      rpc.getNetwork().catch((err) => {
-        this.log.warn?.("[pulse-core] failed to warm Soroban RPC network cache", {
+      this.sorobanNetworkReady = rpc.getNetwork().catch((err: unknown) => {
+        this.log.warn("[pulse-core] failed to warm Soroban RPC network cache", {
           error: err instanceof Error ? err.message : String(err),
         });
+        return undefined;
       });
       const sorobanCursorKey = `${this.streamKey}:soroban`;
       let inMemoryCursor: string | undefined;
@@ -629,7 +645,33 @@ export class EventEngine {
 
     this.openStream(false);
     if (this.sorobanSubscriber) {
-      this.sorobanSubscriber.start();
+      if (cachedNetwork || !this.sorobanNetworkReady) {
+        // Already verified above (cache was warm), or no in-flight probe to wait on.
+        this.sorobanSubscriber.start();
+      } else {
+        // The constructor's getNetwork() probe hasn't resolved yet. Defer opening
+        // the Soroban subscriber until it settles so a mismatch is caught before
+        // any polling begins, instead of silently processing wrong-network events.
+        const subscriber = this.sorobanSubscriber;
+        const startGeneration = this.stopGeneration;
+        void this.sorobanNetworkReady.then((info) => {
+          // Bail if stop() was called while the probe was in flight. Unlike
+          // `isRunning`, this isn't perturbed by unrelated Horizon reconnects.
+          if (this.stopGeneration !== startGeneration) return;
+          if (info) {
+            const expected = NETWORK_PASSPHRASES[this.network];
+            if (info.passphrase !== expected) {
+              this.log.error(
+                "[pulse-core] Soroban RPC network mismatch detected after start(); stopping engine.",
+                { expected, actual: info.passphrase },
+              );
+              this.stop();
+              return;
+            }
+          }
+          subscriber.start();
+        });
+      }
     }
     return true;
   }
@@ -711,6 +753,7 @@ export class EventEngine {
    * Cleans up all resources and resets reconnection state.
    */
   stop(): void {
+    this.stopGeneration++;
     this.clearReconnectTimer();
     this.pendingReconnectSuccessAttempt = null;
     this.reconnectAttempt = 0;
