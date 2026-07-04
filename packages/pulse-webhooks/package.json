@@ -33,9 +33,9 @@
     "@orbital-stellar/pulse-core": "workspace:*"
   },
   "devDependencies": {
-    "@types/node": "^25.9.3",
+    "@types/node": "^26.0.1",
     "tsx": "^4.22.4",
-    "vite": "^8.0.16",
+    "vite": "^8.1.1",
     "vitest": "^4.1.9"
   }
 }

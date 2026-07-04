@@ -155,6 +155,77 @@ Shorthand for payments received. Equivalent to `useStellarEvent(serverUrl, addre
 
 Shorthand for all events on an address. Equivalent to `useStellarEvent(serverUrl, address, { event: "*" })`.
 
+### `useContractEvent(config)`
+
+Subscribes to Soroban contract events for a specific `contractId`. Accepts an optional `topics` array to filter `contract.emitted` events, and an optional `token` for authenticated servers.
+
+```tsx
+"use client";
+import { useContractEvent } from "@orbital-stellar/pulse-notify";
+import type { ContractEmittedEvent } from "@orbital-stellar/pulse-notify";
+
+export function TransferWatcher({ contractId }: { contractId: string }) {
+  const { event, connected, error } = useContractEvent<ContractEmittedEvent>({
+    serverUrl: process.env.NEXT_PUBLIC_ORBITAL_URL!,
+    contractId,
+    topics: ["transfer"],
+    token: process.env.NEXT_PUBLIC_ORBITAL_TOKEN,
+  });
+
+  if (error) return <div className="text-red-500">{error}</div>;
+  if (!connected) return <div>Connecting…</div>;
+  if (!event) return <div>Listening for transfers…</div>;
+
+  return <div>Transfer event: {JSON.stringify(event.data)}</div>;
+}
+```
+
+The default `T` is `ContractInvokedEvent | ContractEmittedEvent`. Narrow it to one or the other for full IDE support:
+
+```ts
+import type {
+  ContractInvokedEvent,
+  ContractEmittedEvent,
+} from "@orbital-stellar/pulse-notify";
+
+// Only invocations
+const { event } = useContractEvent<ContractInvokedEvent>({ serverUrl, contractId });
+
+// Only emitted events
+const { event } = useContractEvent<ContractEmittedEvent>({
+  serverUrl,
+  contractId,
+  topics: ["mint"],
+});
+```
+
+**Config shape:**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `serverUrl` | `string` | ✓ | Base URL of the Orbital server |
+| `contractId` | `string` | ✓ | Soroban contract address (C…) |
+| `topics` | `string[]` | — | Filter `contract.emitted` events; all topics must be present |
+| `token` | `string` | — | API key forwarded as `?token=` |
+| `initialEvent` | `T \| null` | — | SSR seed; replaced on first live event |
+| `filter` | `(event) => boolean` | — | Client-side predicate run after topic matching |
+| `withCredentials` | `boolean` | — | Send cookies for same-origin SSE |
+| `onEvent` | `(event) => void` | — | Side-effect callback fired before `filter` |
+| `hideAfterMs` | `number` | — | Pause connection after tab is hidden for this many ms (default 30 000) |
+
+**SSE endpoint contract:**
+
+The hook opens `GET {serverUrl}/contract_events/{contractId}` with the following optional query parameters:
+
+| Parameter | Description |
+|---|---|
+| `topics` | Comma-separated list of required topic strings (e.g. `topics=transfer,owner`) |
+| `token` | API key for authenticated servers |
+
+The server must stream newline-delimited `data: <JSON>\n\n` frames (standard SSE). Each frame must be a JSON object conforming to `ContractInvokedEvent` or `ContractEmittedEvent` from `@orbital-stellar/pulse-core`. The hook performs client-side topic matching in addition to any server-side filtering.
+
+Hook instances with the same `serverUrl`, `contractId`, `topics`, and `token` share one `EventSource` connection from the internal pool.
+
 ### `<StellarConnectionStatus serverUrl address />`
 
 Small client-side status indicator for places that need connection health but do not need to wire `connected` and `error` state by hand.
@@ -191,9 +262,11 @@ Customize the built-in styles with CSS custom properties:
 
 ```ts
 type EventState<T extends NormalizedEvent = NormalizedEvent> = {
-  event: T | null;     // Latest event, or null before first arrival
-  connected: boolean;  // True once the SSE handshake completes
-  error: string | null; // Error message if the connection fails
+  event: T | null;            // Latest event, or null before first arrival
+  connected: boolean;         // True once the SSE handshake completes
+  error: string | null;       // Error message if the connection fails
+  lastEventAt: string | null; // ISO timestamp of the most recent event
+  caughtUp: boolean;          // See "Offline replay / Last-Event-ID" below
 };
 ```
 
@@ -334,14 +407,52 @@ If the server is cross-origin, it must respond with `Access-Control-Allow-Creden
 
 The hooks are client-only — they rely on `EventSource`, which does not exist in Node. In Next.js App Router, mark the consuming component with `"use client"`. In Remix or Vite SSR, gate the hook behind a client-only boundary.
 
+## Offline replay / Last-Event-ID
+
+When a network drop causes the `EventSource` to reconnect, the browser automatically sends a `Last-Event-ID` request header containing the last `id:` value it received. The server can use this cursor to replay any events the client missed.
+
+### Backend contract
+
+Each SSE event your server emits must include an `id:` line with the event's cursor value:
+
+```
+id: <cursor>
+data: {"type":"payment.received","amount":"10","asset":"XLM",...}
+
+```
+
+The cursor can be a ledger sequence number, a database row ID, or any opaque string your backend can use to resume the stream. Without `id:` fields the browser cannot send `Last-Event-ID` and no replay occurs.
+
+### Hook behaviour
+
+The hook surfaces the catch-up state via `caughtUp` in `EventState`:
+
+| State | `caughtUp` |
+|---|---|
+| Fresh connection, no prior `id:` seen | `true` |
+| Events arriving on a live connection | `true` |
+| Reconnected after a network drop; awaiting first replay event | `false` |
+| First replay event delivered | `true` |
+
+```tsx
+const { event, connected, caughtUp } = useStellarEvent(serverUrl, address);
+
+if (!connected) return <div>Reconnecting…</div>;
+if (!caughtUp)  return <div>Catching up on missed events…</div>;
+// Now live — render event
+```
+
+`caughtUp` transitions `false → true` as soon as the first post-reconnect event arrives. It does not wait for the server to signal "end of replay" (SSE has no such primitive), so additional events may still be in flight.
+
 ## Current limitations
 
 - Hook instances with the same `serverUrl`, `address`, and `token` share one browser `EventSource`; different keys open separate connections.
-- **No offline queue.** Events that arrive while the tab is backgrounded and the connection is closed are not replayed on reconnect.
 - **`EventSource` reconnect is browser-controlled.** Fine-grained retry policy belongs in a future WebSocket-based transport.
+- Offline replay via `Last-Event-ID` only covers automatic `EventSource` reconnects (network interruptions). Explicitly closed connections (e.g. when the tab is hidden past `hideAfterMs`) create a new `EventSource` without a `Last-Event-ID`, so events during that window are still missed.
 
 ## Related documents
 
+- [Offline replay / Last-Event-ID](#offline-replay--last-event-id) — `caughtUp` flag, backend `id:` contract
 - [`docs/ARCHITECTURE.md` § 7 React hook internals](../../docs/ARCHITECTURE.md#7-react-hook-internals) — design choices (stable dep-array, dual call signature, generic narrowing)
 - [`docs/COOKBOOK.md` § 10 Render live payments in React with type narrowing](../../docs/COOKBOOK.md#10-render-live-payments-in-react-with-type-narrowing)
 - [`docs/COOKBOOK.md` § 11 Stand up an SSE endpoint in Next.js](../../docs/COOKBOOK.md#11-stand-up-an-sse-endpoint-in-nextjs) — the backend the hooks expect

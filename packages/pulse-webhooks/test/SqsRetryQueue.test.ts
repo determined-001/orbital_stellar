@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import {
   SqsRetryQueue,
@@ -257,6 +257,31 @@ describe("SqsRetryQueue", () => {
       await queue.dequeue();
 
       expect(sqs.receiveCalls[0]!.VisibilityTimeout).toBe(60);
+    });
+
+    it("returns null and nacks a record if its nextRetryAt is in the future", async () => {
+      const clock = 1000;
+      const sqs = new MockSqs(() => clock);
+      const queue = makeQueue(sqs);
+      const record = makeRecord("r1", clock + 30_000); // 30s in the future
+
+      await queue.enqueue(record);
+
+      // Bypass SQS's native DelaySeconds check in the mock SQS to simulate a FIFO queue
+      // or early dequeue.
+      (sqs as any).messages[0].visibleAt = 0;
+
+      // Dequeue at t = 1000. It should return null since nextRetryAt is in the future (1000 + 30_000).
+      expect(await queue.dequeue(clock)).toBeNull();
+
+      // Original message should be deleted and a new one sent with the remaining delay (30s)
+      expect(sqs.messageCount()).toBe(1);
+      expect(sqs.deleteCalls).toHaveLength(1);
+      expect(sqs.sendCalls).toHaveLength(2); // 1 enqueue + 1 nack re-enqueue
+
+      const requeued = JSON.parse(sqs.sendCalls[1]!.MessageBody) as RetryRecord;
+      expect(requeued.id).toBe("r1");
+      expect(requeued.nextRetryAt).toBe(clock + 30_000);
     });
   });
 

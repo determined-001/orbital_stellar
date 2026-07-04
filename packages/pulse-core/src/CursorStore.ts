@@ -1,5 +1,8 @@
 /**
- * Pluggable durable store for the Horizon stream cursor.
+ * Pluggable durable store for Horizon and Soroban stream cursors.
+ *
+ * Cursor values are source-local opaque strings. Store implementations should
+ * persist and return them exactly as received from Horizon or Soroban RPC.
  *
  * Subclasses must implement the single-key {@link get} and {@link set}
  * primitives. The batch helpers ({@link getMany} / {@link setMany}) and
@@ -65,3 +68,11 @@ export abstract class CursorStore {
    */
   ping?: () => Promise<void>;
 }
+export type CursorStoreLike = {
+  get(streamKey: string): Promise<string | null>;
+  set(streamKey: string, cursor: string): Promise<void>;
+  getMany?(keys: string[]): Promise<Record<string, string | null>>;
+  setMany?(entries: Record<string, string>): Promise<void>;
+  getAll?(): Promise<Array<{ streamKey: string; cursor: string }>>;
+  ping?(): Promise<unknown>;
+};

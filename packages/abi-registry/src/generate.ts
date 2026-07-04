@@ -1,5 +1,5 @@
 import { xdr } from "@stellar/stellar-sdk";
-import type { ContractSpec } from "./types.js";
+import type { XdrContractSpec } from "./types.js";
 
 export type GeneratedContractArtifacts = {
   declarations: string;
@@ -138,7 +138,7 @@ function mapTypeToZod(type: xdr.ScSpecTypeDef | undefined): string {
 }
 
 export function generateContractArtifacts(
-  spec: ContractSpec,
+  spec: XdrContractSpec,
   contractName: string,
 ): GeneratedContractArtifacts {
   const entries = spec.entries
@@ -198,7 +198,7 @@ export function generateContractArtifacts(
   };
 }
 
-export function generateContractTypes(spec: ContractSpec, outputPath: string): string {
+export function generateContractTypes(spec: XdrContractSpec, outputPath: string): string {
   const artifacts = generateContractArtifacts(spec, outputPath);
   return [artifacts.declarations, artifacts.schemas].filter(Boolean).join("\n\n");
 }

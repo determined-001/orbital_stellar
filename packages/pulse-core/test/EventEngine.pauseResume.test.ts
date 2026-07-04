@@ -422,3 +422,22 @@ describe("EventEngine — pause/resume per source", () => {
     });
   });
 });
+
+describe("EventEngine — graceful shutdown", () => {
+  beforeEach(() => {
+    streamInstances.length = 0;
+  });
+
+  it("stop() is awaitable and resolves", async () => {
+    const engine = new EventEngine({ network: "testnet" });
+    engine.start();
+
+    await expect(engine.stop()).resolves.toBeUndefined();
+  });
+
+  it("stop() resolves cleanly before the engine has started", async () => {
+    const engine = new EventEngine({ network: "testnet" });
+
+    await expect(engine.stop()).resolves.toBeUndefined();
+  });
+});

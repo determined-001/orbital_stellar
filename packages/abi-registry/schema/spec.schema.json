@@ -1,0 +1,313 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://orbital-stellar.io/schema/spec.schema.json",
+  "title": "ContractSpec",
+  "description": "Canonical ABI specification for a deployed Soroban smart contract. Enumerates every exported function, every emitted event, and every user-defined type referenced by the ABI surface.",
+  "type": "object",
+  "required": ["version", "name", "functions", "events", "types"],
+  "additionalProperties": false,
+  "properties": {
+    "version": {
+      "type": "string",
+      "description": "Semantic version of the spec, e.g. \"1.0.0\".",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$"
+    },
+    "name": {
+      "type": "string",
+      "description": "Human-readable contract name.",
+      "minLength": 1,
+      "maxLength": 100
+    },
+    "description": {
+      "type": "string",
+      "description": "Short description of what the contract does.",
+      "maxLength": 500
+    },
+    "contractId": {
+      "type": "string",
+      "description": "Bech32-encoded Soroban contract address (C…).",
+      "pattern": "^C[A-Z2-7]{55}$"
+    },
+    "network": {
+      "type": "string",
+      "description": "Network the spec was generated from.",
+      "enum": ["mainnet", "testnet", "futurenet"]
+    },
+    "functions": {
+      "type": "array",
+      "description": "All exported Soroban contract functions.",
+      "items": { "$ref": "#/$defs/FunctionSpec" }
+    },
+    "events": {
+      "type": "array",
+      "description": "All events emitted by the contract.",
+      "items": { "$ref": "#/$defs/EventSpec" }
+    },
+    "types": {
+      "type": "object",
+      "description": "Named user-defined types referenced in function signatures or events. Keyed by the type name that NamedType references.",
+      "additionalProperties": { "$ref": "#/$defs/UserDefinedType" }
+    },
+    "xdrEntries": {
+      "type": "array",
+      "description": "Raw XDR entries as base64 strings (if available from on-chain data).",
+      "items": { "type": "string" }
+    }
+  },
+  "$defs": {
+    "PrimitiveType": {
+      "type": "string",
+      "description": "An atomic Soroban scalar type.",
+      "enum": [
+        "bool",
+        "u32",
+        "i32",
+        "u64",
+        "i64",
+        "u128",
+        "i128",
+        "u256",
+        "i256",
+        "bytes",
+        "string",
+        "symbol",
+        "address",
+        "void"
+      ]
+    },
+    "BytesNType": {
+      "type": "object",
+      "description": "A fixed-length byte array, e.g. bytes_n<32>.",
+      "required": ["type", "size"],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "const": "bytes_n" },
+        "size": {
+          "type": "integer",
+          "description": "Byte length of the array.",
+          "minimum": 1,
+          "maximum": 64
+        }
+      }
+    },
+    "OptionType": {
+      "type": "object",
+      "description": "A Soroban Option<T> — a value that may be present or absent.",
+      "required": ["type", "inner"],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "const": "option" },
+        "inner": { "$ref": "#/$defs/TypeSpec" }
+      }
+    },
+    "ResultType": {
+      "type": "object",
+      "description": "A Soroban Result<T, E> — either Ok(T) or Err(E).",
+      "required": ["type", "ok", "err"],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "const": "result" },
+        "ok": { "$ref": "#/$defs/TypeSpec" },
+        "err": { "$ref": "#/$defs/TypeSpec" }
+      }
+    },
+    "VecType": {
+      "type": "object",
+      "description": "A homogeneous variable-length sequence.",
+      "required": ["type", "item"],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "const": "vec" },
+        "item": { "$ref": "#/$defs/TypeSpec" }
+      }
+    },
+    "MapType": {
+      "type": "object",
+      "description": "An ordered key-value map.",
+      "required": ["type", "key", "value"],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "const": "map" },
+        "key": { "$ref": "#/$defs/TypeSpec" },
+        "value": { "$ref": "#/$defs/TypeSpec" }
+      }
+    },
+    "TupleType": {
+      "type": "object",
+      "description": "A fixed-length heterogeneous sequence (Soroban Tuple). Minimum 2 elements.",
+      "required": ["type", "elements"],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "const": "tuple" },
+        "elements": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/TypeSpec" },
+          "minItems": 2
+        }
+      }
+    },
+    "NamedType": {
+      "type": "object",
+      "description": "A reference to a user-defined type declared in ContractSpec.types.",
+      "required": ["type", "name"],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "const": "named" },
+        "name": { "type": "string", "minLength": 1 }
+      }
+    },
+    "TypeSpec": {
+      "description": "Union of every representable Soroban type. Either a primitive string literal or a tagged-object composite type.",
+      "oneOf": [
+        { "$ref": "#/$defs/PrimitiveType" },
+        { "$ref": "#/$defs/BytesNType" },
+        { "$ref": "#/$defs/OptionType" },
+        { "$ref": "#/$defs/ResultType" },
+        { "$ref": "#/$defs/VecType" },
+        { "$ref": "#/$defs/MapType" },
+        { "$ref": "#/$defs/TupleType" },
+        { "$ref": "#/$defs/NamedType" }
+      ]
+    },
+    "FieldSpec": {
+      "type": "object",
+      "description": "A named, typed field used in function params, struct fields, and event data.",
+      "required": ["name", "type"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Must be a valid identifier.",
+          "minLength": 1,
+          "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$"
+        },
+        "type": { "$ref": "#/$defs/TypeSpec" },
+        "doc": { "type": "string" }
+      }
+    },
+    "FunctionSpec": {
+      "type": "object",
+      "description": "Specification of one exported Soroban contract function.",
+      "required": ["name", "params", "returns"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$"
+        },
+        "doc": { "type": "string" },
+        "params": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/FieldSpec" }
+        },
+        "returns": { "$ref": "#/$defs/TypeSpec" }
+      }
+    },
+    "EventSpec": {
+      "type": "object",
+      "description": "Specification of one contract event emitted via env.events().publish().",
+      "required": ["name", "topics", "data"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "doc": { "type": "string" },
+        "topics": {
+          "type": "array",
+          "description": "Ordered topic ScVal descriptors. The first topic is conventionally the event-name Symbol.",
+          "items": { "$ref": "#/$defs/FieldSpec" }
+        },
+        "data": {
+          "type": "array",
+          "description": "Ordered payload data fields emitted alongside the topics.",
+          "items": { "$ref": "#/$defs/FieldSpec" }
+        }
+      }
+    },
+    "StructTypeSpec": {
+      "type": "object",
+      "description": "A user-defined struct type.",
+      "required": ["kind", "name", "fields"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": { "const": "struct" },
+        "name": { "type": "string", "minLength": 1 },
+        "doc": { "type": "string" },
+        "fields": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/FieldSpec" }
+        }
+      }
+    },
+    "EnumVariantSpec": {
+      "type": "object",
+      "description": "A single variant of an enum (unit or tuple style).",
+      "required": ["name", "discriminant"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "doc": { "type": "string" },
+        "discriminant": {
+          "type": "integer",
+          "description": "XDR discriminant value (u32).",
+          "minimum": 0
+        },
+        "value": { "$ref": "#/$defs/TypeSpec" }
+      }
+    },
+    "EnumTypeSpec": {
+      "type": "object",
+      "description": "A user-defined enum (C-style or tuple-variant) type.",
+      "required": ["kind", "name", "variants"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": { "const": "enum" },
+        "name": { "type": "string", "minLength": 1 },
+        "doc": { "type": "string" },
+        "variants": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/EnumVariantSpec" },
+          "minItems": 1
+        }
+      }
+    },
+    "UnionCaseSpec": {
+      "type": "object",
+      "description": "A single case of a discriminated union.",
+      "required": ["name", "fields"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "doc": { "type": "string" },
+        "fields": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/FieldSpec" }
+        }
+      }
+    },
+    "UnionTypeSpec": {
+      "type": "object",
+      "description": "A user-defined discriminated union type.",
+      "required": ["kind", "name", "cases"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": { "const": "union" },
+        "name": { "type": "string", "minLength": 1 },
+        "doc": { "type": "string" },
+        "cases": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/UnionCaseSpec" },
+          "minItems": 1
+        }
+      }
+    },
+    "UserDefinedType": {
+      "description": "Any user-defined type that may appear in the contract's ABI surface.",
+      "oneOf": [
+        { "$ref": "#/$defs/StructTypeSpec" },
+        { "$ref": "#/$defs/EnumTypeSpec" },
+        { "$ref": "#/$defs/UnionTypeSpec" }
+      ]
+    }
+  }
+}

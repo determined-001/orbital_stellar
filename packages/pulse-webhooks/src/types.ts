@@ -23,13 +23,17 @@ export type WebhookMetrics = {
   recordTerminal(url: string, outcome: WebhookTerminalOutcome): void;
 };
 
+export type UrlEntry = { url: string; timeoutMs?: number };
+
 export type WebhookConfig = {
-  url: string | string[];
+  url: string | string[] | UrlEntry[];
   secret: string;
   retries?: number;
   deliveryTimeoutMs?: number;
   /** Maximum number of concurrent in-flight retries. Defaults to 100. */
   maxConcurrentRetries?: number;
+  /** Maximum number of concurrent in-flight first-attempt deliveries. Defaults to 100. */
+  maxConcurrentDeliveries?: number;
   /** Optional RNG for testing jitter. Defaults to `Math.random`. */
   random?: () => number;
   /** Retry delay strategy. Defaults to `exponentialJittered`. */
@@ -41,12 +45,14 @@ export type WebhookConfig = {
   /** Optional metrics recorder for per-URL delivery observability. */
   metrics?: WebhookMetrics;
   /**
-   * Optional durable retry queue. When provided, retryable delivery failures are
-   * persisted to it (instead of the in-process timer set) so pending retries can
-   * survive a process restart. See {@link import("./RetryQueue.js").RetryQueue}
-   * and {@link import("./MemoryRetryQueue.js").MemoryRetryQueue}.
+   * Optional durable retry queue. When set, every retry is enqueued into
+   * this queue instead of scheduled via setTimeout. A separate poller
+   * dequeues records at `retryQueuePollIntervalMs` and drives delivery.
+   * Persists retries across restarts when backed by a durable store.
    */
   retryQueue?: import("./RetryQueue.js").RetryQueue;
+  /** Poll interval for the retry queue dequeue loop. Defaults to 1000ms. */
+  retryQueuePollIntervalMs?: number;
 };
 
 export const DEFAULT_MAX_AGE_MS = 300_000;
@@ -67,6 +73,6 @@ export type VerifyWebhookOptions = {
    *  will run this after signature verification and return `null` if it returns `false`.
    */
   schema?: (event: import("@orbital-stellar/pulse-core").NormalizedEvent) => boolean;
-  /** Maximum payload size in bytes. Defaults to 100_000 (~100 KB). */
+  /** Maximum payload size in bytes. Defaults to 100_000 (≈100 KB). */
   maxBodyBytes?: number;
 };

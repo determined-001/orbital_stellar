@@ -15,9 +15,11 @@ class MemoryCursorStore {
 describe("SorobanSubscriber — cursor expiration", () => {
   it("catches out-of-range cursor, emits engine.cursor_expired, and sets startLedger", async () => {
     let calls = 0;
+    const limits: number[] = [];
     const rpc = {
-      getEvents: async (startCursor: string | undefined) => {
+      getEvents: async (startCursor: string | undefined, limit: number) => {
         calls++;
+        limits.push(limit);
         if (calls === 1 && startCursor === "old-cursor") {
           throw new SorobanRpcError("startCursor is before oldest ledger", {
             code: "invalid_request",
@@ -32,6 +34,7 @@ describe("SorobanSubscriber — cursor expiration", () => {
     const subscriber = new SorobanSubscriber({
       rpc: rpc as any,
       cursorStore,
+      pageLimit: 250,
       setTimeoutFn: (cb: any) => {
         cb();
         return {} as any;
@@ -55,6 +58,7 @@ describe("SorobanSubscriber — cursor expiration", () => {
       expect(emitted[0]).toEqual({ source: "soroban", lostCursor: "old-cursor" });
       expect(cursorStore.cursor).toBe("999999");
       expect(calls).toBe(2); // Initial poll + fallback poll for latestLedger
+      expect(limits).toEqual([250, 250]);
     } finally {
       console.warn = originalWarn;
     }

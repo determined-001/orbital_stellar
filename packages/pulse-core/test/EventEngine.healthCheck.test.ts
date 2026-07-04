@@ -11,12 +11,14 @@ type MockStreamInstance = {
 };
 
 const streamInstances: MockStreamInstance[] = [];
+const cursorCalls: string[] = [];
 
 vi.mock("@stellar/stellar-sdk", () => {
   class MockServer {
     operations() {
       return {
-        cursor() {
+        cursor(value: string) {
+          cursorCalls.push(value);
           return {
             stream(handlers: StreamHandlers) {
               const close = vi.fn();
@@ -35,12 +37,18 @@ import { EventEngine } from "../src/EventEngine.js";
 
 beforeEach(() => {
   streamInstances.length = 0;
+  cursorCalls.length = 0;
   vi.useFakeTimers();
 });
 
 afterEach(() => {
   vi.useRealTimers();
 });
+
+async function flushAsyncWork() {
+  await Promise.resolve();
+  await Promise.resolve();
+}
 
 describe("engine.healthCheck()", () => {
   it("returns ok=false with reason when engine is not running", async () => {
@@ -126,6 +134,36 @@ describe("engine.healthCheck()", () => {
     expect((await engine.healthCheck(60_000)).ok).toBe(true);
   });
 
+  it("uses a persisted cursor on startup and writes the latest cursor after messages", async () => {
+    const setSpy = vi.fn(async () => {});
+    const cursorStore = {
+      get: vi.fn(async () => "saved-cursor"),
+      set: setSpy,
+    };
+    const engine = new EventEngine({ network: "testnet", cursorStore, streamKey: "stream-a" });
+    engine.start();
+    await flushAsyncWork();
+
+    expect(cursorStore.get).toHaveBeenCalledWith("stream-a");
+    expect(cursorCalls[0]).toBe("saved-cursor");
+
+    streamInstances[0]!.handlers.onmessage({
+      type: "payment",
+      id: "1",
+      paging_token: "fresh-cursor",
+      created_at: new Date().toISOString(),
+      transaction_successful: true,
+      source_account: "GABC",
+      from: "GABC",
+      to: "GDEF",
+      amount: "10.0000000",
+      asset_type: "native",
+    });
+    await Promise.resolve();
+
+    expect(setSpy).toHaveBeenCalledWith("stream-a", "fresh-cursor");
+  });
+
   it("returns ok=false when cursorStore.ping rejects", async () => {
     const cursorStore = {
       get: async () => null,
@@ -136,6 +174,7 @@ describe("engine.healthCheck()", () => {
     };
     const engine = new EventEngine({ network: "testnet", cursorStore });
     engine.start();
+    await flushAsyncWork();
     engine.subscribe("GABC");
     streamInstances[0]!.handlers.onmessage({
       type: "payment",

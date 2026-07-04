@@ -65,17 +65,13 @@ export class NetworkMismatchError extends Error {
 }
 
 export type SorobanRpcErrorCode =
-  | "network"
-  | "rate_limit"
-  | "auth"
-  | "invalid_request"
-  | "server"
-  | "unknown";
+  "network" | "rate_limit" | "auth" | "invalid_request" | "server" | "unknown";
 
 export type SorobanRpcErrorOptions = {
   code: SorobanRpcErrorCode;
   retryable: boolean;
   status?: number;
+  retryAfterMs?: number;
   cause?: unknown;
 };
 
@@ -83,6 +79,7 @@ export class SorobanRpcError extends Error {
   readonly code: SorobanRpcErrorCode;
   readonly retryable: boolean;
   readonly status?: number;
+  readonly retryAfterMs?: number;
   override readonly cause?: unknown;
 
   constructor(message: string, options: SorobanRpcErrorOptions) {
@@ -92,6 +89,9 @@ export class SorobanRpcError extends Error {
     this.retryable = options.retryable;
     if (options.status !== undefined) {
       this.status = options.status;
+    }
+    if (options.retryAfterMs !== undefined) {
+      this.retryAfterMs = options.retryAfterMs;
     }
     this.cause = options.cause;
   }

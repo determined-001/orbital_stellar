@@ -12,6 +12,9 @@ type ConnectionSubscriber = {
   onEvent: (event: NormalizedEvent) => void;
   onParseError: () => void;
   onError: () => void;
+  onAuthExpired?: () => void;
+  /** Called with the SSE `id:` field value when non-empty; enables Last-Event-ID catch-up tracking. */
+  onEventId?: (id: string) => void;
 };
 
 type ConnectionEntry = {
@@ -96,8 +99,22 @@ export function acquireEventConnection(key: ConnectionKey, subscriber: Connectio
 
     newEntry.source.onmessage = (message) => {
       try {
-        const event = JSON.parse(message.data) as NormalizedEvent;
-        notifySubscribers(newEntry, (current) => current.onEvent(event));
+        const data = JSON.parse(message.data);
+        if (data && typeof data === "object" && data.type === "auth_expired") {
+          newEntry.connected = false;
+          notifySubscribers(newEntry, (current) => current.onAuthExpired?.());
+          withDevtools((mod) => {
+            if (newEntry.devId)
+              mod.updateConnection(newEntry.devId, { connected: false, error: "Token expired" });
+          });
+          return;
+        }
+        const event = data as NormalizedEvent;
+        const id = message.lastEventId;
+        notifySubscribers(newEntry, (current) => {
+          if (id) current.onEventId?.(id);
+          current.onEvent(event);
+        });
         withDevtools((mod) => {
           if (newEntry.devId) mod.updateConnection(newEntry.devId, { lastEvent: Date.now() });
         });
@@ -235,8 +252,22 @@ export function acquireContractEventConnection(
 
     newEntry.source.onmessage = (message) => {
       try {
-        const event = JSON.parse(message.data) as NormalizedEvent;
-        notifySubscribers(newEntry, (cur) => cur.onEvent(event));
+        const data = JSON.parse(message.data);
+        if (data && typeof data === "object" && data.type === "auth_expired") {
+          newEntry.connected = false;
+          notifySubscribers(newEntry, (cur) => cur.onAuthExpired?.());
+          withDevtools((mod) => {
+            if (newEntry.devId)
+              mod.updateConnection(newEntry.devId, { connected: false, error: "Token expired" });
+          });
+          return;
+        }
+        const event = data as NormalizedEvent;
+        const id = message.lastEventId;
+        notifySubscribers(newEntry, (cur) => {
+          if (id) cur.onEventId?.(id);
+          cur.onEvent(event);
+        });
         withDevtools((mod) => {
           if (newEntry.devId) mod.updateConnection(newEntry.devId, { lastEvent: Date.now() });
         });

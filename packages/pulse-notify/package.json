@@ -17,6 +17,10 @@
     "./devtools": {
       "types": "./dist/devtools.d.ts",
       "default": "./dist/devtools.js"
+    },
+    "./vitePlugin": {
+      "types": "./dist/vitePlugin.d.ts",
+      "default": "./dist/vitePlugin.js"
     }
   },
   "files": [
@@ -44,7 +48,7 @@
   "devDependencies": {
     "@size-limit/preset-small-lib": "^12.1.0",
     "@testing-library/react": "^16.3.2",
-    "@types/node": "^25.9.3",
+    "@types/node": "^26.0.1",
     "@types/react": "^19.2.14",
     "@vitest/coverage-v8": "^4.1.9",
     "jsdom": "^29.1.1",

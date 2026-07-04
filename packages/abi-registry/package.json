@@ -34,10 +34,10 @@
     "validate": "node validate.js"
   },
   "dependencies": {
-    "@stellar/stellar-sdk": "^15.0.1"
+    "@stellar/stellar-sdk": "^16.0.1"
   },
   "devDependencies": {
-    "@types/node": "^25.9.3",
+    "@types/node": "^26.0.1",
     "@vitest/coverage-v8": "^4.1.9",
     "ajv": "^8.17.1",
     "tsx": "^4.22.4",

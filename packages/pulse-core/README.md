@@ -168,6 +168,34 @@ watcher.on("*", (event) => {
 });
 ```
 
+## Registration persistence with `FileRegistryStore`
+
+Self-hosted deployments that run a single process can use `FileRegistryStore` to survive restarts without a database. It maps Stellar addresses to webhook URL lists, persists every change atomically to a JSON file (`.tmp` → rename), and warns-and-starts-empty on a corrupt file.
+
+```ts
+import { FileRegistryStore } from "@orbital-stellar/pulse-core";
+
+const store = new FileRegistryStore("/var/data/registrations.json");
+
+// Register an address with one or more webhook URLs
+await store.register("GABC...", ["https://my-server.example.com/webhook"]);
+
+// Read back
+const urls = await store.get("GABC...");          // ["https://..."]
+const all  = await store.list();                   // { "GABC...": ["https://..."] }
+
+// Remove
+await store.deregister("GABC...");
+```
+
+Pass an optional logger as the second argument to surface parse errors:
+
+```ts
+const store = new FileRegistryStore("/var/data/registrations.json", logger);
+```
+
+`InMemoryRegistryStore` ships as a drop-in for tests and ephemeral deployments where restart-persistence is not needed. Both classes implement `IRegistryStore`.
+
 ## Design principles
 
 - **Amounts are strings.** Stellar uses 7-decimal fixed-point. JavaScript numbers lose precision. Treat all amounts as strings and delegate arithmetic to `bignumber.js` or similar.
@@ -209,13 +237,13 @@ pnpm --filter @orbital-stellar/pulse-core exec node --expose-gc --import tsx ben
 
 The harness subscribes `N` contract watchers with exact `contractIds` filters, synthesizes `getEvents` responses, and replays each RPC event through the engine's normalize + route + emit path. Use `--responses=100 --events-per-response=100` to scale the replay size.
 
-#### Baseline numbers (Node v24.12.0, 10 responses x 100 events)
+#### Baseline numbers (Node v24.15.0, 10 responses x 100 events)
 
 | Contract subscriptions (`N`) | RPC events | Routed events | Duration (ms) | Events/sec | Subscribed heap (MB) | Post-replay heap (MB) | Post-replay RSS (MB) |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| 1,000 | 1,000 | 2,000 | 473.32 | 4,225.49 | 18.80 | 18.79 | 122.21 |
-| 5,000 | 1,000 | 2,000 | 2,362.72 | 846.48 | 23.19 | 22.56 | 127.73 |
-| 10,000 | 1,000 | 2,000 | 5,290.83 | 378.01 | 28.56 | 27.30 | 130.18 |
+| 1,000 | 1,000 | 2,000 | 1,208.50 | 1,654.95 | 19.53 | 19.55 | 136.33 |
+| 5,000 | 1,000 | 2,000 | 4,330.96 | 461.79 | 23.91 | 23.28 | 143.21 |
+| 10,000 | 1,000 | 2,000 | 8,736.91 | 228.91 | 29.29 | 28.03 | 182.21 |
 
 Each matching contract subscription receives both the typed event and the `*` wildcard event. Results vary by CPU, Node version, and runtime load; rerun locally to compare changes over time.
 

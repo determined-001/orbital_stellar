@@ -1,6 +1,7 @@
 import { CursorStore } from "./CursorStore.js";
 import type { StellarAmount } from "./amount.js";
 import type { AccountAddress, MuxedAddress, ContractAddress } from "./address.js";
+import type { ClaimPredicate } from "./claimPredicate.js";
 
 export { SorobanRpcClient } from "./SorobanRpcClient.js";
 export type {
@@ -44,6 +45,8 @@ export {
 export { EngineAlreadyStartedError, HorizonStreamError } from "./errors.js";
 export { StrKey } from "@stellar/stellar-sdk";
 export { CursorStore } from "./CursorStore.js";
+export type { CursorStoreLike } from "./CursorStore.js";
+import type { CursorStoreLike } from "./CursorStore.js";
 export { MemoryCursorStore } from "./MemoryCursorStore.js";
 export { FileCursorStore } from "./FileCursorStore.js";
 export { PostgresCursorStore } from "./PostgresCursorStore.js";
@@ -55,8 +58,12 @@ export { coalesceCursorStore, CoalescingStore } from "./coalesceCursorStore.js";
 export type { CoalescingStoreOptions } from "./coalesceCursorStore.js";
 export { migrateCursors } from "./migrateCursors.js";
 export type { MigrateCursorsResult } from "./migrateCursors.js";
+export type { IRegistryStore } from "./IRegistryStore.js";
+export { InMemoryRegistryStore } from "./IRegistryStore.js";
+export { FileRegistryStore } from "./FileRegistryStore.js";
 
 export { isEventType } from "./eventTypeGuard.js";
+export * from "./claimPredicate.js";
 export * from "./raw-horizon.js";
 export * from "./raw-soroban.js";
 import type { RawSorobanEvent } from "./raw-soroban.js";
@@ -184,6 +191,8 @@ export type PaymentEvent = {
   asset: string;
   /** ISO 8601 timestamp of the payment. */
   timestamp: string;
+  /** Lazy, cached `Date` derived from `event.timestamp`. Non-enumerable; does not appear in JSON.stringify output. */
+  readonly timestampDate: Date;
   /** The original raw record from the Horizon API. */
   raw?: RawHorizonPayment;
 };
@@ -200,6 +209,8 @@ export type AccountOptionsEvent = {
   changes: AccountOptionsChanges;
   /** ISO 8601 timestamp of the options change. */
   timestamp: string;
+  /** Lazy, cached `Date` derived from `event.timestamp`. Non-enumerable; does not appear in JSON.stringify output. */
+  readonly timestampDate: Date;
   /** The original raw record from the Horizon API. */
   raw?: RawHorizonSetOptions;
 };
@@ -213,6 +224,8 @@ export type OfferEvent = {
   amount: StellarAmount;
   price: string;
   timestamp: string;
+  /** Lazy, cached `Date` derived from `event.timestamp`. Non-enumerable; does not appear in JSON.stringify output. */
+  readonly timestampDate: Date;
   raw?: RawHorizonManageSellOffer | RawHorizonManageBuyOffer;
 };
 
@@ -221,12 +234,14 @@ export type BumpSequenceEvent = {
   source: AccountAddress;
   bump_to: string;
   timestamp: string;
+  /** Lazy, cached `Date` derived from `event.timestamp`. Non-enumerable; does not appear in JSON.stringify output. */
+  readonly timestampDate: Date;
   raw?: RawHorizonBumpSequence;
 };
 
 export type ClaimableBalanceClaimant = {
   destination: AccountAddress;
-  predicate: unknown;
+  predicate: ClaimPredicate;
 };
 
 export type ClaimableCreatedEvent = {
@@ -237,6 +252,8 @@ export type ClaimableCreatedEvent = {
   asset: string;
   amount: StellarAmount;
   timestamp: string;
+  /** Lazy, cached `Date` derived from `event.timestamp`. Non-enumerable; does not appear in JSON.stringify output. */
+  readonly timestampDate: Date;
   raw?: RawHorizonCreateClaimableBalance;
 };
 
@@ -245,6 +262,8 @@ export type ClaimableClaimedEvent = {
   claimant: AccountAddress;
   balanceId: string;
   timestamp: string;
+  /** Lazy, cached `Date` derived from `event.timestamp`. Non-enumerable; does not appear in JSON.stringify output. */
+  readonly timestampDate: Date;
   raw?: RawHorizonClaimClaimableBalance;
 };
 
@@ -257,6 +276,8 @@ export type DataEvent = {
   /** The decoded bytes of `value` as a Uint8Array, or null when `value` is null or invalid base64. */
   decoded: Uint8Array | null;
   timestamp: string;
+  /** Lazy, cached `Date` derived from `event.timestamp`. Non-enumerable; does not appear in JSON.stringify output. */
+  readonly timestampDate: Date;
   raw?: RawHorizonManageData;
 };
 
@@ -272,6 +293,8 @@ export type LiquidityPoolDepositEvent = {
   reserves_deposited: LiquidityPoolReserve[];
   shares_received: string;
   timestamp: string;
+  /** Lazy, cached `Date` derived from `event.timestamp`. Non-enumerable; does not appear in JSON.stringify output. */
+  readonly timestampDate: Date;
   raw?: RawHorizonLiquidityPoolDeposit;
 };
 
@@ -282,6 +305,8 @@ export type LiquidityPoolWithdrawEvent = {
   reserves_received: LiquidityPoolReserve[];
   shares_redeemed: string;
   timestamp: string;
+  /** Lazy, cached `Date` derived from `event.timestamp`. Non-enumerable; does not appear in JSON.stringify output. */
+  readonly timestampDate: Date;
   raw?: RawHorizonLiquidityPoolWithdraw;
 };
 
@@ -291,6 +316,8 @@ export type TrustAuthEvent = {
   issuer: AccountAddress;
   asset: string;
   timestamp: string;
+  /** Lazy, cached `Date` derived from `event.timestamp`. Non-enumerable; does not appear in JSON.stringify output. */
+  readonly timestampDate: Date;
   /** The original Horizon operation type ("allow_trust" or "set_trust_line_flags"). */
   operation: string;
   raw?: RawHorizonAllowTrust | RawHorizonSetTrustLineFlags;
@@ -310,6 +337,8 @@ export type AccountCreatedEvent = {
   starting_balance: string;
   /** ISO 8601 timestamp of the account creation. */
   timestamp: string;
+  /** Lazy, cached `Date` derived from `event.timestamp`. Non-enumerable; does not appear in JSON.stringify output. */
+  readonly timestampDate: Date;
   /** The original raw record from the Horizon API. */
   raw?: RawHorizonCreateAccount;
 };
@@ -328,6 +357,8 @@ export type TrustlineEvent = {
   limit: string;
   /** ISO 8601 timestamp of the trustline change. */
   timestamp: string;
+  /** Lazy, cached `Date` derived from `event.timestamp`. Non-enumerable; does not appear in JSON.stringify output. */
+  readonly timestampDate: Date;
   /** The original raw record from the Horizon API. */
   raw?: RawHorizonChangeTrust;
 };
@@ -344,6 +375,8 @@ export type AccountMergeEvent = {
   destination: AccountAddress;
   /** ISO 8601 timestamp of the merge. */
   timestamp: string;
+  /** Lazy, cached `Date` derived from `event.timestamp`. Non-enumerable; does not appear in JSON.stringify output. */
+  readonly timestampDate: Date;
   /** The original raw record from the Horizon API. */
   raw?: RawHorizonAccountMerge;
 };
@@ -382,8 +415,7 @@ export type NormalizedEvent = (
   | LiquidityPoolDepositEvent
   | LiquidityPoolWithdrawEvent
   | TrustAuthEvent
-  | ContractInvokedEvent
-  | ContractEmittedEvent
+  | ContractEvent
 ) & {
   /** Lazy, cached `Date` derived from `event.timestamp`. Non-enumerable; does not appear in JSON.stringify output. */
   readonly timestampDate: Date;
@@ -451,6 +483,22 @@ export interface AbiRegistryClientLike {
   getSpec(contractId: string): Promise<unknown>;
 }
 
+export type SorobanConfig = {
+  /** Soroban RPC endpoint used for live contract-event polling. */
+  rpcUrl: string;
+  /** Optional headers forwarded to the Soroban RPC endpoint. */
+  rpcHeaders?: Record<string, string>;
+  /** Interval between Soroban polls in milliseconds. Defaults to 2,000. */
+  pollIntervalMs?: number;
+  /** Number of ledgers to look back from the latest ledger on the first poll. Defaults to 0. */
+  startLedgerLookback?: number;
+  /**
+   * Pagination limit for each Soroban RPC `getEvents` call.
+   * Must be an integer from 1 through 10,000. Defaults to 100.
+   */
+  pageLimit?: number;
+};
+
 export type CoreConfig = {
   /** The Stellar network to connect to. */
   network: Network;
@@ -460,7 +508,7 @@ export type CoreConfig = {
   reconnect?: ReconnectConfig;
   logger?: Logger;
   /** Optional cursor store for resumable streams. */
-  cursorStore?: CursorStore;
+  cursorStore?: CursorStoreLike;
   /** Key to use for cursor storage. Defaults to "pulse-core-cursor". */
   streamKey?: string;
   /** Number of consecutive cursor store failures before marking it unhealthy. Defaults to 5. */
@@ -468,10 +516,7 @@ export type CoreConfig = {
   /** Optional ABI registry client used to enrich `contract.emitted` events with `decodedData`. */
   abiRegistry?: AbiRegistryClientLike;
   /** Soroban RPC configuration. */
-  soroban?: {
-    /** Pagination limit for RPC `getEvents` calls. Must be 1–10,000. Defaults to 100. */
-    pageLimit?: number;
-  };
+  soroban?: SorobanConfig;
 };
 
 // Error class for invalid network validation
@@ -520,6 +565,8 @@ export type ContractInvokedEvent = {
   txHash?: string;
   /** ISO 8601 timestamp of the invocation. */
   timestamp: string;
+  /** Lazy, cached `Date` derived from `event.timestamp`. Non-enumerable; does not appear in JSON.stringify output. */
+  readonly timestampDate: Date;
   /** The original raw record from the Soroban API. */
   raw?: RawSorobanEvent;
   decodedData?: unknown;
@@ -551,10 +598,13 @@ export type ContractEmittedEvent = {
   /** Whether the emitting contract call succeeded, when available. */
   inSuccessfulContractCall?: boolean;
   timestamp: string;
+  /** Lazy, cached `Date` derived from `event.timestamp`. Non-enumerable; does not appear in JSON.stringify output. */
+  readonly timestampDate: Date;
   /** The original raw record from the Soroban API. */
   raw?: RawSorobanEvent;
 };
 
+/** Discriminated union of every normalized Soroban contract event. */
 export type ContractEvent = ContractInvokedEvent | ContractEmittedEvent;
 
 export type DecodeFailedNotification = {
