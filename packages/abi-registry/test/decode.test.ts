@@ -465,3 +465,190 @@ describe("decodeContractEvent — error cases", () => {
     ).not.toThrow();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Raw XDR base64 topics and data
+// XDR base64 strings are produced by some Soroban RPC implementations instead
+// of the Horizon JSON format ({ sym: "transfer" }, { u32: 42 }, etc.).
+// ---------------------------------------------------------------------------
+
+// Pre-computed XDR base64 fixtures (generated via stellar-sdk):
+//   xdr.ScVal.scvSymbol("transfer").toXDR("base64")
+//   xdr.ScVal.scvU32(42).toXDR("base64")
+//   etc.
+const XDR_SYM_TRANSFER = "AAAADwAAAAh0cmFuc2Zlcg==";
+const XDR_U32_42 = "AAAAAwAAACo=";
+// i128: 10_000_000 (hi=0, lo=10000000)
+const XDR_I128_10M = "AAAACgAAAAAAAAAAAAAAAACYloA=";
+// sym: "USDC"
+const XDR_SYM_USDC = "AAAADwAAAARVU0RD";
+// void
+const XDR_VOID = "AAAAAQ==";
+// bool: true
+const XDR_BOOL_TRUE = "AAAAAAAAAAE=";
+// bytes: 0xdeadbeef
+const XDR_BYTES_DEADBEEF = "AAAADQAAAATerb7v";
+// vec: [u32(1), u32(2), u32(3)]
+const XDR_VEC_U32_123 = "AAAAEAAAAAEAAAADAAAAAwAAAAEAAAADAAAAAgAAAAMAAAAD";
+// map: [{key: sym("amount"), val: i128(1_000_000)}, {key: sym("fee"), val: i128(100)}]
+const XDR_MAP_AMOUNT_FEE =
+  "AAAAEQAAAAEAAAACAAAADwAAAAZhbW91bnQAAAAAAAoAAAAAAAAAAAAAAAAAD0JAAAAADwAAAANmZWUAAAAACgAAAAAAAAAAAAAAAAAAAGQ=";
+// address: account GCCDPZMSNGYSAOMPOBWVQ6FSNRJORSBLXX6NFXASHVUMCSJRYRAL4SHE
+const XDR_ADDR_ACCOUNT = "AAAAEgAAAAAAAAAAhDflkmmxIDmPcG1YeLJsUujIK7380twSPWjBSTHEQL4=";
+const XDR_ADDR_PUBKEY = "GCCDPZMSNGYSAOMPOBWVQ6FSNRJORSBLXX6NFXASHVUMCSJRYRAL4SHE";
+
+describe("decodeContractEvent — raw XDR base64 topics and data", () => {
+  it("decodes XDR base64 sym topic as string", () => {
+    const result = decodeContractEvent(USDC_SPEC, {
+      topics: [XDR_SYM_TRANSFER],
+      data: null,
+    });
+    expect(isDecoded(result)).toBe(true);
+    const decoded = result as DecodedEvent;
+    expect(decoded.functionName).toBe("transfer");
+    expect(decoded.topics[0]).toBe("transfer");
+  });
+
+  it("decodes XDR base64 u32 data", () => {
+    const result = decodeContractEvent(USDC_SPEC, {
+      topics: [XDR_SYM_TRANSFER],
+      data: XDR_U32_42,
+    });
+    expect(isDecoded(result)).toBe(true);
+    expect((result as DecodedEvent).data).toBe(42);
+  });
+
+  it("decodes XDR base64 i128 data as decimal string", () => {
+    const result = decodeContractEvent(USDC_SPEC, {
+      topics: [XDR_SYM_TRANSFER],
+      data: XDR_I128_10M,
+    });
+    expect(isDecoded(result)).toBe(true);
+    expect((result as DecodedEvent).data).toBe("10000000");
+  });
+
+  it("decodes XDR base64 void as null", () => {
+    const result = decodeContractEvent(USDC_SPEC, {
+      topics: [XDR_SYM_TRANSFER],
+      data: XDR_VOID,
+    });
+    expect(isDecoded(result)).toBe(true);
+    expect((result as DecodedEvent).data).toBeNull();
+  });
+
+  it("decodes XDR base64 bool true", () => {
+    const result = decodeContractEvent(USDC_SPEC, {
+      topics: [XDR_SYM_TRANSFER],
+      data: XDR_BOOL_TRUE,
+    });
+    expect(isDecoded(result)).toBe(true);
+    expect((result as DecodedEvent).data).toBe(true);
+  });
+
+  it("decodes XDR base64 bytes as hex string", () => {
+    const result = decodeContractEvent(USDC_SPEC, {
+      topics: [XDR_SYM_TRANSFER],
+      data: XDR_BYTES_DEADBEEF,
+    });
+    expect(isDecoded(result)).toBe(true);
+    expect((result as DecodedEvent).data).toBe("deadbeef");
+  });
+
+  it("decodes XDR base64 vec as array", () => {
+    const result = decodeContractEvent(USDC_SPEC, {
+      topics: [XDR_SYM_TRANSFER],
+      data: XDR_VEC_U32_123,
+    });
+    expect(isDecoded(result)).toBe(true);
+    expect((result as DecodedEvent).data).toEqual([1, 2, 3]);
+  });
+
+  it("decodes XDR base64 map as key/value array", () => {
+    const result = decodeContractEvent(USDC_SPEC, {
+      topics: [XDR_SYM_TRANSFER],
+      data: XDR_MAP_AMOUNT_FEE,
+    });
+    expect(isDecoded(result)).toBe(true);
+    const data = (result as DecodedEvent).data as Array<{ key: unknown; value: unknown }>;
+    expect(data).toHaveLength(2);
+    expect(data[0]).toEqual({ key: "amount", value: "1000000" });
+    expect(data[1]).toEqual({ key: "fee", value: "100" });
+  });
+
+  it("decodes XDR base64 account address as strkey", () => {
+    const result = decodeContractEvent(USDC_SPEC, {
+      topics: [XDR_SYM_TRANSFER, XDR_ADDR_ACCOUNT],
+      data: null,
+    });
+    expect(isDecoded(result)).toBe(true);
+    expect((result as DecodedEvent).topics[1]).toBe(XDR_ADDR_PUBKEY);
+  });
+
+  it("decodes mixed XDR base64 and JSON-format topics", () => {
+    const result = decodeContractEvent(USDC_SPEC, {
+      topics: [
+        XDR_SYM_TRANSFER, // XDR base64 sym
+        { address: "GABC" }, // JSON format address
+      ],
+      data: XDR_I128_10M, // XDR base64 i128
+    });
+    expect(isDecoded(result)).toBe(true);
+    const decoded = result as DecodedEvent;
+    expect(decoded.functionName).toBe("transfer");
+    expect(decoded.topics[0]).toBe("transfer");
+    expect(decoded.topics[1]).toBe("GABC");
+    expect(decoded.data).toBe("10000000");
+  });
+
+  it("treats non-XDR strings as opaque (Stellar strkeys pass through unchanged)", () => {
+    const strkey = "GABC1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890ABCDE";
+    const result = decodeContractEvent(USDC_SPEC, {
+      topics: [{ sym: "event" }],
+      data: strkey,
+    });
+    expect(isDecoded(result)).toBe(true);
+    expect((result as DecodedEvent).data).toBe(strkey);
+  });
+
+  it("decodes XDR base64 sym as sym in topics — XDR sym extraction works for functionName", () => {
+    const result = decodeContractEvent(USDC_SPEC, {
+      topics: [XDR_SYM_USDC],
+      data: null,
+    });
+    expect(isDecoded(result)).toBe(true);
+    expect((result as DecodedEvent).functionName).toBe("USDC");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// contractId validation
+// ---------------------------------------------------------------------------
+
+describe("decodeContractEvent — contractId validation", () => {
+  it("succeeds when event contractId matches spec contractId", () => {
+    const result = decodeContractEvent(USDC_SPEC, {
+      contractId: USDC_SPEC.contractId,
+      topics: [{ sym: "transfer" }],
+      data: null,
+    });
+    expect(isDecoded(result)).toBe(true);
+  });
+
+  it("returns error when event contractId does not match spec contractId", () => {
+    const result = decodeContractEvent(USDC_SPEC, {
+      contractId: "CDIFFERENT0000000000000000000000000000000000000000000000",
+      topics: [{ sym: "transfer" }],
+      data: null,
+    });
+    expect(isError(result)).toBe(true);
+    expect((result as { error: string }).error).toMatch(/contractId mismatch/);
+  });
+
+  it("does not validate contractId when field is absent", () => {
+    const result = decodeContractEvent(USDC_SPEC, {
+      topics: [{ sym: "transfer" }],
+      data: null,
+    });
+    expect(isDecoded(result)).toBe(true);
+  });
+});

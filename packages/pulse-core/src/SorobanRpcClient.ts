@@ -41,6 +41,28 @@ export interface SorobanRpcClientOptions {
   timeoutMs?: number;
   /** Optional logger. Per-request diagnostics go to `logger.debug` (header values redacted). */
   logger?: Logger;
+  /**
+   * Default XDR format for `getEvents` requests.
+   * - `"json"` (default): the RPC decodes XDR values into JSON objects, and
+   *   `decodedData` is populated on normalized events.
+   * - `"base64"`: raw base64 strings are preserved in the event `value` field,
+   *   and `decodedData` is left undefined.
+   *
+   * Can be overridden per call via {@link GetEventsOptions.xdrFormat}.
+   * @default "json"
+   */
+  xdrFormat?: "base64" | "json";
+}
+
+/** Per-call options for {@link SorobanRpcClient.getEvents}. */
+export interface GetEventsOptions {
+  /**
+   * XDR format for this request. Overrides the client-level default.
+   * @default "json"
+   */
+  xdrFormat?: "base64" | "json";
+  /** Optional AbortSignal for request cancellation. */
+  signal?: AbortSignal;
 }
 
 export type SorobanEventXdrFormat = "base64" | "json";
@@ -211,8 +233,13 @@ export class SorobanRpcClient {
     return SorobanRpcClient.cachedNetwork;
   }
 
-  static async fetchAndCacheNetwork(_url: string): Promise<SorobanNetworkInfo> {
-    throw new Error("fetchAndCacheNetwork not implemented");
+  static async fetchAndCacheNetwork(
+    url: string,
+    headers?: Record<string, string>,
+    fetchImpl?: typeof fetch,
+  ): Promise<SorobanNetworkInfo> {
+    const client = new SorobanRpcClient({ url, headers, fetch: fetchImpl });
+    return await client.getNetwork();
   }
 
   private readonly url: string;
@@ -220,6 +247,7 @@ export class SorobanRpcClient {
   private readonly fetchImpl: typeof fetch;
   private readonly timeoutMs: number;
   private readonly logger?: Logger;
+  private readonly xdrFormat: "base64" | "json";
 
   /**
    * @param options - Configuration for the RPC client.
@@ -237,6 +265,7 @@ export class SorobanRpcClient {
     }
     this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     this.logger = options.logger;
+    this.xdrFormat = options.xdrFormat ?? "json";
   }
 
   /**
@@ -372,9 +401,9 @@ export class SorobanRpcClient {
    *
    * @param startCursor - Optional cursor to start fetching from.
    * @param limit - Optional maximum number of events to return.
-   * @param signalOrOptions - Optional AbortSignal or option bag (e.g. xdrFormat: 'base64' | 'json', signal: AbortSignal).
+   * @param signalOrOptions - Optional AbortSignal or {@link GetEventsOptions}.
    * @param filters - Optional array of filters (up to 5 filters).
-   * @param options - Optional configuration options (e.g. xdrFormat: 'base64' | 'json', signal: AbortSignal).
+   * @param options - Deprecated; use {@link signalOrOptions} instead.
    * @returns The JSON-RPC `result` payload, with `events` defaulting to `[]`.
    */
   async getEvents(
@@ -384,16 +413,16 @@ export class SorobanRpcClient {
   async getEvents(
     startCursor?: string,
     limit?: number,
-    signalOrOptions?: AbortSignal | { xdrFormat?: "base64" | "json"; signal?: AbortSignal },
+    signalOrOptions?: AbortSignal | GetEventsOptions,
     filters?: ContractSubscriptionFilter[],
-    options?: { xdrFormat?: "base64" | "json"; signal?: AbortSignal } | AbortSignal,
+    options?: GetEventsOptions | AbortSignal,
   ): Promise<SorobanGetEventsResult>;
   async getEvents(
     first?: string | SorobanGetEventsParams,
     limit?: number | SorobanRpcCallOptions,
-    signalOrOptions?: AbortSignal | { xdrFormat?: "base64" | "json"; signal?: AbortSignal },
+    signalOrOptions?: AbortSignal | GetEventsOptions,
     filters?: ContractSubscriptionFilter[],
-    options?: { xdrFormat?: "base64" | "json"; signal?: AbortSignal } | AbortSignal,
+    options?: GetEventsOptions | AbortSignal,
   ): Promise<SorobanGetEventsResult> {
     let params: Record<string, unknown> = {};
     let signal: AbortSignal | undefined = undefined;
@@ -409,36 +438,18 @@ export class SorobanRpcClient {
       if (filters !== undefined && filters.length > 0) params.filters = filters;
     }
 
-    let xdrFormat: "base64" | "json" = "json";
+    let xdrFormat: "base64" | "json" = this.xdrFormat;
     if (typeof params.xdrFormat === "string") {
       xdrFormat = params.xdrFormat as "base64" | "json";
     }
 
-    // Resolve signal or options from the third parameter
-    if (signalOrOptions !== undefined) {
-      if (isAbortSignal(signalOrOptions)) {
-        signal = signalOrOptions as AbortSignal;
-      } else if (typeof signalOrOptions === "object" && signalOrOptions !== null) {
-        if ("xdrFormat" in signalOrOptions) {
-          xdrFormat = (signalOrOptions as any).xdrFormat ?? "json";
-        }
-        if ("signal" in signalOrOptions) {
-          signal = (signalOrOptions as any).signal;
-        }
-      }
-    }
-
-    // Resolve signal or options from the fifth parameter (options)
-    if (options !== undefined) {
-      if (isAbortSignal(options)) {
-        signal = options as AbortSignal;
-      } else if (typeof options === "object" && options !== null) {
-        if ("xdrFormat" in options) {
-          xdrFormat = (options as any).xdrFormat ?? "json";
-        }
-        if ("signal" in options) {
-          signal = (options as any).signal;
-        }
+    for (const candidate of [signalOrOptions, options]) {
+      if (candidate === undefined) continue;
+      if (isAbortSignal(candidate)) {
+        signal = candidate;
+      } else {
+        if (candidate.xdrFormat !== undefined) xdrFormat = candidate.xdrFormat;
+        if (candidate.signal !== undefined) signal = candidate.signal;
       }
     }
 

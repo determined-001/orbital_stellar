@@ -1544,7 +1544,7 @@ describe("pulse-core EventEngine", () => {
         type: "claimable.created",
         sponsor: "GSPONSOR",
         balanceId: "00000000abc123",
-        claimants: [{ destination: "GCLAIMANT1", predicate: { unconditional: true } }],
+        claimants: [{ destination: "GCLAIMANT1", predicate: { type: "unconditional" } }],
         asset: "XLM",
         amount: "100",
         timestamp: "2026-04-28T12:00:00.000Z",

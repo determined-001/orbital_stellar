@@ -65,12 +65,7 @@ export class NetworkMismatchError extends Error {
 }
 
 export type SorobanRpcErrorCode =
-  | "network"
-  | "rate_limit"
-  | "auth"
-  | "invalid_request"
-  | "server"
-  | "unknown";
+  "network" | "rate_limit" | "auth" | "invalid_request" | "server" | "unknown";
 
 export type SorobanRpcErrorOptions = {
   code: SorobanRpcErrorCode;

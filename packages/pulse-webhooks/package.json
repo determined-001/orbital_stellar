@@ -30,7 +30,8 @@
     "orbital": "./bin/orbital"
   },
   "dependencies": {
-    "@orbital-stellar/pulse-core": "workspace:*"
+    "@orbital-stellar/pulse-core": "workspace:*",
+    "prom-client": "^14.0.0"
   },
   "devDependencies": {
     "@types/node": "^26.0.1",

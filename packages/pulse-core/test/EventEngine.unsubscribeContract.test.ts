@@ -81,6 +81,17 @@ describe("unsubscribeContract(config)", () => {
     expect(configRegistry(engine).size).toBe(1);
   });
 
+  it("is a no-op when called a second time on an already-stopped watcher", () => {
+    const engine = new EventEngine({ network: "testnet" });
+    const config: ContractSubscriptionConfig = { filters: [{ contractIds: ["CA1234"] }] };
+    engine.subscribeContract(config);
+    engine.unsubscribeContract(config);
+
+    // Second call must not throw and registry stays empty.
+    expect(() => engine.unsubscribeContract(config)).not.toThrow();
+    expect(configRegistry(engine).size).toBe(0);
+  });
+
   it("is a no-op for a config that was never subscribed", () => {
     const engine = new EventEngine({ network: "testnet" });
     engine.subscribeContract({ filters: [{ contractIds: ["CA"] }] });

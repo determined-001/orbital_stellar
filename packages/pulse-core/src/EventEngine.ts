@@ -3,6 +3,7 @@ import { Watcher } from "./Watcher.js";
 import { EngineAlreadyStartedError, NetworkMismatchError } from "./errors.js";
 import { resolveSorobanPageLimit, SorobanSubscriber } from "./SorobanSubscriber.js";
 import { SorobanRpcClient } from "./SorobanRpcClient.js";
+import type { SorobanNetworkInfo } from "./SorobanRpcClient.js";
 import type { SorobanRpcLike, SorobanEvent } from "./SorobanSubscriber.js";
 import { toAccountAddress, toContractAddress } from "./address.js";
 import { toStellarAmount } from "./amount.js";
@@ -16,9 +17,7 @@ import type {
   BumpSequenceEvent,
   ClaimableClaimedEvent,
   ClaimableCreatedEvent,
-  ContractEmittedEvent,
   ContractFilter,
-  ContractInvokedEvent,
   ContractSubscribeOptions,
   ContractSubscriptionConfig,
   ContractSubscriptionFilter,
@@ -65,7 +64,13 @@ import type {
   RawHorizonSetTrustLineFlags,
   RawSorobanEvent,
 } from "./index.js";
-import { UnknownNetworkError, NETWORK_PASSPHRASES } from "./index.js";
+import {
+  UnknownNetworkError,
+  NETWORK_PASSPHRASES,
+  ContractEmittedEvent,
+  ContractInvokedEvent,
+} from "./index.js";
+import { normalizeClaimPredicate } from "./claimPredicate.js";
 
 type PendingPaymentEvent = Omit<PaymentEvent, "type"> & { type: "unknown" };
 type NormalizedEventOrPending =
@@ -153,6 +158,12 @@ export class EventEngine {
     string,
     { watcher: Watcher; filters: ContractSubscriptionFilter[] }
   > = new Map();
+  /**
+   * Registry for config-object-based contract subscriptions.
+   * Keyed by {@link stableFilterKey} — the same canonical key used by
+   * `subscribeContract(config)` for deduplication and by
+   * `unsubscribeContract(config)` for lookup.
+   */
   private contractConfigRegistry: Map<string, Watcher> = new Map();
   private subscriptionNames: Map<string, string> = new Map();
   private stopStream: HorizonStreamStopper | null = null;
@@ -161,6 +172,12 @@ export class EventEngine {
   private pendingReconnectSuccessAttempt: number | null = null;
   private readonly reconnectConfig: Required<ReconnectConfig>;
   private isRunning = false;
+  /**
+   * Incremented only by an explicit `stop()` call. Used to invalidate a deferred
+   * Soroban network-mismatch check (see `start()`) without confusing it with
+   * `isRunning` toggling during an unrelated Horizon reconnect cycle.
+   */
+  private stopGeneration = 0;
   // Waiters for contract subscription activation: map contractId -> array of waiters
   private contractPollWaiters: Map<
     string,
@@ -190,6 +207,14 @@ export class EventEngine {
    * throughout the engine are no-ops.
    */
   private sorobanSubscriber?: SorobanSubscriber;
+  /**
+   * Resolves once the constructor's Soroban `getNetwork()` probe settles.
+   * `start()` awaits this before opening the Soroban subscriber so a network
+   * mismatch is caught before any subscriptions/polling begin, even though
+   * the probe itself is kicked off asynchronously from the constructor.
+   * Resolves to `undefined` (with a warning logged) if the probe fails.
+   */
+  private sorobanNetworkReady?: Promise<SorobanNetworkInfo | undefined>;
   /** Optional ABI registry used to enrich `contract.emitted` events with `decodedData`. */
   private abiRegistry?: AbiRegistryClientLike;
 
@@ -224,7 +249,10 @@ export class EventEngine {
       ...config.reconnect,
     };
     this.log = config.logger ?? noop;
-    this.streamKey = config.streamKey ?? "pulse-core-cursor";
+    // Use a source-scoped default key so Horizon and Soroban cursors are
+    // persisted independently. Allow `streamKey` to override the Horizon key
+    // for backward compatibility / testing.
+    this.streamKey = config.streamKey ?? `horizon:${config.network}`;
     this.cursorFailureThreshold = config.cursorFailureThreshold ?? 5;
     this.abiRegistry = config.abiRegistry;
     this.cursorStore = config.cursorStore;
@@ -236,7 +264,15 @@ export class EventEngine {
         headers: config.soroban.rpcHeaders,
         logger: this.log,
       });
-      const sorobanCursorKey = `${this.streamKey}:soroban`;
+      this.sorobanNetworkReady = rpc.getNetwork().catch((err: unknown) => {
+        this.log.warn("[pulse-core] failed to warm Soroban RPC network cache", {
+          error: err instanceof Error ? err.message : String(err),
+        });
+        return undefined;
+      });
+      const sorobanCursorKey = config.streamKey
+        ? `${config.streamKey}:soroban`
+        : `soroban:${config.network}`;
       let inMemoryCursor: string | undefined;
       const cursorStore = {
         getCursor: async (): Promise<string | undefined> => {
@@ -248,7 +284,14 @@ export class EventEngine {
             inMemoryCursor = cursor;
             return;
           }
-          await this.cursorStore.set(sorobanCursorKey, cursor);
+          if (this.isCursorStoreUnhealthy) return;
+          try {
+            await this.cursorStore.set(sorobanCursorKey, cursor);
+            this.consecutiveCursorFailures = 0;
+            this.isCursorStoreUnhealthy = false;
+          } catch (err) {
+            this.handleCursorFailure(err, sorobanCursorKey);
+          }
         },
       };
 
@@ -624,7 +667,33 @@ export class EventEngine {
 
     this.openStream(false);
     if (this.sorobanSubscriber) {
-      this.sorobanSubscriber.start();
+      if (cachedNetwork || !this.sorobanNetworkReady) {
+        // Already verified above (cache was warm), or no in-flight probe to wait on.
+        this.sorobanSubscriber.start();
+      } else {
+        // The constructor's getNetwork() probe hasn't resolved yet. Defer opening
+        // the Soroban subscriber until it settles so a mismatch is caught before
+        // any polling begins, instead of silently processing wrong-network events.
+        const subscriber = this.sorobanSubscriber;
+        const startGeneration = this.stopGeneration;
+        void this.sorobanNetworkReady.then((info) => {
+          // Bail if stop() was called while the probe was in flight. Unlike
+          // `isRunning`, this isn't perturbed by unrelated Horizon reconnects.
+          if (this.stopGeneration !== startGeneration) return;
+          if (info) {
+            const expected = NETWORK_PASSPHRASES[this.network];
+            if (info.passphrase !== expected) {
+              this.log.error(
+                "[pulse-core] Soroban RPC network mismatch detected after start(); stopping engine.",
+                { expected, actual: info.passphrase },
+              );
+              this.stop();
+              return;
+            }
+          }
+          subscriber.start();
+        });
+      }
     }
     return true;
   }
@@ -704,8 +773,14 @@ export class EventEngine {
   /**
    * Stops the SSE stream and all active watchers.
    * Cleans up all resources and resets reconnection state.
+   *
+   * Resolves only once the Soroban subscriber's graceful shutdown completes —
+   * i.e. after any in-flight `getEvents` poll has been aborted and settled — so
+   * that no further Soroban events are emitted once the returned promise
+   * resolves (#636).
    */
-  stop(): void {
+  async stop(): Promise<void> {
+    this.stopGeneration++;
     this.clearReconnectTimer();
     this.pendingReconnectSuccessAttempt = null;
     this.reconnectAttempt = 0;
@@ -716,7 +791,7 @@ export class EventEngine {
     this.pausedSources.clear();
 
     if (this.sorobanSubscriber) {
-      this.sorobanSubscriber.stop();
+      await this.sorobanSubscriber.stop();
     }
 
     this.notifyWatchers("engine.stopped", {
@@ -855,9 +930,12 @@ export class EventEngine {
       return;
     }
 
+    if (this.isCursorStoreUnhealthy) return;
+
     try {
       await this.cursorStore.set(this.streamKey, cursor);
       this.consecutiveCursorFailures = 0;
+      this.isCursorStoreUnhealthy = false;
     } catch (err) {
       this.handleCursorFailure(err);
     }
@@ -1056,10 +1134,11 @@ export class EventEngine {
     }
   }
 
-  private handleCursorFailure(err: unknown): void {
+  private handleCursorFailure(err: unknown, key?: string): void {
     this.consecutiveCursorFailures++;
+    const usedKey = key ?? this.streamKey;
     this.log.warn("[pulse-core] cursorStore.set() failed.", {
-      key: this.streamKey,
+      key: usedKey,
       consecutiveFailures: this.consecutiveCursorFailures,
       error: err instanceof Error ? err.message : String(err),
     });
@@ -1431,7 +1510,7 @@ export class EventEngine {
       balanceId: r.balance_id as string,
       claimants: (r.claimants as Array<Record<string, unknown>>).map((c) => ({
         destination: toAccountAddress(c.destination as string),
-        predicate: c.predicate,
+        predicate: normalizeClaimPredicate(c.predicate as Record<string, unknown>),
       })),
       asset,
       amount: toStellarAmount(r.amount as string),
@@ -2080,7 +2159,7 @@ export function normalizeContractEvent(
   rawRpcEvent: any,
   xdrFormatOrLogger?: "base64" | "json" | Logger,
   loggerOption?: Logger,
-): RpcContractInvokedEvent | RpcContractEmittedEvent | null {
+): ContractInvokedEvent | ContractEmittedEvent | null {
   let xdrFormat: "base64" | "json" = "base64";
   let logger = loggerOption;
 
@@ -2091,16 +2170,16 @@ export function normalizeContractEvent(
       logger = xdrFormatOrLogger as Logger;
     }
   }
-  // 1. Structural check patterns
+
+  // Basic structural validation
   if (!rawRpcEvent || typeof rawRpcEvent !== "object") {
-    logger?.warn("[pulse-core] Dropping malformed Soroban event: payload is not a valid object.", {
+    logger?.warn(`[pulse-core] Dropping malformed Soroban event: payload is not a valid object.`, {
       event: rawRpcEvent,
     });
     return null;
   }
 
   const e = rawRpcEvent as Record<string, unknown>;
-
   const requiredFields = [
     "id",
     "pagingToken",
@@ -2129,29 +2208,37 @@ export function normalizeContractEvent(
     inSuccessfulContractCall,
     topic,
     value,
+    function: fn,
+    args,
   } = e;
 
+  // Contract invocation events (system or diagnostic categories)
   if (type === "system" || type === "diagnostic") {
-    if (typeof rawRpcEvent.function !== "string") {
+    if (typeof fn !== "string") {
       logger?.warn(
         "[pulse-core] Dropping malformed contract invoked event: missing function field.",
         { event: rawRpcEvent },
       );
       return null;
     }
-    return {
-      type: "contract_invoked",
+    const invoked = withTimestampDate({
+      type: "contract.invoked",
+      contractId: String(contractId),
+      function: String(fn),
+      args: Array.isArray(args) ? (args as unknown[]) : [],
+      ledger: Number(ledger),
+      txHash: String(txHash),
+      timestamp: String(ledgerClosedAt),
+      raw: rawRpcEvent,
+      decodedData: rawRpcEvent.decodedData,
+      inSuccessfulContractCall: Boolean(inSuccessfulContractCall),
       id: String(e.id),
       pagingToken: String(e.pagingToken),
-      contractId: String(contractId),
-      txHash: String(txHash),
-      ledger: Number(ledger),
-      ledgerClosedAt: String(ledgerClosedAt),
-      inSuccessfulContractCall: Boolean(inSuccessfulContractCall),
-      raw: rawRpcEvent,
-    };
+    }) as unknown as ContractInvokedEvent;
+    return invoked;
   }
 
+  // Contract emitted events (the usual "contract" category)
   if (type === "contract") {
     if (!Array.isArray(topic) || value === undefined || value === null) {
       logger?.warn(
@@ -2164,25 +2251,32 @@ export function normalizeContractEvent(
     const isJson =
       xdrFormat === "json" || typeof value === "object" || rawRpcEvent.decodedData !== undefined;
 
-    const norm: any = {
-      type: "contract_emitted",
+    const emitted = withTimestampDate({
+      type: "contract.emitted",
+      contractId: String(contractId),
+      topics: (topic as unknown[]).map((t) => String(t)),
+      // Preserve original field name for backward compatibility
+      value: isJson ? "" : String(value),
+      data: isJson
+        ? rawRpcEvent.decodedData !== undefined
+          ? rawRpcEvent.decodedData
+          : value
+        : String(value),
+      raw: rawRpcEvent,
+      decodedData: isJson
+        ? rawRpcEvent.decodedData !== undefined
+          ? rawRpcEvent.decodedData
+          : value
+        : undefined,
+      inSuccessfulContractCall: Boolean(inSuccessfulContractCall),
+      eventId: String(e.id),
+      ledger: Number(ledger),
+      txHash: String(txHash),
+      timestamp: String(ledgerClosedAt),
       id: String(e.id),
       pagingToken: String(e.pagingToken),
-      contractId: String(contractId),
-      txHash: String(txHash),
-      ledger: Number(ledger),
-      ledgerClosedAt: String(ledgerClosedAt),
-      topics: (topic as unknown[]).map((t) => String(t)),
-      value: isJson ? "" : String(value),
-      inSuccessfulContractCall: Boolean(inSuccessfulContractCall),
-      raw: rawRpcEvent,
-    };
-
-    if (isJson) {
-      norm.decodedData = rawRpcEvent.decodedData !== undefined ? rawRpcEvent.decodedData : value;
-    }
-
-    return norm;
+    }) as unknown as ContractEmittedEvent;
+    return emitted;
   }
 
   logger?.warn(

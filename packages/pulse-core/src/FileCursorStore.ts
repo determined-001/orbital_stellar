@@ -1,4 +1,4 @@
-import { promises as fsPromises } from "fs";
+import { promises as fsPromises, type Dirent } from "fs";
 import path from "path";
 import { CursorStore } from "./CursorStore.js";
 import type { Logger } from "./index.js";
@@ -44,6 +44,24 @@ export class FileCursorStore extends CursorStore {
       if (err.code === "ENOENT") return null;
       throw err;
     }
+  }
+
+  async getAll(): Promise<Array<{ streamKey: string; cursor: string }>> {
+    let entries: Dirent[];
+    try {
+      entries = await fsPromises.readdir(this.dir, { withFileTypes: true });
+    } catch (err: any) {
+      if (err.code === "ENOENT") return [];
+      throw err;
+    }
+    const results: Array<{ streamKey: string; cursor: string }> = [];
+    for (const entry of entries) {
+      if (!entry.isFile() || !entry.name.endsWith(".json")) continue;
+      const streamKey = decodeURIComponent(entry.name.slice(0, -".json".length));
+      const cursor = await this.get(streamKey);
+      if (cursor !== null) results.push({ streamKey, cursor });
+    }
+    return results;
   }
 
   async set(streamKey: string, cursor: string): Promise<void> {
