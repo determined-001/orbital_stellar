@@ -75,7 +75,3 @@ Helpers for converting between JavaScript values and Soroban `ScVal` payloads.
 ## License
 
 MIT
-
-
-## Scaffold
-This package is scaffolded with standard package.json, tsconfig.json, and vitest.config.ts.
