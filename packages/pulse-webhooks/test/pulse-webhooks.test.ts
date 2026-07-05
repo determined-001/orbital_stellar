@@ -114,6 +114,31 @@ describe("pulse-webhooks WebhookDelivery", () => {
     );
   });
 
+  it("stop() prevents further deliveries without stopping the watcher", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200 });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const watcher = new Watcher("GABC");
+    const delivery = new WebhookDelivery(watcher, {
+      url: "https://prod.example.com/webhooks/stellar",
+      secret: "top-secret",
+    });
+
+    watcher.emit("*", deliveryEvent);
+    await flushAsyncWork();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    delivery.stop();
+
+    watcher.emit("*", deliveryEvent);
+    await flushAsyncWork();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(watcher.stopped).toBe(false);
+
+    // Idempotent: calling stop() again is a no-op, not an error.
+    expect(() => delivery.stop()).not.toThrow();
+  });
+
   it("records each webhook attempt and terminal success outcome", async () => {
     const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200 });
     vi.stubGlobal("fetch", fetchMock);

@@ -188,6 +188,9 @@ export class WebhookDelivery {
   private activeDeliveries = 0;
   // Overflow queue for deliveries that exceed the concurrent delivery cap.
   private overflowQueue: Array<{ event: NormalizedEvent; url: string }> = [];
+  // Set once `stop()` has run, independent of the underlying watcher's lifecycle.
+  private stopped = false;
+
   constructor(
     watcher: Watcher,
     config: WebhookConfig,
@@ -215,28 +218,42 @@ export class WebhookDelivery {
     this.retryQueue = config.retryQueue;
 
     this.watcher.addStopHandler(() => {
-      this.clearRetryTimers();
-      this.stopPoller();
+      this.stop();
     });
 
     if (this.retryQueue) {
       this.startPoller();
     }
 
-    this.watcher.on(
-      "*",
-      (event: NormalizedEvent | WatcherNotification | DecodeFailedNotification) => {
-        if ("raw" in event) {
-          for (const url of this.config.urls) {
-            this.dispatchDelivery(event, url);
-          }
-        }
-      },
-    );
+    this.watcher.on("*", this.handleWatcherEvent);
   }
+
+  private readonly handleWatcherEvent = (
+    event: NormalizedEvent | WatcherNotification | DecodeFailedNotification,
+  ): void => {
+    if (this.stopped) return;
+    if ("raw" in event) {
+      for (const url of this.config.urls) {
+        this.dispatchDelivery(event, url);
+      }
+    }
+  };
 
   getDeadLetterStore(): DeadLetterStoreInterface | MemoryDeadLetterStore {
     return this.dlq;
+  }
+
+  /**
+   * Idempotently stops this delivery instance without stopping the underlying
+   * `Watcher`: detaches the event listener, clears pending retry timers, and
+   * stops the retry-queue poller so no further deliveries are attempted.
+   */
+  stop(): void {
+    if (this.stopped) return;
+    this.stopped = true;
+    this.watcher.off("*", this.handleWatcherEvent);
+    this.clearRetryTimers();
+    this.stopPoller();
   }
 
   /** Re-deliver a stored terminal failure by dead-letter id. */
@@ -560,6 +577,7 @@ export class WebhookDelivery {
    * If at capacity, the event is queued and a `webhook.backpressure` notification is emitted.
    */
   private dispatchDelivery(event: NormalizedEvent, url: string): void {
+    if (this.stopped) return;
     if (this.activeDeliveries >= this.config.maxConcurrentDeliveries) {
       this.overflowQueue.push({ event, url });
       this.emitBackpressure(event, url);
