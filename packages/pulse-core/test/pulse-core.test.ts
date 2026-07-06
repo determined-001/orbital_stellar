@@ -1080,6 +1080,7 @@ describe("pulse-core EventEngine", () => {
         selling_asset_code: "USDC",
         selling_asset_issuer: "GISSUER",
         price: "0.5",
+        price_r: { n: 1, d: 2 },
         created_at: "2026-04-28T14:00:00.000Z",
         ...overrides,
       };
@@ -1104,6 +1105,22 @@ describe("pulse-core EventEngine", () => {
           selling_asset: "USDC:GISSUER",
           amount: "100",
         }),
+      );
+    });
+
+    it("includes price_r (rational form) alongside price", () => {
+      const engine = new EventEngine({ network: "testnet" });
+      const watcher = engine.subscribe("GSRC");
+      const handler = vi.fn();
+      watcher.on("offer.created", handler);
+
+      engine.start();
+      latestStream().handlers.onmessage(
+        makeOfferRecord({ offer_id: "0", amount: "100", price: "0.5", price_r: { n: 1, d: 2 } }),
+      );
+
+      expect(handler).toHaveBeenCalledWith(
+        expect.objectContaining({ price: "0.5", price_r: { n: 1, d: 2 } }),
       );
     });
 

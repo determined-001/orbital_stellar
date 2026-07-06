@@ -33,6 +33,7 @@ import type {
   NormalizedEvent,
   OfferEvent,
   OfferEventType,
+  PriceR,
   PaymentEvent,
   PaymentEventType,
   ReconnectConfig,
@@ -1303,6 +1304,7 @@ export class EventEngine {
       selling_asset,
       amount: toStellarAmount(amount),
       price: r.price as string,
+      price_r: r.price_r as PriceR,
       timestamp: r.created_at,
       raw: raw as RawHorizonManageSellOffer | RawHorizonManageBuyOffer,
     };

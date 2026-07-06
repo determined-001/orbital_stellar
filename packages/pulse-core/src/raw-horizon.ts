@@ -56,6 +56,7 @@ export interface RawHorizonManageSellOffer extends RawHorizonBaseOperation {
   selling_asset_code?: string;
   selling_asset_issuer?: string;
   price: string;
+  price_r: { n: number; d: number };
 }
 
 export interface RawHorizonManageBuyOffer extends RawHorizonBaseOperation {
@@ -69,6 +70,7 @@ export interface RawHorizonManageBuyOffer extends RawHorizonBaseOperation {
   selling_asset_code?: string;
   selling_asset_issuer?: string;
   price: string;
+  price_r: { n: number; d: number };
 }
 
 export interface RawHorizonBumpSequence extends RawHorizonBaseOperation {

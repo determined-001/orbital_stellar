@@ -215,6 +215,9 @@ export type AccountOptionsEvent = {
   raw?: RawHorizonSetOptions;
 };
 
+/** Rational (numerator/denominator) form of an offer's price, as returned by Horizon. */
+export type PriceR = { n: number; d: number };
+
 export type OfferEvent = {
   type: OfferEventType;
   offer_id: string;
@@ -223,6 +226,8 @@ export type OfferEvent = {
   selling_asset: string;
   amount: StellarAmount;
   price: string;
+  /** Rational form of `price` (exact, avoids floating-point rounding). */
+  price_r: PriceR;
   timestamp: string;
   /** Lazy, cached `Date` derived from `event.timestamp`. Non-enumerable; does not appear in JSON.stringify output. */
   readonly timestampDate: Date;
