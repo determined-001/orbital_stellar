@@ -23,7 +23,7 @@ describe("Soroban Event Normalizer Utility Suite", () => {
     const result = normalizeContractEvent(mockTestnetEvent);
 
     expect(result).not.toBeNull();
-    expect(result!.type).toBe("contract_emitted");
+    expect(result!.type).toBe("contract.emitted");
     expect(result!.id).toBe("000000123456789-00001");
     expect(result!.pagingToken).toBe("000000123456789-00001");
     expect(result!.contractId).toBe("CBB76TESTNETCONTRACTIDXXXXXXXXXXXXXXXYZZZZZZZZZZ");

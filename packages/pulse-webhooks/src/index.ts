@@ -9,12 +9,14 @@ import { createHmac, timingSafeEqual, randomUUID } from "crypto";
 import { lookup } from "dns/promises";
 import { BlockList, isIP } from "net";
 
-import { DeadLetterStore } from "./MemoryDeadLetterStore.js";
+import type { DeadLetterStore as DeadLetterStoreInterface } from "./DeadLetterStore.js";
+import { MemoryDeadLetterStore } from "./MemoryDeadLetterStore.js";
 import { exponentialJittered } from "./backoff.js";
 import type { BackoffStrategy } from "./backoff.js";
 import type { RetryQueue, RetryRecord } from "./RetryQueue.js";
 import type { Tracer, UrlEntry, VerifyWebhookOptions, WebhookConfig } from "./types.js";
 import { DEFAULT_MAX_AGE_MS, DEFAULT_CLOCK_SKEW_MS } from "./types.js";
+import { NOOP_WEBHOOK_METRICS } from "./metrics.js";
 
 const BLOCKED_WEBHOOK_ADDRESSES = new BlockList();
 BLOCKED_WEBHOOK_ADDRESSES.addSubnet("10.0.0.0", 8, "ipv4");
@@ -32,8 +34,20 @@ BLOCKED_WEBHOOK_ADDRESSES.addSubnet("::ffff:c0a8:0", 112, "ipv6");
 BLOCKED_WEBHOOK_ADDRESSES.addSubnet("::ffff:a9fe:0", 112, "ipv6");
 
 const BLOCKED_ADDRESS_ERROR = "Webhook URL points to a blocked private address";
-export { DeadLetterStore } from "./MemoryDeadLetterStore.js";
+export { configureDeadLetterStore } from "./DeadLetterStore.js";
+export type {
+  DeadLetterEntry,
+  DeadLetterFailure,
+  DeadLetterFilter,
+  ReplayHandler,
+} from "./DeadLetterStore.js";
+export type { DeadLetterStoreInterface };
+export type DeadLetterStore = DeadLetterStoreInterface;
+export { MemoryDeadLetterStore };
+/** @deprecated Use {@link MemoryDeadLetterStore} instead. */
+export const DeadLetterStore = MemoryDeadLetterStore;
 export { NOOP_WEBHOOK_METRICS, CountingWebhookMetrics } from "./metrics.js";
+export { PrometheusWebhookMetrics } from "./PrometheusWebhookMetrics.js";
 export type { WebhookAttemptStatus, WebhookMetrics, WebhookTerminalOutcome } from "./types.js";
 export { exponentialJittered, linear, cappedExponential, constant } from "./backoff.js";
 export type { BackoffStrategy } from "./backoff.js";
@@ -41,19 +55,16 @@ export { PostgresDeadLetterStore } from "./PostgresDeadLetterStore.js";
 export { RedisRetryQueue } from "./RedisRetryQueue.js";
 export { MemoryRetryQueue } from "./MemoryRetryQueue.js";
 export { SqsRetryQueue } from "./SqsRetryQueue.js";
-export { verifyWebhookEdge, verifyWebhookEdgeRaw } from "./edge.js";
+export { verifyWebhookEdge, verifyWebhookEdgeRaw, verifyWebhookEdgeStream } from "./edge.js";
 export { dedupReceiver, MemoryDedupStore } from "./dedup.js";
 export type { DedupStore, DedupReceiverOptions } from "./dedup.js";
+export type { DeliveryHealth } from "./MemoryDeadLetterStore.js";
 export type {
-  DeadLetterEntry,
-  DeadLetterFilter as MemoryDeadLetterFilter,
-  DeliveryHealth,
-} from "./MemoryDeadLetterStore.js";
-export type {
-  DeadLetterFilter,
+  DeadLetterFilter as PostgresDeadLetterFilter,
   DeadLetterInput,
   DeadLetterRecord,
   PgLike,
+  PostgresDeadLetterStoreApi,
 } from "./PostgresDeadLetterStore.js";
 export type { RedisLike, RedisRetryQueueOptions } from "./RedisRetryQueue.js";
 export type { MemoryRetryQueueOptions } from "./MemoryRetryQueue.js";
@@ -157,7 +168,7 @@ function normalizeUrlConfig(url: WebhookConfig["url"]): {
 export class WebhookDelivery {
   private config: ResolvedWebhookConfig;
   private watcher: Watcher;
-  private dlq: DeadLetterStore;
+  private dlq: DeadLetterStoreInterface | MemoryDeadLetterStore;
   // Map of timer -> event so we can evict the newest entry when the cap is hit.
   private retryTimers: Map<ReturnType<typeof setTimeout>, { event: NormalizedEvent; url: string }> =
     new Map();
@@ -177,9 +188,16 @@ export class WebhookDelivery {
   private activeDeliveries = 0;
   // Overflow queue for deliveries that exceed the concurrent delivery cap.
   private overflowQueue: Array<{ event: NormalizedEvent; url: string }> = [];
-  constructor(watcher: Watcher, config: WebhookConfig, dlq?: DeadLetterStore) {
+  // Set once `stop()` has run, independent of the underlying watcher's lifecycle.
+  private stopped = false;
+
+  constructor(
+    watcher: Watcher,
+    config: WebhookConfig,
+    dlq?: DeadLetterStoreInterface | MemoryDeadLetterStore,
+  ) {
     this.watcher = watcher;
-    this.dlq = dlq ?? new DeadLetterStore();
+    this.dlq = this.resolveDeadLetterStore(dlq);
     const { urls, urlTimeouts } = normalizeUrlConfig(config.url);
     this.config = {
       retries: 3,
@@ -196,31 +214,61 @@ export class WebhookDelivery {
     };
     this.config.maxConcurrentRetries = Math.max(1, this.config.maxConcurrentRetries);
     this.config.maxConcurrentDeliveries = Math.max(1, this.config.maxConcurrentDeliveries);
+    this.config.metrics = this.config.metrics ?? NOOP_WEBHOOK_METRICS;
     this.retryQueue = config.retryQueue;
 
     this.watcher.addStopHandler(() => {
-      this.clearRetryTimers();
-      this.stopPoller();
+      this.stop();
     });
 
     if (this.retryQueue) {
       this.startPoller();
     }
 
-    this.watcher.on(
-      "*",
-      (event: NormalizedEvent | WatcherNotification | DecodeFailedNotification) => {
-        if ("raw" in event) {
-          for (const url of this.config.urls) {
-            this.dispatchDelivery(event, url);
-          }
-        }
-      },
-    );
+    this.watcher.on("*", this.handleWatcherEvent);
   }
 
-  getDeadLetterStore(): DeadLetterStore {
+  private readonly handleWatcherEvent = (
+    event: NormalizedEvent | WatcherNotification | DecodeFailedNotification,
+  ): void => {
+    if (this.stopped) return;
+    if ("raw" in event) {
+      for (const url of this.config.urls) {
+        this.dispatchDelivery(event, url);
+      }
+    }
+  };
+
+  getDeadLetterStore(): DeadLetterStoreInterface | MemoryDeadLetterStore {
     return this.dlq;
+  }
+
+  /**
+   * Idempotently stops this delivery instance without stopping the underlying
+   * `Watcher`: detaches the event listener, clears pending retry timers, and
+   * stops the retry-queue poller so no further deliveries are attempted.
+   */
+  stop(): void {
+    if (this.stopped) return;
+    this.stopped = true;
+    this.watcher.off("*", this.handleWatcherEvent);
+    this.clearRetryTimers();
+    this.stopPoller();
+  }
+
+  /** Re-deliver a stored terminal failure by dead-letter id. */
+  async replayFailure(failureId: string): Promise<void> {
+    await this.dlq.replay(failureId);
+  }
+
+  private resolveDeadLetterStore(
+    dlq?: DeadLetterStoreInterface | MemoryDeadLetterStore,
+  ): DeadLetterStoreInterface | MemoryDeadLetterStore {
+    const store = dlq ?? new MemoryDeadLetterStore();
+    if (store instanceof MemoryDeadLetterStore) {
+      store.setReplayHandler((entry) => this.deliverToUrl(entry.event, entry.url, 1));
+    }
+    return store;
   }
 
   private async doAttempt(
@@ -232,7 +280,6 @@ export class WebhookDelivery {
 
     const builtInValidationError = this.validateUrl(url);
     if (builtInValidationError) {
-      this.emitFailure(event, url, builtInValidationError, attempt);
       return { ok: false, error: builtInValidationError, terminal: true };
     }
 
@@ -254,8 +301,8 @@ export class WebhookDelivery {
     if (this.watcher.stopped) return { ok: false, error: "stopped", terminal: true };
 
     if (resolvedHostnameError) {
-      this.emitFailure(event, url, resolvedHostnameError, attempt);
-      return { ok: false, error: resolvedHostnameError, terminal: true };
+      const isTerminal = resolvedHostnameError === BLOCKED_ADDRESS_ERROR;
+      return { ok: false, error: resolvedHostnameError, terminal: isTerminal };
     }
 
     const payload = JSON.stringify(event);
@@ -317,7 +364,9 @@ export class WebhookDelivery {
       span?.setAttribute("latency", successMs);
       this.config.metrics?.recordAttempt(url, attempt, successMs, "success");
       this.config.metrics?.recordTerminal(url, "success");
-      this.dlq.recordSuccess(url);
+      if (this.dlq instanceof MemoryDeadLetterStore) {
+        this.dlq.recordSuccess(url);
+      }
       return { ok: true };
     } catch (err) {
       const failureMs = Date.now() - startMs;
@@ -330,7 +379,9 @@ export class WebhookDelivery {
 
       const errorMessage = this.getErrorMessage(err, timeoutMs);
       this.config.metrics?.recordAttempt(url, attempt, failureMs, "failure");
-      this.dlq.recordFailure(url);
+      if (this.dlq instanceof MemoryDeadLetterStore) {
+        this.dlq.recordFailure(url);
+      }
       return { ok: false, error: errorMessage };
     } finally {
       clearTimeout(abortTimer);
@@ -480,6 +531,24 @@ export class WebhookDelivery {
     return undefined;
   }
 
+  private recordTerminalFailure(
+    url: string,
+    event: NormalizedEvent,
+    errorMessage: string,
+    attempt: number,
+  ): Promise<string> {
+    if (this.dlq instanceof MemoryDeadLetterStore) {
+      return Promise.resolve(this.dlq.add(url, event, errorMessage, attempt));
+    }
+
+    return this.dlq.record({
+      url,
+      event,
+      error: errorMessage,
+      attempts: attempt,
+    });
+  }
+
   private emitFailure(
     event: NormalizedEvent,
     url: string,
@@ -488,18 +557,19 @@ export class WebhookDelivery {
   ): void {
     // Persist the dead-lettered event before announcing the terminal failure so
     // `webhook.failed` consumers can correlate via `dlqId`.
-    const dlqId = this.dlq.add(url, event, errorMessage, attempt);
-    this.config.metrics?.recordTerminal(url, "failure");
-    this.watcher.emit("webhook.failed", {
-      ...event,
-      raw: {
-        error: errorMessage,
-        url,
-        attempts: attempt,
-        originalEvent: event,
-        dlqId,
-      } satisfies WebhookFailureRaw,
-    } as unknown as NormalizedEvent);
+    void this.recordTerminalFailure(url, event, errorMessage, attempt).then((dlqId) => {
+      this.config.metrics?.recordTerminal(url, "failure");
+      this.watcher.emit("webhook.failed", {
+        ...event,
+        raw: {
+          error: errorMessage,
+          url,
+          attempts: attempt,
+          originalEvent: event,
+          dlqId,
+        } satisfies WebhookFailureRaw,
+      } as unknown as NormalizedEvent);
+    });
   }
 
   /**
@@ -507,6 +577,7 @@ export class WebhookDelivery {
    * If at capacity, the event is queued and a `webhook.backpressure` notification is emitted.
    */
   private dispatchDelivery(event: NormalizedEvent, url: string): void {
+    if (this.stopped) return;
     if (this.activeDeliveries >= this.config.maxConcurrentDeliveries) {
       this.overflowQueue.push({ event, url });
       this.emitBackpressure(event, url);
@@ -565,16 +636,17 @@ export class WebhookDelivery {
   /** Emits `webhook.dropped` and dead-letters an event shed by the retry cap. */
   private emitDropped(event: NormalizedEvent, url: string): void {
     this.config.metrics?.recordTerminal(url, "dropped");
-    this.dlq.add(url, event, "retry_cap_exceeded", 0);
-    this.watcher.emit("webhook.dropped", {
-      ...event,
-      raw: {
-        reason: "retry_cap_exceeded",
-        url,
-        maxConcurrentRetries: this.config.maxConcurrentRetries,
-        originalEvent: event,
-      } satisfies WebhookDroppedRaw,
-    } as unknown as NormalizedEvent);
+    void this.recordTerminalFailure(url, event, "retry_cap_exceeded", 0).then(() => {
+      this.watcher.emit("webhook.dropped", {
+        ...event,
+        raw: {
+          reason: "retry_cap_exceeded",
+          url,
+          maxConcurrentRetries: this.config.maxConcurrentRetries,
+          originalEvent: event,
+        } satisfies WebhookDroppedRaw,
+      } as unknown as NormalizedEvent);
+    });
   }
 
   /**
@@ -651,6 +723,17 @@ export class WebhookDelivery {
   }
 }
 
+/**
+ * Verifies webhook signature, parses JSON, and optionally validates the schema.
+ *
+ * @param payload - The raw request body as a UTF-8 string
+ * @param signature - The x-orbital-signature header value
+ * @param secret - Your webhook secret
+ * @param timestamp - The x-orbital-timestamp header value
+ * @param options - Verification options (`maxAgeMs`, `clockSkewMs`, `nowMs`, `version`, `schema`, `maxBodyBytes`)
+ * @param options.maxBodyBytes - Maximum allowed payload size in bytes. Defaults to 100_000 (~100 KB).
+ * @returns Parsed NormalizedEvent if verification succeeds, null otherwise
+ */
 export function verifyWebhook(
   payload: string,
   signature: string,
@@ -681,6 +764,14 @@ export function verifyWebhook(
 /**
  * Verifies webhook signature without parsing JSON.
  * Use when routing the raw body to another consumer (e.g., a queue) to avoid the parse overhead.
+ *
+ * @param payload - The raw request body as a UTF-8 string
+ * @param signature - The x-orbital-signature header value
+ * @param secret - Your webhook secret
+ * @param timestamp - The x-orbital-timestamp header value
+ * @param options - Verification options
+ * @param options.maxBodyBytes - Maximum allowed payload size in bytes. Defaults to 100_000 (~100 KB).
+ * @returns `true` if signature is valid, `false` otherwise
  */
 export function verifyWebhookRaw(
   payload: string,
@@ -689,6 +780,9 @@ export function verifyWebhookRaw(
   timestamp: string,
   options: VerifyWebhookOptions = {},
 ): boolean {
+  const maxBodyBytes = options.maxBodyBytes ?? 100_000;
+  if (Buffer.byteLength(payload, "utf8") > maxBodyBytes) return false;
+
   if (!/^\d+$/.test(timestamp)) return false;
 
   const timestampMs = Number(timestamp);

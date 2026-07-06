@@ -1,20 +1,14 @@
 import type { NormalizedEvent } from "@orbital-stellar/pulse-core";
 
-export interface DeadLetterEntry {
-  id: string;
-  url: string;
-  event: NormalizedEvent;
-  error: string;
-  attempts: number;
-  timestamp: number;
-}
+import type {
+  DeadLetterEntry,
+  DeadLetterFailure,
+  DeadLetterFilter,
+  DeadLetterStore,
+  ReplayHandler,
+} from "./DeadLetterStore.js";
 
-export interface DeadLetterFilter {
-  url?: string;
-  since?: number;
-  until?: number;
-  limit?: number;
-}
+export type { DeadLetterEntry, DeadLetterFilter } from "./DeadLetterStore.js";
 
 export interface DeliveryHealth {
   healthy: boolean;
@@ -23,6 +17,12 @@ export interface DeliveryHealth {
   /** Failure rate over the last hour, as a percentage (0-100). */
   failureRate: number;
 }
+
+export type MemoryDeadLetterStoreOptions = {
+  /** Maximum stored failures before FIFO eviction. Defaults to 1000. */
+  maxEntries?: number;
+  replay?: ReplayHandler;
+};
 
 interface UrlMetrics {
   lastSuccess?: number;
@@ -35,29 +35,46 @@ interface UrlMetrics {
 
 let counter = 0;
 
+const DEFAULT_MAX_ENTRIES = 1000;
+
 /**
- * Dead-letter store for webhook deliveries.
+ * In-memory dead-letter store with FIFO eviction and per-URL health tracking.
  *
- * Holds two things per store: a queue of events that exhausted their retries
- * (`add`/`get`/`list`/`size`/`remove`/`clear`) and a rolling per-URL health
- * window (`recordSuccess`/`recordFailure`/`getHealth`). `WebhookDelivery`
- * populates both automatically.
+ * {@link WebhookDelivery} populates terminal failures automatically when this
+ * store is passed as the configured dead-letter dependency.
  */
-export class DeadLetterStore {
+export class MemoryDeadLetterStore implements DeadLetterStore {
+  private readonly maxEntries: number;
+  private replayHandler?: ReplayHandler;
   private entries: Map<string, DeadLetterEntry> = new Map();
   private metrics: Map<string, UrlMetrics> = new Map();
 
-  add(url: string, event: NormalizedEvent, error: string, attempts: number): string {
-    const id = `dlq_${++counter}_${Date.now()}_${Math.random().toString(36).slice(2)}`;
-    this.entries.set(id, { id, url, event, error, attempts, timestamp: Date.now() });
+  constructor(options: MemoryDeadLetterStoreOptions = {}) {
+    this.maxEntries = options.maxEntries ?? DEFAULT_MAX_ENTRIES;
+    this.replayHandler = options.replay;
+  }
+
+  setReplayHandler(handler: ReplayHandler): void {
+    this.replayHandler = handler;
+  }
+
+  async record(failure: DeadLetterFailure): Promise<string> {
+    const timestamp = failure.failedAt ?? Date.now();
+    const id = `dlq_${++counter}_${timestamp}_${Math.random().toString(36).slice(2)}`;
+    this.entries.set(id, {
+      id,
+      url: failure.url,
+      event: failure.event,
+      error: failure.error,
+      attempts: failure.attempts,
+      timestamp,
+      replayedAt: null,
+    });
+    this.evictOldestIfNeeded();
     return id;
   }
 
-  get(id: string): DeadLetterEntry | undefined {
-    return this.entries.get(id);
-  }
-
-  list(filter: DeadLetterFilter = {}): DeadLetterEntry[] {
+  async list(filter: DeadLetterFilter = {}): Promise<DeadLetterEntry[]> {
     let results = [...this.entries.values()];
 
     if (filter.url !== undefined) results = results.filter((e) => e.url === filter.url);
@@ -68,6 +85,52 @@ export class DeadLetterStore {
 
     if (filter.limit !== undefined) results = results.slice(0, filter.limit);
     return results;
+  }
+
+  async replay(failureId: string): Promise<void> {
+    const entry = this.entries.get(failureId);
+    if (!entry) {
+      throw new Error(`Unknown dead-letter failure: ${failureId}`);
+    }
+    if (!this.replayHandler) {
+      throw new Error("Dead-letter replay handler is not configured");
+    }
+
+    await this.replayHandler(entry);
+    entry.replayedAt = Date.now();
+  }
+
+  async failureRate(url: string, windowMs: number): Promise<number> {
+    const metrics = this.metrics.get(url);
+    if (!metrics) return 0;
+
+    const cutoff = Date.now() - windowMs;
+    const recentFailures = metrics.failures.filter((ts) => ts > cutoff);
+    const recentSuccesses = metrics.successes.filter((ts) => ts > cutoff);
+    const totalEvents = recentFailures.length + recentSuccesses.length;
+
+    if (totalEvents === 0) return 0;
+    return Math.round((recentFailures.length / totalEvents) * 10000) / 100;
+  }
+
+  /** @deprecated Use {@link record} instead. */
+  add(url: string, event: NormalizedEvent, error: string, attempts: number): string {
+    const id = `dlq_${++counter}_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+    this.entries.set(id, {
+      id,
+      url,
+      event,
+      error,
+      attempts,
+      timestamp: Date.now(),
+      replayedAt: null,
+    });
+    this.evictOldestIfNeeded();
+    return id;
+  }
+
+  get(id: string): DeadLetterEntry | undefined {
+    return this.entries.get(id);
   }
 
   remove(id: string): boolean {
@@ -121,20 +184,28 @@ export class DeadLetterStore {
     const recentSuccesses = metrics.successes.filter((ts) => ts > oneHourAgo);
 
     const totalEvents = recentFailures.length + recentSuccesses.length;
-    const failureRate = totalEvents > 0 ? recentFailures.length / totalEvents : 0;
+    const rate = totalEvents > 0 ? recentFailures.length / totalEvents : 0;
     const recentSuccessExists = recentSuccesses.some((ts) => ts > fifteenMinutesAgo);
 
     return {
-      healthy: failureRate < 0.05 && recentSuccessExists,
+      healthy: rate < 0.05 && recentSuccessExists,
       lastSuccess: metrics.lastSuccess,
       lastFailure: metrics.lastFailure,
-      failureRate: Math.round(failureRate * 10000) / 100,
+      failureRate: Math.round(rate * 10000) / 100,
     };
   }
 
   /** All URLs with tracked health metrics. */
   getAllUrls(): string[] {
     return [...this.metrics.keys()];
+  }
+
+  private evictOldestIfNeeded(): void {
+    while (this.entries.size > this.maxEntries) {
+      const oldestId = this.entries.keys().next().value;
+      if (oldestId === undefined) break;
+      this.entries.delete(oldestId);
+    }
   }
 
   private getOrCreateMetrics(url: string): UrlMetrics {

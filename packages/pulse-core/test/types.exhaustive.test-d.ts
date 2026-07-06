@@ -1,4 +1,9 @@
 import type { NormalizedEvent } from "../src/index.js";
+import { Watcher } from "../src/Watcher.js";
+import type { PaymentEvent, WatcherNotification, DecodeFailedNotification } from "../src/index.js";
+
+type Assert<T extends true> = T;
+type Equal<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
 
 /**
  * Type-only exhaustiveness test for the `NormalizedEvent` discriminated union
@@ -140,4 +145,38 @@ export function assertMissingBranchNoDefault(event: NormalizedEvent): string {
     case "contract.invoked":
       return event.type;
   }
+}
+
+export function testWatcherOnInference() {
+  const watcher = new Watcher("G...");
+
+  watcher.on("payment.received", (e) => {
+    type _IsPaymentEvent = Assert<Equal<typeof e, PaymentEvent & { readonly timestampDate: Date }>>;
+    const _to = e.to;
+    const _from = e.from;
+    const _amount = e.amount;
+    const _date = e.timestampDate;
+  });
+
+  watcher.on("engine.reconnecting", (e) => {
+    type _IsWatcherNotification = Assert<Equal<typeof e, WatcherNotification>>;
+    const _attempt = e.attempt;
+  });
+
+  watcher.on("event.decode_failed", (e) => {
+    type _IsDecodeFailedNotification = Assert<Equal<typeof e, DecodeFailedNotification>>;
+    const _error = e.error;
+  });
+
+  watcher.on("*", (_e) => {
+    type _IsFullUnion = Assert<
+      Equal<typeof _e, NormalizedEvent | WatcherNotification | DecodeFailedNotification>
+    >;
+  });
+
+  watcher.on("unknown.event", (_e) => {
+    type _IsFullUnion = Assert<
+      Equal<typeof _e, NormalizedEvent | WatcherNotification | DecodeFailedNotification>
+    >;
+  });
 }

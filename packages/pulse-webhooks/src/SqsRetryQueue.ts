@@ -275,7 +275,7 @@ export class SqsRetryQueue implements RetryQueue {
    * against the record ID. The record will reappear after `visibilityTimeoutMs`
    * if the caller neither acks nor nacks it.
    */
-  async dequeue(_nowMs?: number): Promise<RetryRecord | null> {
+  async dequeue(nowMs = this.now()): Promise<RetryRecord | null> {
     const output = await this.client.receiveMessage({
       QueueUrl: this.queueUrl,
       MaxNumberOfMessages: this.maxReceiveCount,
@@ -290,6 +290,14 @@ export class SqsRetryQueue implements RetryQueue {
     for (const msg of messages) {
       const record = this.parseRecord(msg.Body);
       if (!record || !msg.ReceiptHandle) continue;
+
+      if (record.nextRetryAt > nowMs) {
+        // Not due yet. Put it back (nack) with the remaining delay.
+        this.inFlight.set(record.id, msg.ReceiptHandle);
+        this.inFlightRecords.set(record.id, record);
+        await this.nack(record.id, record.nextRetryAt - nowMs);
+        continue;
+      }
 
       this.inFlight.set(record.id, msg.ReceiptHandle);
       this.inFlightRecords.set(record.id, record);

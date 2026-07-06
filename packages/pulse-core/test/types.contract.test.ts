@@ -149,6 +149,18 @@ describe("Contract Event Types", () => {
       ledger: 123456,
       txHash: "abc123def456",
       timestamp: "2026-05-31T09:00:00Z",
+      raw: {
+        type: "system",
+        ledger: 123456,
+        ledgerClosedAt: "2026-05-31T09:00:00Z",
+        contractId: "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABSC4",
+        id: "1",
+        pagingToken: "1",
+        topic: [],
+        value: "",
+        txHash: "abc123def456",
+        inSuccessfulContractCall: true,
+      },
     };
 
     expectTypeOf(event.type).toMatchTypeOf<"contract.invoked">();
@@ -173,6 +185,18 @@ describe("Contract Event Types", () => {
       txHash: "abc123def456",
       inSuccessfulContractCall: true,
       timestamp: "2026-05-31T09:00:00Z",
+      raw: {
+        type: "contract",
+        ledger: 123456,
+        ledgerClosedAt: "2026-05-31T09:00:00Z",
+        contractId: "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABSC4",
+        id: "1",
+        pagingToken: "1",
+        topic: [],
+        value: "",
+        txHash: "abc123def456",
+        inSuccessfulContractCall: true,
+      },
     };
 
     expectTypeOf(event.type).toMatchTypeOf<"contract.emitted">();

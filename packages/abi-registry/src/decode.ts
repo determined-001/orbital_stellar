@@ -30,6 +30,7 @@
  * | custom struct | `Record<string, DecodedValue>`            |
  */
 
+import { xdr, StrKey } from "@stellar/stellar-sdk";
 import type { XdrContractSpec } from "./types.js";
 
 // ---------------------------------------------------------------------------
@@ -38,13 +39,7 @@ import type { XdrContractSpec } from "./types.js";
 
 /** A successfully decoded Soroban value. */
 export type DecodedValue =
-  | null
-  | boolean
-  | number
-  | string
-  | DecodedValueArray
-  | DecodedValueMap
-  | DecodedValueObject;
+  null | boolean | number | string | DecodedValueArray | DecodedValueMap | DecodedValueObject;
 
 /** Array of decoded values (interface indirection breaks the alias self-reference). */
 export interface DecodedValueArray extends Array<DecodedValue> {}
@@ -109,6 +104,19 @@ function _decode(spec: XdrContractSpec, rawEvent: unknown): DecodeResult {
     return { error: "rawEvent.topics must be an array" };
   }
 
+  // --- Validate contractId against spec when present in the event ---
+  if ("contractId" in event && event["contractId"] !== undefined) {
+    if (event["contractId"] !== spec.contractId) {
+      return {
+        error: `contractId mismatch: spec=${spec.contractId}, event=${event["contractId"]}`,
+      };
+    }
+  }
+
+  // --- Parse spec entries for type context (silently skips malformed entries) ---
+  const specEntries = parseSpecEntries(spec.entries);
+  void specEntries; // available for type-guided struct decoding when spec entries are populated
+
   const rawTopics = event["topics"] as unknown[];
   const rawData = event["data"] ?? null;
 
@@ -122,20 +130,16 @@ function _decode(spec: XdrContractSpec, rawEvent: unknown): DecodeResult {
     decodedTopics.push(result.value);
   }
 
-  // --- Extract function name from first topic (must be a Symbol) ---
-  const firstTopic = rawTopics[0];
-  const functionName = extractSymbol(firstTopic);
+  // --- Extract function name from the decoded first topic ---
+  // Use the decoded value so that XDR base64-encoded sym topics are resolved correctly.
+  const functionName =
+    decodedTopics.length > 0 && typeof decodedTopics[0] === "string" ? decodedTopics[0] : "";
 
   // --- Decode data ---
   const dataResult = decodeScVal(rawData);
   if (isError(dataResult)) {
     return { error: `data: ${dataResult.error}` };
   }
-
-  // --- Look up function in spec (optional — we decode regardless) ---
-  // The spec is used for type-guided decoding of structured data when available.
-  // If the function is not found in the spec, we still return the decoded values.
-  void spec; // spec is available for future type-guided decoding
 
   return {
     functionName: functionName ?? "",
@@ -176,8 +180,14 @@ export function decodeScVal(raw: unknown): DecodeValueResult {
     return { value: raw };
   }
 
-  // Plain string — treat as opaque string (address, symbol, etc.)
+  // Plain string — try raw XDR base64 first; fall back to opaque string
   if (typeof raw === "string") {
+    try {
+      const scval = xdr.ScVal.fromXDR(raw, "base64");
+      return decodeXdrScVal(scval);
+    } catch {
+      // Not valid XDR base64 — treat as opaque string (address strkey, symbol, etc.)
+    }
     return { value: raw };
   }
 
@@ -320,6 +330,112 @@ function decodeStruct(obj: Record<string, unknown>): DecodeValueResult {
     result[k] = r.value;
   }
   return { value: result };
+}
+
+// ---------------------------------------------------------------------------
+// XDR ScVal decoder (for raw base64-encoded Soroban RPC payloads)
+// ---------------------------------------------------------------------------
+
+function decodeXdrScVal(scval: xdr.ScVal): DecodeValueResult {
+  const name = scval.switch().name;
+  switch (name) {
+    case "scvBool":
+      return { value: scval.b() };
+    case "scvVoid":
+      return { value: null };
+    case "scvU32":
+      return { value: scval.u32() };
+    case "scvI32":
+      return { value: scval.i32() };
+    case "scvU64":
+      return { value: scval.u64().toString() };
+    case "scvI64":
+      return { value: scval.i64().toString() };
+    case "scvU128": {
+      const p = scval.u128();
+      const hi = BigInt(p.hi().toString());
+      const lo = BigInt(p.lo().toString());
+      return { value: ((hi << 64n) | lo).toString() };
+    }
+    case "scvI128": {
+      const p = scval.i128();
+      const hi = BigInt(p.hi().toString());
+      const lo = BigInt(p.lo().toString());
+      return { value: ((hi << 64n) | lo).toString() };
+    }
+    case "scvU256": {
+      const p = scval.u256();
+      const v =
+        (BigInt(p.hiHi().toString()) << 192n) |
+        (BigInt(p.hiLo().toString()) << 128n) |
+        (BigInt(p.loHi().toString()) << 64n) |
+        BigInt(p.loLo().toString());
+      return { value: v.toString() };
+    }
+    case "scvI256": {
+      const p = scval.i256();
+      const v =
+        (BigInt(p.hiHi().toString()) << 192n) |
+        (BigInt(p.hiLo().toString()) << 128n) |
+        (BigInt(p.loHi().toString()) << 64n) |
+        BigInt(p.loLo().toString());
+      return { value: v.toString() };
+    }
+    case "scvBytes":
+      return { value: (scval.bytes() as Buffer).toString("hex") };
+    case "scvString":
+      return { value: scval.str().toString() };
+    case "scvSymbol":
+      return { value: scval.sym().toString() };
+    case "scvAddress": {
+      const addr = scval.address();
+      if (addr.switch().name === "scAddressTypeAccount") {
+        return { value: StrKey.encodeEd25519PublicKey(addr.accountId().ed25519()) };
+      }
+      return { value: StrKey.encodeContract(addr.contractId() as unknown as Buffer) };
+    }
+    case "scvVec": {
+      const vec = scval.vec() ?? [];
+      const result: DecodedValue[] = [];
+      for (let i = 0; i < vec.length; i++) {
+        const r = decodeXdrScVal(vec[i]!);
+        if (isError(r)) return { error: `vec[${i}]: ${r.error}` };
+        result.push(r.value);
+      }
+      return { value: result };
+    }
+    case "scvMap": {
+      const map = scval.map() ?? [];
+      const result: { key: DecodedValue; value: DecodedValue }[] = [];
+      for (let i = 0; i < map.length; i++) {
+        const entry = map[i]!;
+        const kr = decodeXdrScVal(entry.key());
+        const vr = decodeXdrScVal(entry.val());
+        if (isError(kr)) return { error: `map[${i}].key: ${kr.error}` };
+        if (isError(vr)) return { error: `map[${i}].value: ${vr.error}` };
+        result.push({ key: kr.value, value: vr.value });
+      }
+      return { value: result };
+    }
+    default:
+      return { error: `Unsupported XDR ScVal type: ${name}` };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Spec entry parser
+// ---------------------------------------------------------------------------
+
+function parseSpecEntries(entries: string[]): xdr.ScSpecEntry[] {
+  const result: xdr.ScSpecEntry[] = [];
+  for (const entry of entries) {
+    try {
+      result.push(xdr.ScSpecEntry.fromXDR(entry, "base64"));
+    } catch {
+      // Skip malformed entries silently
+    }
+  }
+  return result;
 }
 
 // ---------------------------------------------------------------------------

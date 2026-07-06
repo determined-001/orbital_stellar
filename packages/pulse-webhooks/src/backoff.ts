@@ -22,49 +22,42 @@ export const exponentialJittered: BackoffStrategy = (attempt, rng) => {
 };
 
 /**
- * Linear backoff with jitter.
- * Delay = attempt * 1000 * random()
+ * Linear backoff.
+ * Delay = attempt * 1000
  *
  * @example
- * attempt 1: 0 - 1000ms
- * attempt 2: 0 - 2000ms
- * attempt 3: 0 - 3000ms
+ * attempt 1: 1000ms
+ * attempt 2: 2000ms
+ * attempt 3: 3000ms
  */
-export const linear: BackoffStrategy = (attempt, rng) => {
-  const linearDelay = attempt * 1000;
-  return Math.floor(rng() * linearDelay);
-};
+export const linear: BackoffStrategy = (attempt) => attempt * 1000;
 
 /**
- * Capped exponential backoff with jitter.
- * Delay = min(2^(attempt-1) * 1000, 30000) * random()
+ * Capped exponential backoff.
+ * Delay = min(2^(attempt-1) * 1000, 30000)
  * Maximum delay capped at 30 seconds.
  *
  * @example
- * attempt 1: 0 - 1000ms
- * attempt 2: 0 - 2000ms
- * attempt 3: 0 - 4000ms
- * attempt 4: 0 - 8000ms
- * attempt 5: 0 - 16000ms
- * attempt 6+: 0 - 30000ms
+ * attempt 1: 1000ms
+ * attempt 2: 2000ms
+ * attempt 3: 4000ms
+ * attempt 4: 8000ms
+ * attempt 5: 16000ms
+ * attempt 6+: 30000ms
  */
-export const cappedExponential: BackoffStrategy = (attempt, rng) => {
+export const cappedExponential: BackoffStrategy = (attempt) => {
   const exponentialDelay = Math.pow(2, attempt - 1) * 1000;
-  const cappedDelay = Math.min(exponentialDelay, 30_000);
-  return Math.floor(rng() * cappedDelay);
+  return Math.min(exponentialDelay, 30_000);
 };
 
 /**
- * Constant backoff with jitter.
- * Delay = 1000 * random()
+ * Constant backoff.
+ * Delay = 1000
  * All retries have the same base delay.
  *
  * @example
- * attempt 1: 0 - 1000ms
- * attempt 2: 0 - 1000ms
- * attempt 3: 0 - 1000ms
+ * attempt 1: 1000ms
+ * attempt 2: 1000ms
+ * attempt 3: 1000ms
  */
-export const constant: BackoffStrategy = (attempt, rng) => {
-  const constantDelay = 1000;
-  return Math.floor(rng() * constantDelay);
-};
+export const constant: BackoffStrategy = () => 1000;

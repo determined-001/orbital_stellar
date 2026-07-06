@@ -56,19 +56,19 @@ If you run a primary and a standby instance, where the standby only starts once 
 
 ## Live Migration Between Stores
 
-When moving from one cursor store to another (e.g., in-memory → Postgres at scale-up), use the built-in `migrateCursors` utility to copy all existing cursors with zero downtime.
+When moving from one cursor store to another (e.g., file → Redis at scale-up), use the built-in `migrateCursors` utility to copy all existing cursors atomically.
 
 ### Recommended sequence
 
-1. **Deploy the new store** alongside the existing one (both must be reachable).
-2. **Run the migration** before switching the engine config:
+1. **Stop the engine** — call `engine.stop()` and wait for it to resolve so no new cursors are written during the copy.
+2. **Run the migration**:
    ```ts
-   import { migrateCursors } from "@pulse-core";
+   import { migrateCursors } from "@orbital-stellar/pulse-core";
 
    const result = await migrateCursors(oldStore, newStore);
    console.log(`Migrated ${result.migrated} cursor(s)`);
    ```
-3. **Switch the `EventEngine` config** to point `cursorStore` at the new store.
+3. **Restart with the new store** — update `cursorStore` in your `EventEngine` config to point at the new store and call `engine.start()`.
 4. **Remove the old store** once the engine has confirmed healthy operation on the new store.
 
 ### Idempotency

@@ -1,5 +1,6 @@
 import type { ContractSubscriptionFilter, ContractAddress } from "./index.js";
 import type {
+  GetEventsOptions,
   SorobanGetEventsParams,
   SorobanGetEventsResult,
   SorobanRpcCallOptions,
@@ -52,9 +53,9 @@ export interface SorobanRpc {
   getEvents(
     startCursor: string | undefined,
     limit: number,
-    signal?: AbortSignal,
+    signal?: AbortSignal | GetEventsOptions,
     filters?: ContractSubscriptionFilter[],
-    options?: { xdrFormat?: "base64" | "json"; signal?: AbortSignal } | AbortSignal,
+    options?: GetEventsOptions | AbortSignal,
   ): Promise<{ events: SorobanEvent[]; [key: string]: any }>;
   getLatestLedger?(options?: SorobanRpcCallOptions): Promise<number>;
 }
@@ -125,6 +126,14 @@ export interface SorobanSubscriberOptions {
   onRetryableError?: (error: SorobanRpcError) => void;
   /** Notified when a terminal (non-retryable) {@link SorobanRpcError} is caught. */
   onTerminalError?: (error: unknown) => void;
+  /**
+   * The XDR format requested from the RPC for event values.
+   * - `"json"` (default): values are decoded into JSON objects and
+   *   populate `decodedData` on normalized events.
+   * - `"base64"`: raw base64 strings are preserved in the event `value`
+   *   field and `decodedData` is left undefined.
+   * @default "json"
+   */
   xdrFormat?: "base64" | "json";
 }
 

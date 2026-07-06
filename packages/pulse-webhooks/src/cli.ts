@@ -1,12 +1,13 @@
-import { DeadLetterStore, type DeadLetterFilter } from "./MemoryDeadLetterStore.js";
+import type { MemoryDeadLetterStore } from "./MemoryDeadLetterStore.js";
+import type { DeadLetterFilter } from "./DeadLetterStore.js";
 
 /**
  * List DLQ entries with optional filters and output each as a line‑delimited JSON string.
  */
-export function listDLQ(
-  store: DeadLetterStore,
+export async function listDLQ(
+  store: MemoryDeadLetterStore,
   options: { url?: string; since?: string; limit?: number },
-): void {
+): Promise<void> {
   const filter: DeadLetterFilter = {};
   if (options.url) filter.url = options.url;
   if (options.since) {
@@ -15,15 +16,15 @@ export function listDLQ(
   }
   if (options.limit !== undefined) filter.limit = options.limit;
 
-  const entries = store.list(filter);
+  const entries = await store.list(filter);
   for (const e of entries) {
     console.log(JSON.stringify(e));
   }
 }
 
 /** Dump all DLQ entries as line‑delimited JSON. */
-export function dumpDLQ(store: DeadLetterStore): void {
-  const entries = store.list();
+export async function dumpDLQ(store: MemoryDeadLetterStore): Promise<void> {
+  const entries = await store.list();
   for (const e of entries) {
     console.log(JSON.stringify(e));
   }
@@ -34,7 +35,7 @@ export function dumpDLQ(store: DeadLetterStore): void {
  * (simulating a retry) and prints the entry. In a full implementation this would
  * invoke the webhook delivery pipeline.
  */
-export function replayDLQ(store: DeadLetterStore, id: string): void {
+export function replayDLQ(store: MemoryDeadLetterStore, id: string): void {
   const entry = store.get(id);
   if (!entry) {
     console.error(`DLQ entry with id ${id} not found`);

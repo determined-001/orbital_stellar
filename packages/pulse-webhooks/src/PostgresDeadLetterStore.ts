@@ -39,7 +39,7 @@ export type DeadLetterFilter = {
   offset?: number;
 };
 
-export type DeadLetterStore = {
+export type PostgresDeadLetterStoreApi = {
   save(record: DeadLetterInput): Promise<DeadLetterRecord>;
   put(record: DeadLetterInput): Promise<DeadLetterRecord>;
   list(filter?: DeadLetterFilter): Promise<DeadLetterRecord[]>;
@@ -47,6 +47,9 @@ export type DeadLetterStore = {
   markReplayed(id: string, replayedAt?: Date | string): Promise<DeadLetterRecord | null>;
   delete(id: string): Promise<boolean>;
 };
+
+/** @deprecated Use {@link PostgresDeadLetterStoreApi} instead. */
+export type DeadLetterStore = PostgresDeadLetterStoreApi;
 
 type DeadLetterRow = {
   id: string | number;
@@ -58,7 +61,7 @@ type DeadLetterRow = {
   replayed_at: Date | string | null;
 };
 
-export class PostgresDeadLetterStore implements DeadLetterStore {
+export class PostgresDeadLetterStore implements PostgresDeadLetterStoreApi {
   private readonly tableSql: string;
 
   constructor(

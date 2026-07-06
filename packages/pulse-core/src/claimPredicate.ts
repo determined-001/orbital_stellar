@@ -73,25 +73,27 @@ export function isClaimPredicateType<T extends ClaimPredicate["type"]>(
 }
 
 /**
- * Evaluates a claim predicate against a given timestamp
+ * Evaluates a claim predicate against a given Date
  *
  * @param predicate - The claim predicate to evaluate
- * @param nowSeconds - Current time in UNIX seconds (from ledger close time)
+ * @param now - Current time
  * @returns true if the predicate is satisfied, false otherwise
  */
-export function evaluatePredicate(predicate: ClaimPredicate, nowSeconds: number): boolean {
+export function evaluatePredicate(predicate: ClaimPredicate, now: Date): boolean {
+  const nowSeconds = Math.floor(now.getTime() / 1000);
+
   switch (predicate.type) {
     case "unconditional":
       return true;
 
     case "not":
-      return !evaluatePredicate(predicate.predicate, nowSeconds);
+      return !evaluatePredicate(predicate.predicate, now);
 
     case "and":
-      return predicate.predicates.every((p) => evaluatePredicate(p, nowSeconds));
+      return predicate.predicates.every((p) => evaluatePredicate(p, now));
 
     case "or":
-      return predicate.predicates.some((p) => evaluatePredicate(p, nowSeconds));
+      return predicate.predicates.some((p) => evaluatePredicate(p, now));
 
     case "abs_before": {
       // Parse ISO8601 timestamp to UNIX seconds

@@ -1,7 +1,62 @@
 import { EventEmitter } from "events";
-import type { DecodeFailedNotification, NormalizedEvent, WatcherNotification } from "./index.js";
+import type {
+  DecodeFailedNotification,
+  NormalizedEvent,
+  WatcherNotification,
+  PaymentEvent,
+  AccountOptionsEvent,
+  AccountCreatedEvent,
+  TrustlineEvent,
+  AccountMergeEvent,
+  OfferEvent,
+  BumpSequenceEvent,
+  DataEvent,
+  ClaimableCreatedEvent,
+  ClaimableClaimedEvent,
+  LiquidityPoolDepositEvent,
+  LiquidityPoolWithdrawEvent,
+  TrustAuthEvent,
+  ContractInvokedEvent,
+  ContractEmittedEvent,
+} from "./index.js";
 
 type WatcherEvent = NormalizedEvent | WatcherNotification | DecodeFailedNotification;
+
+export type WatcherEventMap = {
+  "payment.received": PaymentEvent & { readonly timestampDate: Date };
+  "payment.sent": PaymentEvent & { readonly timestampDate: Date };
+  "payment.self": PaymentEvent & { readonly timestampDate: Date };
+  "account.created": AccountCreatedEvent & { readonly timestampDate: Date };
+  "account.options_changed": AccountOptionsEvent & { readonly timestampDate: Date };
+  "account.merged": AccountMergeEvent & { readonly timestampDate: Date };
+  "account.bump_sequence": BumpSequenceEvent & { readonly timestampDate: Date };
+  "trustline.added": TrustlineEvent & { readonly timestampDate: Date };
+  "trustline.removed": TrustlineEvent & { readonly timestampDate: Date };
+  "trustline.updated": TrustlineEvent & { readonly timestampDate: Date };
+  "trustline.authorized": TrustAuthEvent & { readonly timestampDate: Date };
+  "trustline.deauthorized": TrustAuthEvent & { readonly timestampDate: Date };
+  "offer.created": OfferEvent & { readonly timestampDate: Date };
+  "offer.updated": OfferEvent & { readonly timestampDate: Date };
+  "offer.deleted": OfferEvent & { readonly timestampDate: Date };
+  "data.set": DataEvent & { readonly timestampDate: Date };
+  "data.cleared": DataEvent & { readonly timestampDate: Date };
+  "claimable.created": ClaimableCreatedEvent & { readonly timestampDate: Date };
+  "claimable.claimed": ClaimableClaimedEvent & { readonly timestampDate: Date };
+  "lp.deposited": LiquidityPoolDepositEvent & { readonly timestampDate: Date };
+  "lp.withdrawn": LiquidityPoolWithdrawEvent & { readonly timestampDate: Date };
+  "contract.invoked": ContractInvokedEvent & { readonly timestampDate: Date };
+  "contract.emitted": ContractEmittedEvent & { readonly timestampDate: Date };
+  "engine.reconnecting": WatcherNotification;
+  "engine.reconnected": WatcherNotification;
+  "engine.rate_limited": WatcherNotification;
+  "engine.stopped": WatcherNotification;
+  "engine.cursor_store_unhealthy": WatcherNotification;
+  "engine.cursor_expired": WatcherNotification;
+  "event.decode_failed": DecodeFailedNotification;
+  "webhook.failed": NormalizedEvent;
+  "webhook.dropped": NormalizedEvent;
+  "*": WatcherEvent;
+};
 
 type WatcherLogger = Pick<Console, "warn">;
 
@@ -41,7 +96,12 @@ export class Watcher extends EventEmitter {
    * @param handler - The callback to invoke when the event occurs.
    * @returns This watcher instance for chaining.
    */
-  on(eventType: string, handler: (event: WatcherEvent) => void): this {
+  on<K extends keyof WatcherEventMap>(
+    eventType: K,
+    handler: (event: WatcherEventMap[K]) => void,
+  ): this;
+  on(eventType: string, handler: (event: WatcherEvent) => void): this;
+  on(eventType: string, handler: (event: any) => void): this {
     if (this._stopped) {
       const message = `[pulse-core] Watcher.on("${eventType}") called after stop() for address ${this.address}. Listener was not registered.`;
 
@@ -55,7 +115,6 @@ export class Watcher extends EventEmitter {
 
     return super.on(eventType, handler);
   }
-
   /**
    * Emits an event to all registered handlers.
    * If the watcher is stopped, this returns false without emitting.

@@ -155,6 +155,77 @@ Shorthand for payments received. Equivalent to `useStellarEvent(serverUrl, addre
 
 Shorthand for all events on an address. Equivalent to `useStellarEvent(serverUrl, address, { event: "*" })`.
 
+### `useContractEvent(config)`
+
+Subscribes to Soroban contract events for a specific `contractId`. Accepts an optional `topics` array to filter `contract.emitted` events, and an optional `token` for authenticated servers.
+
+```tsx
+"use client";
+import { useContractEvent } from "@orbital-stellar/pulse-notify";
+import type { ContractEmittedEvent } from "@orbital-stellar/pulse-notify";
+
+export function TransferWatcher({ contractId }: { contractId: string }) {
+  const { event, connected, error } = useContractEvent<ContractEmittedEvent>({
+    serverUrl: process.env.NEXT_PUBLIC_ORBITAL_URL!,
+    contractId,
+    topics: ["transfer"],
+    token: process.env.NEXT_PUBLIC_ORBITAL_TOKEN,
+  });
+
+  if (error) return <div className="text-red-500">{error}</div>;
+  if (!connected) return <div>Connecting…</div>;
+  if (!event) return <div>Listening for transfers…</div>;
+
+  return <div>Transfer event: {JSON.stringify(event.data)}</div>;
+}
+```
+
+The default `T` is `ContractInvokedEvent | ContractEmittedEvent`. Narrow it to one or the other for full IDE support:
+
+```ts
+import type {
+  ContractInvokedEvent,
+  ContractEmittedEvent,
+} from "@orbital-stellar/pulse-notify";
+
+// Only invocations
+const { event } = useContractEvent<ContractInvokedEvent>({ serverUrl, contractId });
+
+// Only emitted events
+const { event } = useContractEvent<ContractEmittedEvent>({
+  serverUrl,
+  contractId,
+  topics: ["mint"],
+});
+```
+
+**Config shape:**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `serverUrl` | `string` | ✓ | Base URL of the Orbital server |
+| `contractId` | `string` | ✓ | Soroban contract address (C…) |
+| `topics` | `string[]` | — | Filter `contract.emitted` events; all topics must be present |
+| `token` | `string` | — | API key forwarded as `?token=` |
+| `initialEvent` | `T \| null` | — | SSR seed; replaced on first live event |
+| `filter` | `(event) => boolean` | — | Client-side predicate run after topic matching |
+| `withCredentials` | `boolean` | — | Send cookies for same-origin SSE |
+| `onEvent` | `(event) => void` | — | Side-effect callback fired before `filter` |
+| `hideAfterMs` | `number` | — | Pause connection after tab is hidden for this many ms (default 30 000) |
+
+**SSE endpoint contract:**
+
+The hook opens `GET {serverUrl}/contract_events/{contractId}` with the following optional query parameters:
+
+| Parameter | Description |
+|---|---|
+| `topics` | Comma-separated list of required topic strings (e.g. `topics=transfer,owner`) |
+| `token` | API key for authenticated servers |
+
+The server must stream newline-delimited `data: <JSON>\n\n` frames (standard SSE). Each frame must be a JSON object conforming to `ContractInvokedEvent` or `ContractEmittedEvent` from `@orbital-stellar/pulse-core`. The hook performs client-side topic matching in addition to any server-side filtering.
+
+Hook instances with the same `serverUrl`, `contractId`, `topics`, and `token` share one `EventSource` connection from the internal pool.
+
 ### `<StellarConnectionStatus serverUrl address />`
 
 Small client-side status indicator for places that need connection health but do not need to wire `connected` and `error` state by hand.
@@ -382,7 +453,6 @@ if (!caughtUp)  return <div>Catching up on missed events…</div>;
 ## Related documents
 
 - [Offline replay / Last-Event-ID](#offline-replay--last-event-id) — `caughtUp` flag, backend `id:` contract
-- [Migration guide: from raw EventSource to useStellarEvent](../../apps/web/content/guides/migrate-from-eventsource.md) — before/after for the three most common raw `EventSource` patterns
 - [`docs/ARCHITECTURE.md` § 7 React hook internals](../../docs/ARCHITECTURE.md#7-react-hook-internals) — design choices (stable dep-array, dual call signature, generic narrowing)
 - [`docs/COOKBOOK.md` § 10 Render live payments in React with type narrowing](../../docs/COOKBOOK.md#10-render-live-payments-in-react-with-type-narrowing)
 - [`docs/COOKBOOK.md` § 11 Stand up an SSE endpoint in Next.js](../../docs/COOKBOOK.md#11-stand-up-an-sse-endpoint-in-nextjs) — the backend the hooks expect

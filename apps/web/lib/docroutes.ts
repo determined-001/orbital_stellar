@@ -39,3 +39,14 @@ export const docSections: DocSection[] = [
 ]
 
 export const allDocPages: DocItem[] = docSections.flatMap((s) => s.items)
+
+export const referenceSections: DocSection[] = [
+  {
+    title: 'API Reference',
+    items: [
+      { title: 'pulse-core', href: '/reference/pulse-core' },
+      { title: 'pulse-webhooks', href: '/reference/pulse-webhooks' },
+      { title: 'pulse-notify', href: '/reference/pulse-notify' },
+    ],
+  },
+]
