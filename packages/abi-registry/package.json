@@ -37,10 +37,10 @@
     "@stellar/stellar-sdk": "^16.0.1"
   },
   "devDependencies": {
-    "@types/node": "^26.0.1",
-    "@vitest/coverage-v8": "^4.1.9",
+    "@types/node": "^26.1.0",
+    "@vitest/coverage-v8": "^4.1.10",
     "ajv": "^8.17.1",
-    "vitest": "^4.1.9",
+    "vitest": "^4.1.10",
     "zod": "^4.4.3"
   }
 }
