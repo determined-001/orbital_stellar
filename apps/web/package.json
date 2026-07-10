@@ -14,7 +14,7 @@
     "@orbital-stellar/pulse-core": "workspace:*",
     "@orbital-stellar/pulse-webhooks": "workspace:*",
     "@stellar/stellar-sdk": "^16.0.1",
-    "framer-motion": "^12.42.1",
+    "framer-motion": "^12.42.2",
     "geist": "^1.7.2",
     "gray-matter": "^4.0.3",
     "marked": "^18.0.2",
