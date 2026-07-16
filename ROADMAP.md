@@ -1,9 +1,10 @@
 # Roadmap
 
-> Orbital's open-source packages are on a multi-year trajectory from Stellar
-> event SDKs to a complete programmable runtime — hooks, payments, identity,
-> agent payments, and the standards behind them. This document describes the
-> planned work in concrete terms. Dates are targets, not guarantees.
+> Orbital is the typed event layer for Stellar — SDKs that turn raw Horizon
+> operations and Soroban contract events into normalized, decoded, strongly-typed
+> streams, plus the open registry and schema standard that makes that decoding
+> canonical. This document describes the planned work in concrete terms. Dates
+> are targets, not guarantees.
 >
 > **Legend.** `[x]` shipped on `main` today · `[-]` in flight · `[ ]` planned.
 >
@@ -13,15 +14,41 @@
 
 ---
 
+## What Orbital is (and is not)
+
+Orbital is not a runtime, not a payments product, and not an identity layer.
+It is a compounding loop:
+
+1. A contract's event schema gets **registered** in the ABI registry.
+2. `orbital codegen` **embeds** those registry types directly in downstream
+   codebases, so the schema travels with the code that consumes it.
+3. Real usage surfaces **community labels and taxonomy corrections** —
+   `swap.executed` instead of a raw topic hash, a verified deployer attribution.
+4. Richer semantics make the registry **canonical** — the place a contract's
+   event shape is defined, not just one place it happens to be documented.
+5. A **SEP-governed schema** becomes the format other tools emit against,
+   closing the loop: registration is now worth doing because the standard it
+   feeds is the one everyone reads.
+
+Everything on this roadmap exists to serve that loop. Everything else —
+payments, identity, agent infrastructure, intent compilers — is out of scope
+and lives in the [Frozen](#frozen--out-of-scope-until-the-core-thesis-is-proven)
+section below, not on the active roadmap.
+
+---
+
 ## At a glance
 
 | Phase | Theme | Tag | Target gate | Status |
 |---|---|---|---|---|
 | **Phase 0 — Foundation** | Typed SDKs for Stellar classic operations | `v0.1.0` | `pnpm -r typecheck && pnpm test` green; tag pushed; CHANGELOG entry shipped | 🟢 **Released 2026-05-29** |
-| **Phase 1 — Production SDK** | Soroban + cursor persistence + stability pledge | `v1.0.0` | `pnpm publish -r --filter "./packages/*"` succeeds; STABILITY.md merged; Soroban e2e test green | 🟡 **In progress** — Soroban subscription, ABI registry client, and cursor/retry persistence shipped; stability pledge + SEP draft outstanding |
-| **Phase 2 — SDK Ecosystem** | `@orbital-stellar/hooks`, `@orbital-stellar/payments`, `@orbital-stellar/auth`, first SEP | `v2.0.0` | First SEP submission accepted or under review by SDF; `useBalance` + `useTransaction` on npm | ⚪ 2027 |
-| **Phase 3 — Trust & Agent Layer** | x402, agent-sdk, intent compiler, shadow-fork | `v3.0.0` | x402 reference deployed; intent compiler OSS; ≥1,000 agent integrations | ⚪ 2028+ |
-| **Phase 4 — Protocol Permanence** | Identity layer, reactor library, 10+ SEPs | n/a | 10 SEPs authored or co-authored; Orbital identity in `@orbital-stellar/auth` ≥80% of major Stellar apps | ⚪ long-term |
+| **Phase 1 — Production SDK** | Soroban + cursor persistence + stability pledge | `v1.0.0` | `pnpm publish -r --filter "./packages/*"` succeeds; STABILITY.md merged; Soroban e2e test green | 🟡 **In progress** — STABILITY.md merged (this PR); starter boilerplates + `v1.0.0` tag outstanding |
+| **Phase 2 — The Decoding Standard** | SEP draft, `orbital codegen`, semantic layer, hosted registry | `v1.x` | SEP draft submitted; `orbital codegen` published and used in all three starter boilerplates; ≥25 contracts with registered verified schemas; hosted registry serving reads in production | ⚪ 2026 H2 |
+| **Phase 3 — Anchor Events** | SEP-24/31 lifecycle events, `@orbital-stellar/anchor-sdk` | `v2.0.0` | `@orbital-stellar/anchor-sdk` on npm; SEP-24 + SEP-31 lifecycle events normalized into the standard taxonomy; ≥1 named anchor consuming it in production | ⚪ 2027 H1 |
+
+The former "Trust & Agent Layer" and "Protocol Permanence" phases are not
+gone — they are preserved verbatim in the
+[Frozen](#frozen--out-of-scope-until-the-core-thesis-is-proven) section below.
 
 ---
 
@@ -74,7 +101,7 @@
 
 **Goal:** a stability-pledged `v1.0` that teams can build production systems on.
 
-**Release gate:** `pnpm publish -r --filter "./packages/*"` succeeds against npm with `version: "1.0.0"`; `STABILITY.md` merged with documented semver contract; Soroban subscription e2e test passing against testnet RPC; M1–M6 in [`docs/proposal.md`](./docs/proposal.md) all check out. Waves 1.1–1.3 below have shipped; the gate itself remains open pending the stability pledge (Wave 1.5).
+**Release gate:** `pnpm publish -r --filter "./packages/*"` succeeds against npm with `version: "1.0.0"`; `STABILITY.md` merged with documented semver contract; Soroban subscription e2e test passing against testnet RPC; M1–M6 in [`docs/proposal.md`](./docs/proposal.md) all check out. Waves 1.1–1.3 below have shipped; Wave 1.5 is now down to boilerplates and the tag.
 
 ### Wave 1.1 — Soroban event subscription
 
@@ -83,12 +110,17 @@
 - [x] `engine.subscribeContract({ contractId, topics })` API
 - [x] Topic filter and contract ID filter
 
-### Wave 1.2 — ABI Registry
+### Wave 1.2 — ABI Registry (client machinery only)
+
+This wave ships the **client** side of the registry — discovery, decoding, and
+codegen primitives. The schema standard, hosted service, and semantic layer
+that make the registry canonical move to Phase 2, where they belong alongside
+the SEP draft.
 
 - [x] `@orbital-stellar/abi-registry` client package
-- [ ] Schema spec published as a draft SEP
-- [ ] Hosted registry service (operated; client is MIT — see [`docs/open-source-policy.md`](./docs/open-source-policy.md))
+- [x] On-chain `contractspec` discovery (`discoverContract`, `fetchContractCode`, `parseContractSpec`, `xdrToSpec`)
 - [x] `decodedData` field on `contract.emitted` for registered contracts
+- [x] Type-generation primitives (`generate.ts`) — the foundation `orbital codegen` builds on in Wave 2.2
 
 ### Wave 1.3 — Cursor persistence and replay primitives
 
@@ -106,57 +138,82 @@
 
 - [ ] Starter boilerplates: `orbital-next-starter`, `orbital-express-starter`, `orbital-anchor-starter`
 - [x] `pnpm add @orbital-stellar/pulse-core` works against npm
-- [ ] `STABILITY.md` — semver contract, deprecation window (6 months), breaking-change policy
+- [x] `STABILITY.md` — semver contract, deprecation window (6 months), breaking-change policy
 - [ ] `v1.0.0` git tag with full release notes
 
 ---
 
-## Phase 2 — SDK Ecosystem (`v2.x`, 2027)
+## Phase 2 — The Decoding Standard (`v1.x`, 2026 H2)
 
-**Goal:** own the full Stellar developer SDK surface with a coherent, composable package family.
+**Goal:** make the registry the canonical source of truth for what a Soroban contract's events mean — not just a convenience client.
 
-**Release gate:** first SEP submission accepted or under review by SDF; at least three data hooks (`useBalance`, `useTransaction`, `useAccount`) shipped to npm under `@orbital-stellar/hooks`; reference reactor contract published.
+**Release gate:** SEP draft submitted to `stellar/stellar-protocol`; `orbital codegen` published to npm and used in all three starter boilerplates; ≥25 contracts with registered verified schemas; hosted registry serving reads in production.
 
-- [ ] **`@orbital-stellar/hooks`** — complete data-hook library: `useAccount`, `useBalance`, `useTransaction`, `useOrderBook`, full account activity surface
-- [ ] **`@orbital-stellar/payments`** — transaction primitives: send, receive, path payment, payroll batch, with typed results
-- [ ] **`@orbital-stellar/auth`** — embedded wallets via WebAuthn/passkeys, fee sponsorship, WalletConnect
-- [ ] **`@orbital-stellar/analytics`** — client library and event-volume reference dashboards
-- [ ] **Reactor contracts** — reference SDK and library of Soroban Rust contracts that react to events from other contracts
-- [ ] **First SEP submission** — formalize the event normalization format so other implementations can interoperate
+### Wave 2.1 — SEP draft
+
+This is the **highest-leverage item on the roadmap.** Everything else in this
+phase is either infrastructure for it or evidence that it works.
+
+- [ ] Draft SEP for a standardized Soroban event schema and registry verification spec
+- [ ] Reference-implementation checklist mapping every SEP clause to code in this repo
+- [ ] Submit as a draft PR to `stellar/stellar-protocol`
+
+### Wave 2.2 — `orbital codegen`
+
+- [ ] CLI that takes a contract ID and emits TypeScript types, typed event guards, and `useContractEvent<T>` hooks from the registry schema — building on the existing `generate.ts` in `packages/abi-registry`
+- [ ] `orbital.config.ts` contract manifest so regeneration is one CI command
+- [ ] Watch mode
+- [ ] Generated output committed in all three starter boilerplates
+
+### Wave 2.3 — Semantic layer
+
+- [ ] Human-readable event taxonomy on top of raw topics (e.g. `swap.executed`, `loan.liquidated`) with community-submitted mappings
+- [ ] Entity labels — verified contract → protocol/deployer/asset-issuer attribution — with a public submission and review flow
+- [ ] Labels and taxonomy published as **open data** (see [`docs/open-source-policy.md`](./docs/open-source-policy.md) — the data is open, the operated service is the product)
+
+### Wave 2.4 — Hosted registry (operated)
+
+- [ ] Hosted read API for schemas, taxonomy, and labels (client stays MIT)
+- [ ] Verification pipeline cross-checking submitted schemas against on-chain `contractspec`
+- [ ] Public registry explorer page in `apps/web`
 
 ---
 
-## Phase 3 — Trust & Agent Layer (`v3.x`, 2028+)
+## Phase 3 — Anchor Events (`v2.0.0`, 2027 H1)
 
-**Goal:** turn event subscriptions into programmable intent pipelines and capture the AI-agent economy on Stellar.
+**Goal:** extend the typed event taxonomy across the SEP-24 / SEP-31 anchor lifecycle, so compliance and audit tooling gets the same normalized-stream treatment as on-chain events.
 
-**Release gate:** `@orbital-stellar/x402` middleware deployed in a public reference application; intent compiler OSS published; ≥1,000 agent integrations recorded against `@orbital-stellar/agent-sdk`.
+**Release gate:** `@orbital-stellar/anchor-sdk` on npm; SEP-24 and SEP-31 lifecycle events normalized into the standard taxonomy; at least one named anchor consuming it in production.
 
-- [ ] **`@orbital-stellar/x402`** — Express/Next.js middleware for payment-gated API access via the HTTP 402 / x402 protocol
-- [ ] **`@orbital-stellar/agent-sdk`** — payment client for autonomous AI agents; integrates with x402 for agent-to-agent and agent-to-service payments on Stellar
-- [ ] **`@orbital-stellar/anchor-sdk`** — client library for SEP-24 and SEP-31 lifecycle events
-- [ ] **Intent compiler** — declare "when X happens, do Y" as a typed intent; the compiler produces a webhook + reactor contract + replay policy
-- [ ] **Shadow-Fork simulator (OSS core)** — fork any ledger state, inject hypothetical operations, replay Soroban invocations
-- [ ] **Additional SEPs** — reactor contract spec, intent schema, attestation format
+- [ ] **`@orbital-stellar/anchor-sdk`** — typed client for SEP-24 interactive deposit/withdrawal and SEP-31 cross-border payment lifecycle events
+- [ ] **Lifecycle taxonomy** — `anchor.deposit.*`, `anchor.withdrawal.*`, `anchor.payment.*` mapped to the SEP-defined status machines
+- [ ] **Replay-safe delivery recipes** — cursor + retry queue composition documented in [`docs/COOKBOOK.md`](./docs/COOKBOOK.md) for audit-trail use cases
+- [ ] **Design-partner program** — 2–3 anchors or Soroban protocol teams co-designing the surface before `v2.0.0` freezes
 
 ---
 
-## Phase 4 — Protocol Permanence (long-term)
+## Frozen — out of scope until the core thesis is proven
 
-**Goal:** become the protocol layer on Stellar that other implementations follow.
+These items are **frozen, not deferred.** No issues, no waves, no partial
+implementations accepted against any row below while Phases 1–3 are open.
 
-**Release gate:** ten SEPs authored or co-authored across identity, events, reactors, x402, compliance reporting, attestation formats; Orbital identity layer adopted as the standard sign-in primitive in ≥80% of major Stellar applications.
+| Frozen item | Why frozen |
+|---|---|
+| `@orbital-stellar/payments`, `@orbital-stellar/auth` (passkeys/WalletConnect), identity layer | Different product category; competes with wallet SDKs and SDF-funded smart-account work. "Identity in 80% of Stellar apps" was a vanity target, not a defensible moat. |
+| `@orbital-stellar/x402`, `@orbital-stellar/agent-sdk` | SDF is shipping first-party x402 tooling. Revisit only if agent payments create demand for typed agent **event** streams — that's our actual lane, not the payment rail itself. |
+| Intent compiler, shadow-fork simulator, reactor contracts | Each of these is a standalone company in its own right. None of them advances the registry loop. |
+| `@orbital-stellar/analytics` dashboards | Belongs to the operated service per [`docs/open-source-policy.md`](./docs/open-source-policy.md), not the SDKs. |
+| "10+ SEPs authored" | One accepted SEP that others implement beats ten drafts sitting in review. The target is one. |
 
-- [ ] **Identity layer** — reference implementation for passkey-based embedded wallets and federated Stellar addresses
-- [ ] **Reactor-contract library** — community-contributed library of hundreds of composable reactor patterns, maintained as an OSS standard
-- [ ] **10+ SEPs** — spanning identity, events, reactors, x402, compliance reporting, attestation formats
+Unfreezing any row requires the Phase 2 gate met **and** the Phase 3 gate met
+**and** a maintainer-signed rationale recorded in [`CHANGELOG.md`](./CHANGELOG.md).
 
 ---
 
 ## What's not on this roadmap
 
 - Support for non-Stellar networks
-- Hosted / managed infrastructure (the hosted runtime is a separate product per [`docs/open-source-policy.md`](./docs/open-source-policy.md), not part of this open-source repository)
+- Hosted / managed infrastructure beyond the registry read API (the hosted runtime is a separate product per [`docs/open-source-policy.md`](./docs/open-source-policy.md), not part of this open-source repository)
 - Operational dashboards and admin UIs (these belong in deployment tooling, not the SDKs)
 
 ---
@@ -165,4 +222,4 @@
 
 If you have a feature request or want to propose a change to the roadmap, open a [GitHub Discussion in the Ideas category](https://github.com/determined-001/orbital_stellar/discussions/categories/ideas). Roadmap items that attract significant community interest move up in priority.
 
-Roadmap changes that **add scope** (new waves, new packages, new phase items) follow the normal PR flow. Roadmap changes that **remove or postpone shipped scope** require a maintainer sign-off and a note in [`CHANGELOG.md`](./CHANGELOG.md) under `### Changed`.
+Roadmap changes that **add scope** (new waves, new packages, new phase items) follow the normal PR flow. Roadmap changes that **remove or postpone shipped scope** require a maintainer sign-off and a note in [`CHANGELOG.md`](./CHANGELOG.md) under `### Changed`. Proposals targeting a [Frozen](#frozen--out-of-scope-until-the-core-thesis-is-proven) item will be closed with a pointer to this document.

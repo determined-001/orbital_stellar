@@ -13,7 +13,24 @@ Per-package changelogs live in each package directory.
 
 ### Added
 
+- `STABILITY.md` — strict semver on the public API of all `@orbital-stellar/*`
+  packages, wire/data contracts covered (webhook headers, HMAC scheme, retry
+  semantics, `NormalizedEvent` JSON shape, cursor format, registry schema
+  format), a 6-month deprecation window, and a documented security exception.
+  Closes the outstanding Wave 1.5 release-gate item.
+
 ### Changed
+
+- **Roadmap refocused on the decoding standard.** Maintainer sign-off for
+  scope removal per `ROADMAP.md`'s own contribution rules. The former Phase 2
+  (SDK Ecosystem) is replaced by Phase 2 — The Decoding Standard (SEP draft,
+  `orbital codegen`, semantic layer, hosted registry). `@orbital-stellar/anchor-sdk`
+  is pulled forward into a new Phase 3 — Anchor Events. The former Phase 3
+  (Trust & Agent Layer: x402, agent-sdk, intent compiler, shadow-fork) and
+  Phase 4 (Protocol Permanence: identity layer, reactor library, 10+ SEPs)
+  are frozen and moved to an explicit Frozen section in `ROADMAP.md` with
+  per-item rationale and an unfreeze procedure. No shipped code is removed —
+  planned scope only.
 
 ### Fixed
 
