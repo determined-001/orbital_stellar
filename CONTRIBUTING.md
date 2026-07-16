@@ -146,6 +146,8 @@ Orbital participates in the [Drips Stellar Wave Program](https://drips.network).
 | `complexity:medium` | 150 |
 | `complexity:high` | 200 |
 
+**Frozen-scope eligibility.** Issues targeting scope frozen in [ROADMAP.md's Frozen section](./ROADMAP.md#frozen--out-of-scope-until-the-core-thesis-is-proven) — `@orbital-stellar/payments`, `@orbital-stellar/auth`, identity, `x402`, `agent-sdk`, the intent compiler, shadow-fork, reactor contracts, `@orbital-stellar/analytics`, and "10+ SEPs" meta-work — are not eligible for Wave points. In-flight frozen-scope work as of the 2026-07-16 roadmap refocus is honored in full per the `grace-window` comment on the affected issue or PR; new work against frozen scope will not be accepted. Going forward, the highest-point areas are the roadmap's Phase 2 items (SEP draft, `orbital codegen`, semantic layer, hosted registry) and Phase 3 (`@orbital-stellar/anchor-sdk`).
+
 **To claim an issue:**
 1. Comment on the issue to signal intent.
 2. A maintainer will assign it to you.
