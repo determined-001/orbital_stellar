@@ -56,8 +56,9 @@ Everything below is in `packages/` or `apps/` today, or will be added to one of 
 ### Remaining Phase 1 work
 
 - Starter boilerplates (`orbital-next-starter`, `orbital-express-starter`, `orbital-anchor-starter`)
-- `v1.0` stability pledge (`STABILITY.md` - semver contract, deprecation window)
-- ABI Registry schema published as a draft SEP; hosted registry service (see [ABI Registry](#abi-registry) below)
+- `v1.0.0` git tag with full release notes
+
+`v1.0` stability pledge (`STABILITY.md`) has shipped - see [`STABILITY.md`](../STABILITY.md). The ABI Registry schema SEP draft and hosted registry service moved to Phase 2 (below) as of the roadmap refocus - see [ROADMAP.md](../ROADMAP.md).
 
 ### ABI Registry
 
@@ -68,23 +69,31 @@ Everything below is in `packages/` or `apps/` today, or will be added to one of 
 
 The hosted verification / publishing service remains a separate Cloud product. The schema, client, and decoder helpers in this repository stay open.
 
-### Phase 2 (2027)
+### Phase 2 - The Decoding Standard (2026 H2)
 
-- `@orbital-stellar/hooks` - `useAccount`, `useBalance`, `useTransaction`, `useOrderBook`
-- `@orbital-stellar/payments` - send, receive, path-payment, payroll-batch primitives
-- `@orbital-stellar/auth` - WebAuthn / passkey embedded wallet SDK
-- `@orbital-stellar/analytics` - client library + event-volume reference dashboards
-- First SEP submission - formalized event normalization format
-- Reference reactor contracts (Soroban Rust, open for anyone to fork)
+- SEP draft - standardized Soroban event schema + registry verification spec, submitted to `stellar/stellar-protocol`
+- `orbital codegen` - CLI + `orbital.config.ts` manifest that emits TypeScript types, typed event guards, and `useContractEvent<T>` hooks from the registry schema
+- Semantic layer - event taxonomy (`swap.executed`, `loan.liquidated`, …) and entity labels, published as **open data**; the hosted read API that serves them is the operated product (see [Hosted ABI Registry](#what-orbital-monetizes-never-open-sourced) below)
 
-### Phase 3 (2028+)
+### Phase 3 - Anchor Events (2027 H1)
 
-- `@orbital-stellar/x402` - Express / Next.js middleware for payment-gated API access
-- `@orbital-stellar/agent-sdk` - payment client for autonomous AI agents
-- `@orbital-stellar/anchor-sdk` - SEP-24 / SEP-31 lifecycle client
-- Intent compiler - at maturity, the DSL + graph runtime become OSS
-- Shadow-fork simulator OSS core
-- ZK-proof generation library (Noir / RiscZero circuits) - runnable locally
+- `@orbital-stellar/anchor-sdk` - typed client for SEP-24 / SEP-31 lifecycle events
+
+### Frozen - not scheduled while Phases 1–3 are open
+
+These were previously listed as future MIT packages. They remain MIT-eligible in principle (the rule of thumb below still applies if they are ever unfrozen), but they are not on the active roadmap - see [ROADMAP.md's Frozen section](../ROADMAP.md#frozen--out-of-scope-until-the-core-thesis-is-proven) for the rationale and the unfreeze procedure.
+
+- `@orbital-stellar/payments` - send, receive, path-payment, payroll-batch primitives *(frozen - see ROADMAP.md)*
+- `@orbital-stellar/auth` - WebAuthn / passkey embedded wallet SDK *(frozen - see ROADMAP.md)*
+- `@orbital-stellar/analytics` - client library + event-volume reference dashboards *(frozen - see ROADMAP.md)*
+- `@orbital-stellar/x402` - Express / Next.js middleware for payment-gated API access *(frozen - see ROADMAP.md)*
+- `@orbital-stellar/agent-sdk` - payment client for autonomous AI agents *(frozen - see ROADMAP.md)*
+- Identity layer - passkey-based embedded wallets, federated Stellar addresses *(frozen - see ROADMAP.md)*
+- Intent compiler - DSL + graph runtime *(frozen - see ROADMAP.md)*
+- Shadow-fork simulator *(frozen - see ROADMAP.md)*
+- Reference reactor contracts (Soroban Rust) *(frozen - see ROADMAP.md)*
+
+Two items from the prior list are not addressed by the current roadmap at all (neither active nor frozen) - `@orbital-stellar/hooks` (`useAccount`, `useBalance`, `useTransaction`, `useOrderBook`) and the ZK-proof generation library (Noir / RiscZero circuits). They are paused pending a future roadmap decision.
 
 **Rule of thumb for what lands here:** if a competent engineer would expect to `pnpm add` it and use it in a private project, it's MIT.
 
@@ -153,11 +162,14 @@ A short decision aid before you open a PR.
 - Hosted dashboards beyond the marketing-demo sandbox
 - Anything that would require Orbital to operate infrastructure on the contributor's behalf
 
-### Uncertain - please discuss in an issue first
+### Frozen - not accepted while Phases 1–3 are open
 
-- Intent DSL / graph compiler interfaces (Phase 3; the **runtime** is OSS at maturity, the **hosted compilation service** is not)
-- Shadow-fork simulator extensions (Phase 3; OSS core, hosted SaaS version closed)
-- Reactor contract reference library (Phase 2; reference contracts are OSS, the certification / accreditation service is closed)
+- Intent DSL / graph compiler interfaces
+- Shadow-fork simulator extensions
+- Reactor contract reference library
+- `@orbital-stellar/payments`, `@orbital-stellar/auth`, identity layer, `@orbital-stellar/x402`, `@orbital-stellar/agent-sdk`, `@orbital-stellar/analytics`
+
+These are frozen per [ROADMAP.md](../ROADMAP.md#frozen--out-of-scope-until-the-core-thesis-is-proven), not merely deprioritized - PRs against them will be closed with a pointer to that section rather than reviewed.
 
 If you are not sure where a PR falls, open an issue with the `policy-question` label before investing time. We will tell you in 48 hours.
 
@@ -180,9 +192,9 @@ These are honest uncertainties as of `v0.1.0`. They will be resolved in writing 
 
 | Question | Status |
 |---|---|
-| Will the Soroban ABI Registry **data** (the published contract schemas) be a public good or a paid dataset? | The **client** and **schema** are MIT. The **hosted service** is currently planned as a free public good, with a paid tier for high-volume integrators. Final structure TBD by Phase 1 close. |
-| Will the intent compiler ship as runnable-locally OSS at maturity (Phase 3)? | Current intent is yes - see [`ROADMAP.md`](../ROADMAP.md) Phase 3. Subject to scope decomposition closer to Phase 2 close. |
-| Will the reactor-contract certification service be Orbital-operated or community-governed? | TBD. The contracts themselves are MIT; the certification service may be operated commercially or via an Orbital Foundation. |
+| Will the Soroban ABI Registry **data** (schemas, taxonomy, labels) be a public good or a paid dataset? | The **client**, **schema**, and **taxonomy/label data** are committed as open data under Phase 2 (Wave 2.3). The **hosted read API** is currently planned as a free-tier public good, with a paid tier for high-volume integrators. Final structure TBD by Phase 2 close. |
+| Will the intent compiler ship as runnable-locally OSS at maturity? | Frozen - not scheduled. See [ROADMAP.md's Frozen section](../ROADMAP.md#frozen--out-of-scope-until-the-core-thesis-is-proven). Revisit only if unfrozen per that section's procedure. |
+| Will the reactor-contract certification service be Orbital-operated or community-governed? | Frozen - not scheduled. See [ROADMAP.md's Frozen section](../ROADMAP.md#frozen--out-of-scope-until-the-core-thesis-is-proven). |
 
 When these resolve, the row will be moved to §2 or §3 as appropriate.
 

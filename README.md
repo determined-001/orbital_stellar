@@ -10,9 +10,9 @@
 
 > **Status**: `v0.1.0` on npm &nbsp;·&nbsp; **Networks**: testnet + mainnet &nbsp;·&nbsp; **License**: MIT
 
-**Stellar's biggest developer-experience gap isn't a missing API - it's that Horizon's firehose still requires every team to build their own event delivery.**
+**Stellar's biggest developer-experience gap is that Soroban events arrive as raw, untyped payloads with no shared vocabulary - every team invents its own decoding, and no two teams agree on what a `swap` or a `liquidation` even is.**
 
-Orbital ships that delivery layer once, openly: a typed event engine that normalizes Horizon output into application-shaped events, HMAC-signed webhook delivery with retry and edge-runtime verification, a shared ABI registry for Soroban schemas, and React hooks for live data in the browser. Four MIT-licensed packages, designed to be composed.
+Orbital ships the typed event layer once, openly: an open ABI/event-schema registry that makes decoding canonical, a typed event engine that normalizes Horizon and Soroban output into application-shaped events, codegen that puts those types into your codebase, plus composable webhook delivery and React hooks. Four MIT-licensed packages, designed to be composed.
 
 ---
 
@@ -35,12 +35,13 @@ Orbital ships that delivery layer once, openly: a typed event engine that normal
 
 Stellar's official APIs give you the raw firehose - and not much else:
 
-- **Horizon SSE** drops on idle, requires backoff, surfaces raw operations rather than application-friendly events - and is [deprecated in favor of Stellar RPC](https://developers.stellar.org/docs/data/apis/migrate-from-horizon-to-rpc).
-- **Stellar RPC** keeps only ~7 days of history and has no native subscription model - even with Protocol 23's unified event stream, delivery is still yours to build.
+- **Soroban contract events** decode to raw topic/value XDR with no shared schema - every team writes its own one-off decoder, and there's no canonical place to look up what a given contract's events mean.
+- **Horizon SSE** drops on idle, requires backoff, and surfaces raw operations rather than application-friendly events.
+- **Stellar RPC** keeps only ~7 days of Soroban history and has no native subscription model.
 - **Webhooks** aren't part of the platform - every project rebuilds HMAC signing, retry, SSRF guards, and edge-runtime verification from scratch.
 - **React integration** doesn't exist - every dashboard rebuilds SSE plumbing and lifecycle management.
 
-Every serious Stellar app - wallet, dashboard, anchor integration, agent - re-solves the same problem. Orbital ships those primitives once so you can `pnpm add` them instead of rebuilding them.
+Every serious Stellar app - wallet, dashboard, anchor integration, analytics tool - re-solves the same problem. Orbital ships those primitives once, and the registry that makes decoding canonical, so you can `pnpm add` them instead of rebuilding them.
 
 The longer-form thesis, the multi-year vision, and the SCF grant case live in [`PROGRESS.md`](PROGRESS.md), [`ROADMAP.md`](ROADMAP.md), and `docs/proposal.md` (in progress).
 
@@ -183,7 +184,8 @@ The reference composition - a Next.js route handler that subscribes to an addres
 | Document | What it covers |
 |---|---|
 | [`PROGRESS.md`](PROGRESS.md) | Phase 0 completion status, project structure, architecture overview |
-| [`ROADMAP.md`](ROADMAP.md) | Multi-year plan (Phase 0 → Phase 3): the decoding standard, SEP draft, anchor events |
+| [`ROADMAP.md`](ROADMAP.md) | The decoding-standard thesis, Phase 0 → Phase 3 plan, and the Frozen section for out-of-scope items |
+| [`STABILITY.md`](STABILITY.md) | The `v1.0` semver pledge - covered API surface, wire/data contracts, deprecation policy |
 | [`CHANGELOG.md`](CHANGELOG.md) | Release notes (top-level; per-package changelogs roll up) |
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | Setup, coding standards, PR process, Drips Wave Program |
 | [`SECURITY.md`](SECURITY.md) | Vulnerability disclosure policy |
@@ -207,11 +209,11 @@ Two paths:
 ## Roadmap
 
 - **Shipped** - Full classic operation taxonomy, edge-runtime webhook verification, React hooks, Soroban event subscription, ABI registry client, cursor persistence, durable retry queues, npm publish ✅
-- **v1.1.0** - Unified event ingestion via Stellar RPC (CAP-67 / Protocol 23), Horizon SSE demoted to fallback transport
-- **2026 H2 (Phase 2)** - The decoding standard: SEP draft building on SEP-48, `orbital codegen`, semantic taxonomy + entity labels as open data, hosted registry
-- **2027 H1 (Phase 3)** - `@orbital-stellar/anchor-sdk`, SEP-24/31 lifecycle events
+- **In progress (Phase 1)** - `STABILITY.md` v1.0 semver pledge merged; starter boilerplates and the `v1.0.0` tag outstanding
+- **2026 H2 (Phase 2 - The Decoding Standard)** - SEP draft for a standardized Soroban event schema, `orbital codegen`, the semantic layer (event taxonomy + entity labels), hosted registry
+- **2027 H1 (Phase 3 - Anchor Events)** - `@orbital-stellar/anchor-sdk`, SEP-24/31 lifecycle events normalized into the standard taxonomy
 
-Full multi-year plan in [`ROADMAP.md`](ROADMAP.md).
+Full multi-year plan, plus what's explicitly frozen out of scope, in [`ROADMAP.md`](ROADMAP.md).
 
 ---
 

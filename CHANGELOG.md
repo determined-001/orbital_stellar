@@ -31,6 +31,9 @@ Per-package changelogs live in each package directory.
   are frozen and moved to an explicit Frozen section in `ROADMAP.md` with
   per-item rationale and an unfreeze procedure. No shipped code is removed -
   planned scope only.
+- Docs aligned with the refocused roadmap: README reframed around the
+  decoding standard; open-source-policy and proposal forward-references
+  updated; frozen-scope references removed from forward-looking docs.
 
 ### Fixed
 

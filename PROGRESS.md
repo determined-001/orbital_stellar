@@ -1,44 +1,17 @@
 # Orbital: Progress & Status Report
 
-**Last Updated:** 2026-07-06
+**Last Updated:** 2026-07-16
 **Project Status:** Core SDK family - Shipped ✅
 
 ---
 
-## Executive Summary
+## Status
 
-Orbital is **Stellar's open-source real-time event SDK family** - four MIT-licensed packages on npm that give any Stellar developer typed event subscriptions (Horizon and Soroban), signed webhook delivery with durable retry, typed ABI decoding, and React hooks, without re-implementing the plumbing.
+Orbital is **the typed event layer for Stellar** - four MIT-licensed packages on npm that give any Stellar developer typed event subscriptions (Horizon and Soroban), signed webhook delivery with durable retry, typed ABI decoding, and React hooks, without re-implementing the plumbing.
 
-**Current Status:** The full classic operation taxonomy, Soroban contract event subscription, cursor persistence, durable webhook retry queues, the ABI registry client, and edge-runtime webhook verification are all shipped and tested. Next up is the Phase 2 SDK family (`@orbital-stellar/hooks`, `@orbital-stellar/payments`, `@orbital-stellar/auth`) - see [`ROADMAP.md`](ROADMAP.md).
+For phase-by-phase status and release gates, see [`ROADMAP.md`](ROADMAP.md)'s [at-a-glance table](ROADMAP.md#at-a-glance). Short version: Phase 0 (Foundation) shipped 2026-05-29; Phase 1 (Production SDK) is in progress - `STABILITY.md` has merged, starter boilerplates and the `v1.0.0` tag are the only items left; Phase 2 (The Decoding Standard) and Phase 3 (Anchor Events) are next. What's explicitly out of scope while those phases are open - and why - lives in ROADMAP.md's [Frozen section](ROADMAP.md#frozen--out-of-scope-until-the-core-thesis-is-proven).
 
 **OSS posture:** SDKs are MIT and free indefinitely. Production hosting is the separately-built **Orbital Cloud** managed runtime, in development. Until Cloud ships, the SDKs run great in any Node.js or edge backend you operate.
-
----
-
-## What Has Been Completed
-
-### Core SDK family ✅
-
-All four packages are feature-complete and ready for use against testnet and mainnet today:
-
-| Component | Status | Details |
-|---|---|---|
-| Classic operation event streaming via Horizon SSE | ✅ Done | Horizon subscription, automatic reconnection with AWS Full Jitter backoff |
-| Full classic operation taxonomy | ✅ Done | Payments (received/sent/self), account create/merge/bump-sequence, trustlines (change/allow/set_flags), DEX offers (created/updated/deleted), claimable balances (created/claimed), liquidity pools (deposit/withdraw), `manage_data` (set/cleared) |
-| Soroban contract event subscription | ✅ Done | `engine.subscribeContract({ contractId, topics })` via Stellar RPC, `contract.invoked` / `contract.emitted` normalized events |
-| Cursor persistence | ✅ Done | Pluggable `CursorStore` adapters - memory, file, Postgres, Redis, S3 - for resumable streams across restarts |
-| ABI registry client | ✅ Done | `AbiRegistryClient` / `LocalAbiRegistryClient`, typed `decodedData` enrichment on `contract.emitted`, schema validation |
-| HMAC-signed webhook delivery | ✅ Done | Retry, exponential backoff, concurrent-retry caps, configurable timeout |
-| Durable webhook retry queues | ✅ Done | Pluggable `RetryQueue` adapters - memory, Redis, SQS - survive process restarts |
-| Edge-runtime webhook verification | ✅ Done | `verifyWebhookEdge` for Cloudflare Workers and Vercel Edge (Web Crypto API) |
-| React hooks (`useStellarEvent`, `useContractEvent`, `useStellarPayment`, `useStellarActivity`, `useStellarAddresses`, `useStellarHistory`) | ✅ Done | Type-narrowing generic on `useStellarEvent`, multi-event subscription, stable config rules |
-| Custom Horizon URL override | ✅ Done | `CoreConfig.horizonUrl` for self-hosted nodes / regional mirrors / futurenet |
-| Engine lifecycle notifications | ✅ Done | `engine.reconnecting`, `engine.reconnected`, `engine.rate_limited`, `engine.stopped` |
-| Public marketing + documentation site (`apps/web`) | ✅ Done | Next.js 16, Tailwind CSS 4. Hosts the docs, the sandboxed `/api/events/[address]` SSE demo, and the `/api/webhook-sample` signing demo. |
-| Testnet + mainnet support | ✅ Done | Network selector via `network: "mainnet" \| "testnet"` |
-| CI/CD pipeline | ✅ Done | GitHub Actions on Node 20 and 22, CodeQL, Dependabot |
-| npm publish | ✅ Done | All four packages live under the `@orbital-stellar` scope |
-| MIT License & open-source setup | ✅ Done | `LICENSE`, `CONTRIBUTING.md`, `SECURITY.md` |
 
 ---
 
@@ -171,27 +144,9 @@ Edge-runtime verify       useStellarPayment / useStellarActivity    for contract
 
 ---
 
-## Scope Boundaries
+## Scope boundaries and what's next
 
-Not yet in this repository, tracked for later phases:
-
-1. **Production hosting** - multi-region orchestration, persistent registries, leader election. Belongs in **Orbital Cloud** (separate closed product), not in this repository.
-2. **`@orbital-stellar/hooks`, `@orbital-stellar/payments`, `@orbital-stellar/auth`** - Phase 2 SDK family. See [`ROADMAP.md`](./ROADMAP.md).
-3. **`@orbital-stellar/x402`, `@orbital-stellar/agent-sdk`** - Phase 3. See [`ROADMAP.md`](./ROADMAP.md).
-4. **`v1.0` stability pledge** - formal semver contract, tracked in [`ROADMAP.md`](./ROADMAP.md).
-
----
-
-## Next Steps: Phase 2
-
-| Milestone | Target |
-|---|---|
-| **SDKs** | `@orbital-stellar/hooks`, `@orbital-stellar/payments`, `@orbital-stellar/auth` |
-| **Standards** | First SEP submission |
-| **Distribution** | Starter boilerplates (`next`, `express`, `anchor`) |
-| **Stability** | `v1.0` stability pledge - formal semver contract |
-
-See [`ROADMAP.md`](./ROADMAP.md) for the full multi-year vision and [`docs/proposal.md`](./docs/proposal.md) for the current SCF funding proposal.
+Production hosting - multi-region orchestration, persistent registries, leader election - belongs in **Orbital Cloud** (separate closed product), not in this repository. Everything else about what's shipped, in progress, planned, or explicitly frozen is tracked in [`ROADMAP.md`](./ROADMAP.md), including the [Frozen section](./ROADMAP.md#frozen--out-of-scope-until-the-core-thesis-is-proven) for items intentionally out of scope. See [`docs/proposal.md`](./docs/proposal.md) for the current SCF funding proposal.
 
 ---
 
