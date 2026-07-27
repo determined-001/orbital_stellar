@@ -53,3 +53,79 @@ jobs:
       - name: cargo build (release, wasm32v1-none)
         working-directory: contracts
         run: cargo build --release --target wasm32v1-none
+
+  verify-provenance:
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32v1-none
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: contracts
+
+      - uses: cargo-bins/cargo-binstall@main
+
+      - name: Install stellar-cli
+        run: cargo binstall -y stellar-cli@25.2.0
+
+      - name: cargo build (release, wasm32v1-none)
+        working-directory: contracts
+        run: cargo build --release --target wasm32v1-none
+
+      - name: Verify deployed provenance
+        working-directory: contracts
+        run: |
+          set -euo pipefail
+          
+          if [ ! -f deployed.testnet.json ]; then
+            echo "No deployed.testnet.json found. Skipping provenance verification."
+            exit 0
+          fi
+
+          REGISTRY_WASM="target/wasm32v1-none/release/orbital_abi_registry.wasm"
+          DEMO_WASM="target/wasm32v1-none/release/orbital_demo_emitter.wasm"
+
+          REGISTRY_ID=$(jq -r '.contracts.registry.contractId' deployed.testnet.json)
+          EXPECTED_HASH=$(jq -r '.contracts.registry.wasmHash' deployed.testnet.json)
+          DEMO_ID=$(jq -r '.contracts.demoEmitter.contractId' deployed.testnet.json)
+          EXPECTED_DEMO_HASH=$(jq -r '.contracts.demoEmitter.wasmHash' deployed.testnet.json)
+
+          ACTUAL_HASH=$(sha256sum "$REGISTRY_WASM" | awk '{print $1}')
+          ACTUAL_DEMO_HASH=$(sha256sum "$DEMO_WASM" | awk '{print $1}')
+
+          echo "registry: $EXPECTED_HASH" > expected_hashes.txt
+          echo "demoEmitter: $EXPECTED_DEMO_HASH" >> expected_hashes.txt
+
+          echo "registry: $ACTUAL_HASH" > actual_hashes.txt
+          echo "demoEmitter: $ACTUAL_DEMO_HASH" >> actual_hashes.txt
+
+          echo "==> Comparing local build against deployed.testnet.json..."
+          if ! diff -u expected_hashes.txt actual_hashes.txt; then
+            echo "::error::WASM hashes do not match deployed.testnet.json! Did you modify contracts without updating the deployment?"
+            exit 1
+          fi
+
+          echo "==> Fetching on-chain WASMs to verify they match..."
+          stellar contract fetch --id "$REGISTRY_ID" --network testnet --out-file onchain_registry.wasm
+          stellar contract fetch --id "$DEMO_ID" --network testnet --out-file onchain_demo.wasm
+
+          ONCHAIN_HASH=$(sha256sum onchain_registry.wasm | awk '{print $1}')
+          ONCHAIN_DEMO_HASH=$(sha256sum onchain_demo.wasm | awk '{print $1}')
+
+          echo "registry: $ONCHAIN_HASH" > onchain_hashes.txt
+          echo "demoEmitter: $ONCHAIN_DEMO_HASH" >> onchain_hashes.txt
+
+          echo "==> Comparing local build against on-chain network..."
+          if ! diff -u actual_hashes.txt onchain_hashes.txt; then
+            echo "::error::On-chain WASM hashes do not match local build! The network state has drifted or was maliciously altered."
+            exit 1
+          fi
+
+          echo "Provenance verification passed! (All hashes match)"
