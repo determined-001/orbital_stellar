@@ -173,6 +173,15 @@ function generateFromXdrContractSpec(spec: XdrContractSpec): GeneratedContractAr
     );
     schemas.push("});");
     schemas.push("");
+
+    schemas.push(
+      `export function is${interfaceName}(event: any): event is { functionName: "${eventName}", topics: any[], data: ${interfaceName} } {`,
+    );
+    schemas.push(
+      `  return event && event.functionName === "${eventName}" && ${schemaName}.safeParse(event.data).success;`,
+    );
+    schemas.push("}");
+    schemas.push("");
   }
 
   return {
@@ -384,6 +393,15 @@ function generateEventDeclarations(events: ReadonlyArray<EventSpec>): {
       ...event.data.map((f) => `  ${toCamelCase(f.name)}: ${mapContractSpecTypeToZod(f.type)},`),
     );
     schemas.push("});");
+    schemas.push("");
+
+    schemas.push(
+      `export function is${interfaceName}(event: any): event is { functionName: "${event.name}", topics: any[], data: ${interfaceName} } {`,
+    );
+    schemas.push(
+      `  return event && event.functionName === "${event.name}" && ${schemaName}.safeParse(event.data).success;`,
+    );
+    schemas.push("}");
     schemas.push("");
   }
 
