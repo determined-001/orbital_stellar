@@ -94,7 +94,7 @@ export async function generateBatchTypes(
 
   // Resolve all contract specs with detailed error context
   for (let i = 0; i < config.contracts.length; i++) {
-    const contractConfig = config.contracts[i];
+    const contractConfig = config.contracts[i]!; // Safe to assert non-null since we're within array bounds
     try {
       const { spec, source } = await resolveContractSpec(config, contractConfig);
       resolvedContracts.push({ config: contractConfig, spec, source });
@@ -111,7 +111,7 @@ export async function generateBatchTypes(
 
   // Generate types for each contract with detailed error context
   for (let i = 0; i < resolvedContracts.length; i++) {
-    const { config: contractConfig, spec, source } = resolvedContracts[i];
+    const { config: contractConfig, spec, source } = resolvedContracts[i]!; // Safe to assert non-null since we're within array bounds
     const contractName = contractConfig.name || contractConfig.contractId;
     const fileName = `${sanitizeFileName(contractName)}.ts`;
     const outputPath = join(outDir, fileName);
@@ -211,7 +211,7 @@ export async function checkForDrift(
     }> = [];
 
     for (let i = 0; i < config.contracts.length; i++) {
-      const contractConfig = config.contracts[i];
+      const contractConfig = config.contracts[i]!; // Safe to assert non-null since we're within array bounds
       try {
         const { spec, source } = await resolveContractSpec(config, contractConfig);
         resolvedContracts.push({ config: contractConfig, spec, source });
