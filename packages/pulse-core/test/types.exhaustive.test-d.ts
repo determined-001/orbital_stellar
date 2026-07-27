@@ -52,6 +52,7 @@ export function assertExhaustive(event: NormalizedEvent): string {
     case "lp.withdrawn":
     case "contract.invoked":
     case "contract.emitted":
+    case "anchor.transaction_status_changed":
       return event.type;
     default: {
       const _exhaustive: never = event;
@@ -112,6 +113,7 @@ export function assertExhaustiveNoDefault(event: NormalizedEvent): string {
     case "lp.withdrawn":
     case "contract.invoked":
     case "contract.emitted":
+    case "anchor.transaction_status_changed":
       return event.type;
   }
 }

@@ -392,6 +392,50 @@ export type AccountMergeEvent = {
   raw?: RawHorizonAccountMerge;
 };
 
+// ---------------------------------------------------------------------------
+// Anchor Events (SEP-24, SEP-31)
+// ---------------------------------------------------------------------------
+
+export type Sep24Status =
+  | "incomplete"
+  | "pending_user_transfer_start"
+  | "pending_user_transfer_complete"
+  | "pending_external"
+  | "pending_anchor"
+  | "pending_stellar"
+  | "pending_trust"
+  | "pending_user"
+  | "completed"
+  | "refunded"
+  | "expired"
+  | "no_market"
+  | "too_small"
+  | "too_large"
+  | "error";
+
+export type Sep31Status =
+  | "pending_sender"
+  | "pending_stellar"
+  | "pending_transaction_info_update"
+  | "pending_receiver"
+  | "pending_external"
+  | "completed"
+  | "error";
+
+export type AnchorTransactionEvent = {
+  type: "anchor.transaction_status_changed";
+  protocol: "sep24" | "sep31";
+  transaction_id: string;
+  status: string; // The normalized status, or just the raw status
+  protocol_status: Sep24Status | Sep31Status;
+  message?: string;
+  amount_in?: string;
+  amount_out?: string;
+  timestamp: string;
+  readonly timestampDate: Date;
+  raw?: unknown;
+};
+
 /**
  * A union of all normalized events supported by pulse-core.
  *
@@ -427,6 +471,7 @@ export type NormalizedEvent = (
   | LiquidityPoolWithdrawEvent
   | TrustAuthEvent
   | ContractEvent
+  | AnchorTransactionEvent
 ) & {
   /** Lazy, cached `Date` derived from `event.timestamp`. Non-enumerable; does not appear in JSON.stringify output. */
   readonly timestampDate: Date;
