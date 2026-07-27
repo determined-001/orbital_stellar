@@ -69,3 +69,20 @@ export type {
   SchemaFieldDiff,
   VerifySchemaOptions,
 } from "./verifySchema.js";
+
+// Configuration and codegen exports
+export { defineConfig, validateConfig, ConfigValidationError } from "./config.js";
+export type { OrbitalConfig, ContractConfig, LockFile, LockFileContract } from "./config.js";
+export { loadConfig, configExists, getConfigDirectory, ConfigLoadError } from "./configLoader.js";
+export {
+  loadLockFile,
+  saveLockFile,
+  createLockFile,
+  generateSpecHash,
+  detectDrift,
+  getLockFilePath,
+  formatDriftReport,
+  LockFileError,
+} from "./lockFile.js";
+export { generateBatchTypes, checkForDrift, BatchGenerationError } from "./batchGeneration.js";
+export type { BatchGenerationResult } from "./batchGeneration.js";
