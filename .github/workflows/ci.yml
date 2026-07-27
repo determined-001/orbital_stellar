@@ -159,3 +159,25 @@ jobs:
       # no manual dependency-order steps here.
       - name: Build apps/web
         run: pnpm --filter orbital/web run build
+
+  test-starters:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Check next-starter codegen
+        run: npx orbital codegen --check
+        working-directory: examples/next-starter
+      - name: Check express-starter codegen
+        run: npx orbital codegen --check
+        working-directory: examples/express-starter
+      - name: Check anchor-starter codegen
+        run: npx orbital codegen --check
+        working-directory: examples/anchor-starter
