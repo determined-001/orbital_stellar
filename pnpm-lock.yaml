@@ -111,6 +111,22 @@ importers:
         specifier: ^6.0.3
         version: 6.0.3
 
+  examples/anchor-starter:
+    dependencies:
+      '@orbital-stellar/pulse-core':
+        specifier: workspace:*
+        version: link:../../packages/pulse-core
+      '@orbital-stellar/pulse-webhooks':
+        specifier: workspace:*
+        version: link:../../packages/pulse-webhooks
+    devDependencies:
+      '@types/node':
+        specifier: ^26.0.1
+        version: 26.0.1
+      typescript:
+        specifier: ^6.0.3
+        version: 6.0.3
+
   packages/abi-registry:
     dependencies:
       '@stellar/js-xdr':
