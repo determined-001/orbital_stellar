@@ -6,6 +6,9 @@ on:
   pull_request:
     branches: ["**"]
 
+  schedule:
+    - cron: '0 0 * * *' # Nightly
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -93,6 +96,28 @@ jobs:
         run: pnpm --filter @orbital-stellar/abi-registry validate
       - name: Test packages
         run: pnpm -r --if-present test
+
+  chaos-test:
+    needs: changes
+    if: ${{ needs.changes.outputs.packages == 'true' || github.event_name == 'schedule' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Run Chaos Tests
+        run: |
+          if [ "${{ github.event_name }}" == "schedule" ]; then
+            SEED=$RANDOM pnpm test packages/pulse-core/test/chaos/
+          else
+            SEED=42 pnpm test packages/pulse-core/test/chaos/
+          fi
 
   bundle-size:
     needs: changes
