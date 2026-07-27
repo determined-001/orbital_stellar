@@ -28,7 +28,7 @@
     "test": "vitest run"
   },
   "bin": {
-    "orbital": "./bin/orbital"
+    "orbital-dlq": "./bin/orbital-dlq"
   },
   "dependencies": {
     "@orbital-stellar/pulse-core": "workspace:*",

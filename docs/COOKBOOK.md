@@ -25,6 +25,9 @@
 11. [Stand up an SSE endpoint in Next.js](#11-stand-up-an-sse-endpoint-in-nextjs)
 12. [Subscribe to Soroban contract events](#12-subscribe-to-soroban-contract-events)
 13. [Unit test webhooks with deterministic jitter](#13-unit-test-webhooks-with-deterministic-jitter)
+14. [Generate TypeScript types from a Soroban contract](#14-generate-typescript-types-from-a-soroban-contract)
+15. [Back up and restore cursor positions](#15-back-up-and-restore-cursor-positions)
+16. [Inspect or replay dead-letter-queue entries](#16-inspect-or-replay-dead-letter-queue-entries)
 
 ---
 
@@ -461,6 +464,78 @@ new WebhookDelivery(watcher, {
 ```
 
 Combine this with `vi.useFakeTimers()` to verify that retries happen after the exact jittered delay you expect without waiting for real-world wall clock time.
+
+---
+
+## 14. Generate TypeScript types from a Soroban contract
+
+Generate TypeScript type declarations and Zod schemas from a deployed Soroban contract's spec. ✅
+
+### Using the CLI
+
+```bash
+# Generate types from a testnet contract
+orbital typegen CBCG...YOUR_CONTRACT --out src/contract-types.ts
+
+# Target mainnet with a custom RPC endpoint
+orbital typegen CBCG...YOUR_CONTRACT \
+  --network mainnet \
+  --rpc-url https://soroban-mainnet.example.com \
+  --out src/contract-types.ts
+```
+
+### Using the binary directly (standalone generate)
+
+```bash
+# If you already have a contract spec JSON file
+abi-registry-generate ./my-contract-spec.json ./my-contract.d.ts
+```
+
+The `abi-registry-generate` binary takes a Soroban contract spec JSON file and outputs a `.d.ts` file with generated TypeScript types. It ships with `@orbital-stellar/abi-registry` and is available via `npx abi-registry-generate`.
+
+---
+
+## 15. Back up and restore cursor positions
+
+Dump or restore cursor positions from a Postgres database for migration or disaster recovery. Requires the `pg` package installed separately. ✅
+
+```bash
+# Install the pg driver (if not already available)
+npm install pg
+
+# Dump all cursors as line-delimited JSON to a file
+orbital cursor dump > cursors-backup.jsonl
+
+# Restore cursors from the backup file
+orbital cursor restore < cursors-backup.jsonl
+```
+
+The `cursor dump` command reads from the `cursor_store` table and outputs one JSON object per line. `cursor restore` reads the same format from stdin and writes back. Both commands connect to Postgres via the `PG*` environment variables (`PGHOST`, `PGPORT`, `PGDATABASE`, etc.) — the same ones `psql` uses.
+
+---
+
+## 16. Inspect or replay dead-letter-queue entries
+
+When webhook deliveries fail after all retries, entries land in the dead-letter queue (DLQ). The `orbital-dlq` CLI lets you list, dump, and replay them. ✅
+
+```bash
+# List all DLQ entries for a specific URL
+orbital-dlq dlq list --url https://your-app.com/hooks/stellar
+
+# Filter entries since a timestamp with a limit
+orbital-dlq dlq list \
+  --url https://your-app.com/hooks/stellar \
+  --since 2026-01-01T00:00:00Z \
+  --limit 50
+
+# Dump all DLQ entries as line-delimited JSON
+orbital-dlq dlq dump
+
+# Replay a specific DLQ entry (re-signs and re-delivers)
+orbital-dlq dlq replay <entry-id> --secret "$WEBHOOK_SECRET"
+```
+
+The `orbital-dlq` binary ships with `@orbital-stellar/pulse-webhooks` and is available via `npx orbital-dlq`. Set `ORBITAL_WEBHOOK_SECRET` in your environment or pass `--secret` to re-sign replayed deliveries.
 
 ---
 
