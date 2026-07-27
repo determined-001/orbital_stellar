@@ -148,6 +148,9 @@ importers:
         specifier: workspace:*
         version: link:../pulse-core
     devDependencies:
+      '@stellar/stellar-sdk':
+        specifier: ^16.0.1
+        version: 16.0.1
       '@types/node':
         specifier: ^26.0.1
         version: 26.0.1

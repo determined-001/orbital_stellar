@@ -10,6 +10,7 @@ import {
   discoverContractSpec,
   NoEmbeddedSpecError,
   type ContractSpec,
+  type PublishResult,
   type RegistryPublisher,
 } from "@orbital-stellar/abi-registry";
 
@@ -157,8 +158,47 @@ export class AutoPublishIndexer {
     const pointer = await this.config.pointerStrategy(spec, canonicalJson);
     const specWithPointer: ContractSpec = { ...spec, pointer };
 
-    await this.config.publisher.publish(specWithPointer);
-    this.config.logger?.info("orbital-indexer: published auto-discovered spec", { contractId });
+    let publishResult: PublishResult;
+    try {
+      publishResult = await this.config.publisher.publish(specWithPointer);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+
+      // ── Republish rejection ────────────────────────────────────────────
+      // The registry contract rejects duplicate (contractId, version, publisher)
+      // triples with AlreadyPublished. Treat this as success-with-existing:
+      // another process (or a prior run) already filed this version.
+      if (
+        message.includes("AlreadyPublished") ||
+        message.includes("already been published") ||
+        message.includes("contract_error")
+      ) {
+        this.config.logger?.info(
+          "orbital-indexer: spec already published by another process, using existing",
+          { contractId, version: spec.version },
+        );
+        return specWithPointer;
+      }
+
+      // ── Sequence-number collision ──────────────────────────────────────
+      // Another process using the same signing key submitted a tx with the
+      // same sequence number. Refresh and retry once.
+      if (message.includes("tx_bad_seq") || message.includes("sequence")) {
+        this.config.logger?.info("orbital-indexer: sequence collision, retrying publish once", {
+          contractId,
+        });
+        publishResult = await this.config.publisher.publish(specWithPointer);
+      } else {
+        throw err;
+      }
+    }
+
+    this.config.logger?.info("orbital-indexer: published auto-discovered spec", {
+      contractId,
+      version: spec.version,
+      specHash: publishResult.etag,
+      txHash: publishResult.txHash,
+    });
     return specWithPointer;
   }
 }

@@ -5,6 +5,12 @@ export interface PublishResult {
   contractId: string;
   version: string;
   etag: string;
+  /**
+   * Transaction hash of the on-chain publish, if the publisher submits a
+   * real transaction (e.g. {@link OnChainRegistryPublisher}). Unset for
+   * local/pseudo publishers that don't touch a network.
+   */
+  txHash?: string;
 }
 
 export interface RegistryPublisher {
