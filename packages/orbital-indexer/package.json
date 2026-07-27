@@ -26,6 +26,7 @@
     "build": "tsc -p tsconfig.json",
     "test": "vitest run",
     "test:integration": "INTEGRATION_TESTS=true vitest run test/integration",
+    "test:coverage": "vitest run --coverage",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
@@ -36,6 +37,7 @@
     "@stellar/stellar-sdk": "^16.0.1",
     "@types/node": "^26.0.1",
     "vite": "^7.3.6",
+    "@vitest/coverage-v8": "^4.1.9",
     "vitest": "^4.1.9"
   }
 }

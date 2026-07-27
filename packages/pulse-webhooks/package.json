@@ -25,7 +25,8 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage"
   },
   "bin": {
     "orbital-dlq": "./bin/orbital-dlq"
@@ -36,6 +37,7 @@
   },
   "devDependencies": {
     "@types/node": "^26.0.1",
+    "@vitest/coverage-v8": "^4.1.9",
     "vite": "^7.3.6",
     "vitest": "^4.1.9"
   }

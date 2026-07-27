@@ -112,7 +112,12 @@ All packages use [Vitest](https://vitest.dev). Tests live in `packages/<name>/te
 
 - Write a test for every new public API.
 - Update existing tests when you change behaviour.
-- Coverage is tracked with `@vitest/coverage-v8`. Run `pnpm --filter @orbital-stellar/pulse-core test:coverage` to generate a report.
+- Coverage is tracked with `@vitest/coverage-v8`. Run `pnpm --filter @orbital-stellar/pulse-core test:coverage` to generate a report. Every package enforces a coverage floor via Vitest thresholds - CI fails if coverage drops below the floor. The per-package floors are documented in each `vitest.config.ts`.
+
+To run coverage across all packages:
+```bash
+pnpm -r --if-present test:coverage
+```
 
 CI runs tests on Node 20 and Node 22. Make sure your changes pass on both.
 

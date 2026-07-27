@@ -209,3 +209,30 @@ jobs:
           abi-registry-generate --help
           abi-registry-generate --version
           npm uninstall -g @orbital-stellar/abi-registry
+
+  coverage:
+    needs: changes
+    if: ${{ needs.changes.outputs.packages == 'true' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Build abi-registry
+        run: pnpm tsc -p packages/abi-registry/tsconfig.json
+      - name: Run coverage (thresholds enforced)
+        run: pnpm -r --if-present test:coverage
+      - name: Upload coverage reports
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: coverage-reports
+          path: |
+            packages/*/coverage/
+          retention-days: 14
