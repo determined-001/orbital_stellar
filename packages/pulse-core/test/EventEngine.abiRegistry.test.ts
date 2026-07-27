@@ -118,7 +118,8 @@ describe("EventEngine - ABI registry integration", () => {
         type: "event.decode_failed",
         contractId: "CABC1234",
         eventId: "evt-miss",
-        error: "No ABI spec found for contract CABC1234",
+        error:
+          "No ABI spec found for contract CABC1234; publish an ABI spec through the registry or follow issue #8.1 for guidance.",
       },
     ]);
   });

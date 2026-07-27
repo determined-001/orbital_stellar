@@ -19,6 +19,7 @@ export interface AbiRegistryReader {
   getSpecAt?(contractId: string, ledger: number): Promise<unknown>;
   /** Declares the provenance category this client represents. */
   readonly specSource?: SpecSource;
+  clearCache?(): void | Promise<void>;
 }
 
 /**
@@ -107,6 +108,12 @@ export class ChainedAbiRegistryClient implements AbiRegistryReader {
           `${other.source} (${otherHash.slice(0, 12)}…). ` +
           `Using ${winner.source} as canonical.`,
       );
+    }
+  }
+
+  clearCache(): void {
+    for (const client of this.clients) {
+      client.clearCache?.();
     }
   }
 }

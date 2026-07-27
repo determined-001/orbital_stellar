@@ -85,6 +85,11 @@ export class OnChainAbiRegistryClient {
     return this.resolveRecord(contractId, records[records.length - 1]!);
   }
 
+  clearCache(): void {
+    this.recordsCache.clear();
+    this.specCache.clear();
+  }
+
   /**
    * Resolves whichever spec version was current as of `ledger` - the most
    * recently published version whose `published_at_ledger` is `<= ledger`.
