@@ -1,5 +1,13 @@
+import { createHash } from "node:crypto";
 import { Horizon } from "@stellar/stellar-sdk";
-import { createDefaultAbiRegistryClient, decodeContractEvent } from "@orbital-stellar/abi-registry";
+import {
+  createDefaultAbiRegistryClient,
+  decodeContractEvent,
+  canonicalizeSpec,
+  loadTaxonomyResolver,
+  wellKnownTaxonomy,
+  classifyKnownInterface,
+} from "@orbital-stellar/abi-registry";
 import type { ContractSpec, XdrContractSpec } from "@orbital-stellar/abi-registry";
 import { Watcher } from "./Watcher.js";
 import { fullJitterBackoffMs } from "./backoff.js";
@@ -17,6 +25,7 @@ import type {
   AccountOptionsChanges,
   AccountOptionsEvent,
   AbiRegistryClientLike,
+  TaxonomyResolverLike,
   BumpSequenceEvent,
   ClaimableClaimedEvent,
   ClaimableCreatedEvent,
@@ -126,6 +135,22 @@ const STELLAR_MAX_TRUSTLINE_LIMIT = "922337203685.4775807";
 const noop: Logger = { info: () => {}, warn: () => {}, error: () => {} };
 
 /**
+ * Narrows an ABI-registry spec lookup result to a full `ContractSpec` (has
+ * parsed `events`/`functions`/`types`) as opposed to a bare `XdrContractSpec`
+ * (just raw XDR entries) - only the former carries enough structure for
+ * `canonicalizeSpec` (spec-hash) or `classifyKnownInterface` (interface match).
+ */
+function isFullContractSpec(spec: unknown): spec is ContractSpec {
+  return (
+    typeof spec === "object" &&
+    spec !== null &&
+    Array.isArray((spec as ContractSpec).events) &&
+    Array.isArray((spec as ContractSpec).functions) &&
+    typeof (spec as ContractSpec).types === "object"
+  );
+}
+
+/**
  * Produces a stable, order-independent string key for a ContractFilter array.
  * Used to deduplicate subscribeContract(config) calls.
  */
@@ -222,6 +247,8 @@ export class EventEngine {
   private sorobanNetworkReady?: Promise<SorobanNetworkInfo | undefined>;
   /** Optional ABI registry used to enrich `contract.emitted` events with `decodedData`. */
   private abiRegistry?: AbiRegistryClientLike;
+  /** Optional semantic taxonomy resolver used to populate `ContractEmittedEvent.semantic`. */
+  private taxonomyResolver?: TaxonomyResolverLike;
   /**
    * Present only when constructed with `CoreConfig.network` as an array.
    * Each value is a fully independent single-network `EventEngine` (own
@@ -285,6 +312,7 @@ export class EventEngine {
     this.streamKey = config.streamKey ?? `horizon:${config.network}`;
     this.cursorFailureThreshold = config.cursorFailureThreshold ?? 5;
     this.abiRegistry = EventEngine.resolveAbiRegistry(config.abiRegistry);
+    this.taxonomyResolver = EventEngine.resolveTaxonomy(config.taxonomy);
     this.cursorStore = config.cursorStore;
     this.network = config.network;
 
@@ -360,6 +388,19 @@ export class EventEngine {
     if (abiRegistry === false) return undefined;
     if (abiRegistry) return abiRegistry;
     return createDefaultAbiRegistryClient();
+  }
+
+  /**
+   * Resolves `CoreConfig.taxonomy` the same way `resolveAbiRegistry` resolves
+   * `CoreConfig.abiRegistry`: an explicit resolver passes through as-is,
+   * `false` opts out entirely (`semantic` stays always `undefined`), and
+   * omitting it resolves the bundled `wellKnownTaxonomy` via
+   * `@orbital-stellar/abi-registry`'s `loadTaxonomyResolver`.
+   */
+  private static resolveTaxonomy(taxonomy: CoreConfig["taxonomy"]): TaxonomyResolverLike | undefined {
+    if (taxonomy === false) return undefined;
+    if (taxonomy) return taxonomy;
+    return loadTaxonomyResolver([wellKnownTaxonomy]);
   }
 
   /**
@@ -2157,6 +2198,39 @@ export class EventEngine {
     }
   }
 
+  /**
+   * Populates `event.semantic` via `this.taxonomyResolver`, once `decodedData`
+   * has already resolved successfully (`eventTopic` comes from
+   * `decoded.functionName` - the decoded first topic symbol). No-op if no
+   * resolver is configured, and never throws - a resolution failure must
+   * never break decode/dispatch, so it's logged and swallowed instead.
+   * `specHash`/`interfaceId` are only computed when `spec` looks like a full
+   * `ContractSpec` (has a `events` array); a bare `XdrContractSpec` (just raw
+   * XDR entries, no parsed events) can't support either.
+   */
+  private applyTaxonomy(
+    event: ContractEmittedEvent,
+    contractId: string,
+    eventTopic: string,
+    spec: unknown,
+  ): void {
+    if (!this.taxonomyResolver) return;
+    try {
+      const fullSpec = isFullContractSpec(spec) ? spec : undefined;
+      const specHash = fullSpec ? createHash("sha256").update(canonicalizeSpec(fullSpec)).digest("hex") : undefined;
+      const interfaceId = fullSpec ? classifyKnownInterface(fullSpec) : undefined;
+      const semantic = this.taxonomyResolver.resolve({ contractId, eventTopic, specHash, interfaceId });
+      if (semantic !== undefined) {
+        event.semantic = semantic;
+      }
+    } catch (err) {
+      this.log.warn("[pulse-core] taxonomy resolution failed for contract.emitted event", {
+        contractId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
   private route(event: Timestamped<NormalizedEventOrPending>): void {
     // Check if Soroban source is paused for contract events
     if (
@@ -2345,6 +2419,7 @@ export class EventEngine {
                 this.emitDecodeFailedNotification(event, decoded.error);
               } else {
                 (event as ContractEmittedEvent).decodedData = decoded;
+                this.applyTaxonomy(event as ContractEmittedEvent, contractId, decoded.functionName, spec);
               }
             } else {
               (event as ContractEmittedEvent).decodedData = undefined;

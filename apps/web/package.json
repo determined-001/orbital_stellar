@@ -3,14 +3,15 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "predev": "pnpm --filter \"@orbital-stellar/pulse-core...\" --filter \"@orbital-stellar/pulse-webhooks...\" run build && pnpm -w run docs:reference",
+    "predev": "pnpm --filter \"@orbital-stellar/pulse-core...\" --filter \"@orbital-stellar/pulse-webhooks...\" --filter \"@orbital-stellar/abi-registry...\" run build && pnpm -w run docs:reference",
     "dev": "next dev",
-    "prebuild": "pnpm --filter \"@orbital-stellar/pulse-core...\" --filter \"@orbital-stellar/pulse-webhooks...\" run build && pnpm -w run docs:reference",
+    "prebuild": "pnpm --filter \"@orbital-stellar/pulse-core...\" --filter \"@orbital-stellar/pulse-webhooks...\" --filter \"@orbital-stellar/abi-registry...\" run build && pnpm -w run docs:reference",
     "build": "next build",
     "start": "next start",
     "lint": "next lint"
   },
   "dependencies": {
+    "@orbital-stellar/abi-registry": "workspace:*",
     "@orbital-stellar/pulse-core": "workspace:*",
     "@orbital-stellar/pulse-webhooks": "workspace:*",
     "@stellar/stellar-sdk": "^16.0.1",

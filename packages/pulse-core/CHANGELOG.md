@@ -13,6 +13,7 @@
 
 ### Added
 - `orbital typegen <contractId>` CLI command - generates TypeScript interfaces + Zod schemas for a deployed Soroban contract, resolving its spec from the on-chain registry first and falling back to live WASM auto-discovery.
+- **`ContractEmittedEvent.semantic`** - populated from `@orbital-stellar/abi-registry`'s new `TaxonomyResolver` once `decodedData` resolves successfully (contract exposes `decoded.functionName` as the resolver's `eventTopic`). New `CoreConfig.taxonomy` option, mirroring `abiRegistry`'s shape: an explicit resolver, `false` to opt out (`semantic` always `undefined`), or omit it to default to the bundled `wellKnownTaxonomy`. Resolution never throws and never blocks `decodedData`/dispatch - a failure is logged and swallowed. `semantic` is only ever set when a mapping actually resolves, never guessed.
 
 ## [0.1.0] - 2026-05-28
 
