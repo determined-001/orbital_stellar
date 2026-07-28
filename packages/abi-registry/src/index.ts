@@ -47,11 +47,15 @@ export type { OnChainAbiRegistryClientConfig } from "./OnChainAbiRegistryClient.
 export { BundledWellKnownClient } from "./BundledWellKnownClient.js";
 export { ChainedAbiRegistryClient } from "./ChainedAbiRegistryClient.js";
 export type { AbiRegistryReader } from "./ChainedAbiRegistryClient.js";
+export { HostedAbiRegistryClient } from "./HostedAbiRegistryClient.js";
+export type { HostedAbiRegistryClientConfig } from "./HostedAbiRegistryClient.js";
 export { createDefaultAbiRegistryClient } from "./createDefaultAbiRegistryClient.js";
+export type { CreateDefaultAbiRegistryClientOptions } from "./createDefaultAbiRegistryClient.js";
 export {
   ORBITAL_REGISTRY_TESTNET_CONTRACT_ID,
   ORBITAL_REGISTRY_PUBLISHER_ADDRESS,
   ORBITAL_REGISTRY_TESTNET_RPC_URL,
+  ORBITAL_HOSTED_REGISTRY_BASE_URL,
 } from "./registryConstants.js";
 
 export { discoverContractSpec, NoEmbeddedSpecError } from "./discovery/discoverContract.js";
