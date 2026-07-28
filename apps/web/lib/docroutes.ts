@@ -27,6 +27,7 @@ export const docSections: DocSection[] = [
       { title: 'ABI Registry & Typed Event Decoding', href: '/docs/guides/abi-registry' },
       { title: 'Migrate from raw EventSource', href: '/docs/guides/migrate-from-eventsource' },
       { title: 'Soroban Event Subscription', href: '/docs/guides/soroban-subscription' },
+      { title: 'Open Data & Non-JS Consumption', href: '/docs/guides/open-data' },
     ],
   },
   {

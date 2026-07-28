@@ -180,7 +180,7 @@ These are honest uncertainties as of `v0.1.0`. They will be resolved in writing 
 
 | Question | Status |
 |---|---|
-| Will the Soroban ABI Registry **data** (the published contract schemas) be a public good or a paid dataset? | The **client** and **schema** are MIT. The **hosted service** is currently planned as a free public good, with a paid tier for high-volume integrators. Final structure TBD by Phase 1 close. |
+| Will the Soroban ABI Registry **data** (the published contract schemas) be a public good or a paid dataset? | The **data** (event taxonomy and entity labels) is published as **open data** under Creative Commons Zero (CC0 1.0) on every release, accessible via plain HTTP fetch (`/data/taxonomy.json`, `/data/labels.json`) without any JS SDK dependency. The **client** and **schema** are MIT. The **hosted service** operates as a managed registry service. |
 | Will the intent compiler ship as runnable-locally OSS at maturity (Phase 3)? | Current intent is yes - see [`ROADMAP.md`](../ROADMAP.md) Phase 3. Subject to scope decomposition closer to Phase 2 close. |
 | Will the reactor-contract certification service be Orbital-operated or community-governed? | TBD. The contracts themselves are MIT; the certification service may be operated commercially or via an Orbital Foundation. |
 
