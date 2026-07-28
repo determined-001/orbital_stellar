@@ -429,7 +429,8 @@ describe("verifySchema", () => {
             (d) =>
               d.path.includes("latest") ||
               d.path.includes("get_version") ||
-              d.path.includes("list_versions"),
+              d.path.includes("list_versions") ||
+              d.path.includes("list_versions_paged"),
           ),
         ).toBe(true);
       }

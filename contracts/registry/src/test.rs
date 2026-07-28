@@ -124,6 +124,117 @@ fn unknown_contract_or_version_resolves_to_none() {
 }
 
 #[test]
+fn list_versions_paged_empty_set() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let client = setup(&env);
+
+    let publisher = Address::generate(&env);
+    let contract_id = Address::generate(&env);
+
+    let (versions, next) = client.list_versions_paged(&contract_id, &publisher, &0u32, &10u32);
+    assert_eq!(versions.len(), 0);
+    assert_eq!(next, None);
+}
+
+#[test]
+fn list_versions_paged_exactly_limit() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let client = setup(&env);
+
+    let publisher = Address::generate(&env);
+    let contract_id = Address::generate(&env);
+    let pointer = String::from_str(&env, "https://example.com/spec.json");
+    let limit = 5u32;
+
+    for i in 1..=limit {
+        let version = String::from_str(&env, &format!("{}.0.0", i));
+        client.publish(&publisher, &contract_id, &version, &hash(&env, i as u8), &pointer);
+    }
+
+    let (versions, next) = client.list_versions_paged(&contract_id, &publisher, &0u32, &limit);
+    assert_eq!(versions.len(), limit as usize);
+    assert_eq!(next, None); // exactly limit = no more pages
+
+    // Verify order: oldest first
+    assert_eq!(versions.get(0).unwrap(), String::from_str(&env, "1.0.0"));
+    assert_eq!(
+        versions.get((limit - 1) as usize).unwrap(),
+        String::from_str(&env, "5.0.0")
+    );
+}
+
+#[test]
+fn list_versions_paged_limit_plus_one() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let client = setup(&env);
+
+    let publisher = Address::generate(&env);
+    let contract_id = Address::generate(&env);
+    let pointer = String::from_str(&env, "https://example.com/spec.json");
+    let limit = 3u32; // request 3, publish 4
+
+    for i in 1..=4 {
+        let version = String::from_str(&env, &format!("{}.0.0", i));
+        client.publish(&publisher, &contract_id, &version, &hash(&env, i as u8), &pointer);
+    }
+
+    let (page1, next) = client.list_versions_paged(&contract_id, &publisher, &0u32, &limit);
+    assert_eq!(page1.len(), limit as usize);
+    assert_eq!(next, Some(limit)); // cursor points to next page start
+
+    // Fetch second page
+    let (page2, next2) =
+        client.list_versions_paged(&contract_id, &publisher, &next.unwrap(), &limit);
+    assert_eq!(page2.len(), 1);
+    assert_eq!(next2, None);
+    assert_eq!(page2.get(0).unwrap(), String::from_str(&env, "4.0.0"));
+}
+
+#[test]
+fn list_versions_paged_start_past_end() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let client = setup(&env);
+
+    let publisher = Address::generate(&env);
+    let contract_id = Address::generate(&env);
+    let pointer = String::from_str(&env, "https://example.com/spec.json");
+
+    let version = String::from_str(&env, "1.0.0");
+    client.publish(&publisher, &contract_id, &version, &hash(&env, 1), &pointer);
+
+    // Start at index 10 when only 1 version exists
+    let (versions, next) = client.list_versions_paged(&contract_id, &publisher, &10u32, &5u32);
+    assert_eq!(versions.len(), 0);
+    assert_eq!(next, None);
+}
+
+#[test]
+fn list_versions_paged_max_page_size_enforced() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let client = setup(&env);
+
+    let publisher = Address::generate(&env);
+    let contract_id = Address::generate(&env);
+    let pointer = String::from_str(&env, "https://example.com/spec.json");
+
+    // Publish 30 versions
+    for i in 1..=30 {
+        let version = String::from_str(&env, &format!("{}.0.0", i));
+        client.publish(&publisher, &contract_id, &version, &hash(&env, i as u8), &pointer);
+    }
+
+    // Request 100, but should be capped at MAX_PAGE_SIZE (25)
+    let (page, next) = client.list_versions_paged(&contract_id, &publisher, &0u32, &100u32);
+    assert_eq!(page.len(), 25);
+    assert_eq!(next, Some(25));
+}
+
+#[test]
 fn rejects_empty_version_and_pointer() {
     let env = Env::default();
     env.mock_all_auths();
