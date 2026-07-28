@@ -18,7 +18,8 @@
     "LICENSE"
   ],
   "bin": {
-    "abi-registry-generate": "./bin/abi-registry-generate"
+    "abi-registry-generate": "./bin/abi-registry-generate",
+    "orbital-codegen": "./bin/orbital-codegen"
   },
   "repository": {
     "type": "git",
