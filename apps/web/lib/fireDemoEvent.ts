@@ -1,3 +1,5 @@
+import { readFileSync, existsSync } from "node:fs";
+import { resolve } from "node:path";
 import {
   Contract,
   Keypair,
@@ -20,6 +22,40 @@ export class DemoEmitterNotConfiguredError extends Error {
   }
 }
 
+/** Returns the demo-emitter contract ID from env var or deployed.testnet.json, or null. */
+function resolveDemoEmitterContractId(): string | null {
+  const fromEnv = process.env.DEMO_EMITTER_CONTRACT_ID;
+  if (fromEnv) return fromEnv;
+
+  try {
+    const deployManifestPath = resolve(
+      process.cwd(),
+      "..",
+      "..",
+      "contracts",
+      "deployed.testnet.json",
+    );
+    if (existsSync(deployManifestPath)) {
+      const manifest = JSON.parse(readFileSync(deployManifestPath, "utf-8")) as {
+        contracts?: { demoEmitter?: { contractId?: string } };
+      };
+      return manifest.contracts?.demoEmitter?.contractId ?? null;
+    }
+  } catch {
+    // File may not exist (pre-deployment)
+  }
+  return null;
+}
+
+/**
+ * Returns whether the demo-emitter contract is configured for use.
+ */
+export function isDemoEmitterConfigured(): boolean {
+  const contractId = resolveDemoEmitterContractId();
+  const secret = process.env.DEMO_EMITTER_SECRET;
+  return !!(contractId && secret);
+}
+
 /**
  * Invokes the deployed `orbital-demo-emitter` contract's no-arg `ping()`
  * (see contracts/demo-emitter) on testnet and waits for confirmation. Used
@@ -33,7 +69,7 @@ export class DemoEmitterNotConfiguredError extends Error {
  * leaked is far smaller.
  */
 export async function fireDemoEvent(): Promise<FireDemoEventResult> {
-  const contractId = process.env.DEMO_EMITTER_CONTRACT_ID;
+  const contractId = resolveDemoEmitterContractId();
   const secret = process.env.DEMO_EMITTER_SECRET;
   if (!contractId || !secret) {
     throw new DemoEmitterNotConfiguredError();

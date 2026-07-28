@@ -102,7 +102,16 @@ export default function ContractEventsPlayground() {
   const [limit, setLimit] = useState<LimitEnvelope | null>(null);
   const [fireStatus, setFireStatus] = useState<FireEventStatus>("idle");
   const [fireError, setFireError] = useState("");
+  const [demoConfigured, setDemoConfigured] = useState<boolean | null>(null);
+  const [lastFireResult, setLastFireResult] = useState<FireEventResult | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    fetch("/api/demo/config")
+      .then((r) => r.json())
+      .then((data: { configured: boolean }) => setDemoConfigured(data.configured))
+      .catch(() => setDemoConfigured(false));
+  }, []);
 
   function watchContract(id: string) {
     if (!id.trim()) return;
@@ -149,6 +158,7 @@ export default function ContractEventsPlayground() {
   async function handleFireEvent() {
     setFireStatus("firing");
     setFireError("");
+    setLastFireResult(null);
     try {
       const res = await fetch("/api/demo/fire-event", { method: "POST" });
       const body = await res.json().catch(() => null);
@@ -166,6 +176,7 @@ export default function ContractEventsPlayground() {
 
       const result = body as FireEventResult;
       setFireStatus("fired");
+      setLastFireResult(result);
       if (contractId.trim() !== result.contractId) {
         handleWatchWellKnown(result.contractId);
       }
@@ -268,23 +279,34 @@ export default function ContractEventsPlayground() {
           ))}
           <button
             onClick={handleFireEvent}
-            disabled={fireStatus === "firing"}
+            disabled={fireStatus === "firing" || demoConfigured === false}
             style={{
               marginLeft: "auto",
-              background: fireStatus === "firing" ? "var(--surface2)" : "var(--accent)",
+              background:
+                demoConfigured === false
+                  ? "var(--surface2)"
+                  : fireStatus === "firing"
+                    ? "var(--surface2)"
+                    : "var(--accent)",
               border: "none",
-              color: fireStatus === "firing" ? "var(--muted)" : "#000",
+              color:
+                demoConfigured === false || fireStatus === "firing" ? "var(--muted)" : "#000",
               fontFamily: "var(--font-sans)",
               fontSize: "13px",
               fontWeight: 700,
               padding: "8px 16px",
-              cursor: fireStatus === "firing" ? "default" : "pointer",
+              cursor:
+                fireStatus === "firing" || demoConfigured === false ? "default" : "pointer",
             }}
           >
-            {fireStatus === "firing" ? "Firing…" : "🔥 Fire test event"}
+            {demoConfigured === false
+              ? "⛔ Demo contract not configured"
+              : fireStatus === "firing"
+                ? "Firing…"
+                : "🔥 Fire test event"}
           </button>
         </div>
-        {fireStatus === "fired" && (
+        {fireStatus === "fired" && lastFireResult && (
           <p
             style={{
               fontFamily: "var(--font-sans)",
@@ -294,7 +316,16 @@ export default function ContractEventsPlayground() {
               marginBottom: "16px",
             }}
           >
-            Test event fired - watch it arrive below.
+            Test event fired —{" "}
+            <a
+              href={`https://stellar.expert/explorer/testnet/tx/${lastFireResult.txHash}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ color: "var(--accent)", textDecoration: "underline" }}
+            >
+              view on stellar.expert
+            </a>{" "}
+            — watch it arrive below.
           </p>
         )}
         {fireStatus === "error" && (
