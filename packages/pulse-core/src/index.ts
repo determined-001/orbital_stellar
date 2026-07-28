@@ -503,6 +503,20 @@ export interface AbiRegistryClientLike {
   getSpecAt?(contractId: string, ledger: number): Promise<unknown>;
 }
 
+/**
+ * Minimal interface for a semantic taxonomy resolver.
+ * Satisfied by `TaxonomyResolver` from `@orbital-stellar/abi-registry`, or any
+ * object with a compatible `resolve` method (useful for testing).
+ */
+export interface TaxonomyResolverLike {
+  resolve(input: {
+    contractId: string;
+    eventTopic: string;
+    specHash?: string;
+    interfaceId?: string;
+  }): string | undefined;
+}
+
 export type SorobanConfig = {
   /** Soroban RPC endpoint used for live contract-event polling. */
   rpcUrl: string;
@@ -563,6 +577,14 @@ export type CoreConfig = {
    * only that client.
    */
   abiRegistry?: AbiRegistryClientLike | false;
+  /**
+   * Semantic taxonomy resolver used to populate `ContractEmittedEvent.semantic`
+   * once `decodedData` resolves. Defaults to the bundled well-known taxonomy
+   * (`@orbital-stellar/abi-registry`'s `wellKnownTaxonomy`) when omitted - pass
+   * `false` to opt out entirely and keep `semantic` always `undefined`, or an
+   * explicit resolver to use only that one.
+   */
+  taxonomy?: TaxonomyResolverLike | false;
   /** Soroban RPC configuration. Ignored when `network` is an array - set `soroban` per source instead. */
   soroban?: SorobanConfig;
 };
@@ -637,6 +659,15 @@ export type ContractEmittedEvent = {
    * decode error, or when no registry is configured.
    */
   decodedData?: unknown;
+  /**
+   * Canonical semantic name (e.g. "swap.executed", "token.transferred"),
+   * resolved from `decodedData.functionName` via the configured `taxonomy`
+   * resolver (see `CoreConfig.taxonomy`, `@orbital-stellar/abi-registry`'s
+   * `TaxonomyResolver`). Populated **only** when a mapping actually resolves -
+   * never guessed, and never set at all when no taxonomy resolver is
+   * configured or `decodedData` itself never resolved.
+   */
+  semantic?: string;
   /** Ledger sequence number where the event was emitted, when available. */
   ledger?: number;
   /** Unique event identifier from the Soroban RPC, when available. */
