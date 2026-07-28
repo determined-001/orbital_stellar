@@ -69,3 +69,11 @@ export type {
   SchemaFieldDiff,
   VerifySchemaOptions,
 } from "./verifySchema.js";
+
+export { LabelResolver } from "./LabelResolver.js";
+export type {
+  LabelRecord,
+  LabelResolverConfig,
+  ResolvedLabel,
+  EntityType,
+} from "./LabelResolver.js";

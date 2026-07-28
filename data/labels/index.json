@@ -1,0 +1,41 @@
+{
+  "schemaVersion": "1.0.0",
+  "labels": [
+    {
+      "contractId": "CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75",
+      "label": "Circle (USDC Issuer)",
+      "entityType": "issuer",
+      "file": "circle-usdc.json"
+    },
+    {
+      "contractId": "CDTKPWPLOURQA2SGTKTUQOWRCBZEORB4BWBOMJ3D3ZTQQSGE5F6JBQLV",
+      "label": "Circle (EURC Issuer)",
+      "entityType": "issuer",
+      "file": "circle-eurc.json"
+    },
+    {
+      "contractId": "CAUIKL3IYGMERDRUN5QQVPKPLZTRNVXV27LFCWQIRNOHSNGB3ZXAEFBX",
+      "label": "Aquarius DAO (AQUA Issuer)",
+      "entityType": "issuer",
+      "file": "aqua.json"
+    },
+    {
+      "contractId": "CAS3J7GYLGXMF6TDJBBYYSE3HQ6BBSMLNUQ34T6TZMYMW2EVH34XOWMA",
+      "label": "Stellar Native (XLM SAC)",
+      "entityType": "issuer",
+      "file": "xlm-native.json"
+    },
+    {
+      "contractId": "CCB6TKA2DJJBWNOD72VFG5FJIBX3ZRAJ7X43SF7XPI46SPXMX5OYNKRG",
+      "label": "Soroswap Router",
+      "entityType": "protocol",
+      "file": "soroswap-router.json"
+    },
+    {
+      "contractId": "CDFB27PIVZ4XMGD2QT6W3PZ2GFLEZ34QPRS3OJKFIZH2BLOJGGFAHKKM",
+      "label": "Phoenix Pool Factory",
+      "entityType": "protocol",
+      "file": "phoenix-pool-factory.json"
+    }
+  ]
+}
