@@ -27,6 +27,11 @@ export type {
   CursorStore as SorobanCursorStore,
 } from "./SorobanSubscriber.js";
 
+export type { HistoricalSource, HistoricalReplayRange } from "./HistoricalSource.js";
+export { RetentionBoundaryError } from "./HistoricalSource.js";
+export { GalexieHistoricalSource, GalexiePartitionError } from "./GalexieHistoricalSource.js";
+export type { GalexieHistoricalSourceConfig } from "./GalexieHistoricalSource.js";
+
 export { validateContractFilters } from "./contractFilters.js";
 export { Watcher } from "./Watcher.js";
 export { toStellarAmount, toBigInt } from "./amount.js";
