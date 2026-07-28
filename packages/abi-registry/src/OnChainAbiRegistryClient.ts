@@ -38,7 +38,7 @@ export type OnChainAbiRegistryClientConfig = {
   cacheTtlMs?: number;
 };
 
-type SpecRecord = {
+export type SpecRecord = {
   version: string;
   specHash: string; // hex
   pointer: string;
@@ -46,6 +46,38 @@ type SpecRecord = {
   publishedAt: string;
   publishedAtLedger: number;
 };
+
+/** One contract's most-recently-observed publication, as surfaced by {@link OnChainAbiRegistryClient.listRegisteredContracts}. */
+export type RegisteredContractSummary = {
+  contractId: string;
+  publisher: string;
+  /** The highest-ledger version seen within the scanned window - not necessarily the contract's true latest version if an even-more-recent publish falls outside the lookback window. */
+  latestVersion: string;
+  specHash: string; // hex
+  pointer: string;
+  publishedAtLedger: number;
+};
+
+export type ListRegisteredContractsOptions = {
+  /**
+   * How many ledgers of registry history to scan for `SpecPublished` events,
+   * counting back from the chain's current latest ledger. Soroban RPC
+   * providers only retain a bounded window of event history (commonly on the
+   * order of a week's worth of ledgers) - this is **not** a complete
+   * historical index of every contract ever published, only what's still
+   * within the configured RPC's retention window. A contract published
+   * outside this window simply won't appear. Defaults to
+   * {@link DEFAULT_LOOKBACK_LEDGERS}.
+   */
+  lookbackLedgers?: number;
+  /** Restrict results to a specific publisher's namespace. Defaults to `config.publisher`. */
+  publisher?: string;
+  /** Max events fetched per `getEvents` page. Defaults to 100. */
+  pageLimit?: number;
+};
+
+/** ~24h at Stellar's ~5s average ledger close time. A conservative default - most RPC providers retain considerably more, but 24h is safe to assume without probing the specific provider's retention window. */
+export const DEFAULT_LOOKBACK_LEDGERS = 17_280;
 
 /**
  * Resolves {@link ContractSpec}s by reading the on-chain Orbital ABI registry
@@ -85,6 +117,19 @@ export class OnChainAbiRegistryClient {
     return this.resolveRecord(contractId, records[records.length - 1]!);
   }
 
+  /** Every published version's record for `contractId`, oldest first, under `config.publisher`'s namespace. Empty array if none have been published. */
+  async listVersions(contractId: string): Promise<SpecRecord[]> {
+    return this.getRecords(contractId);
+  }
+
+  /** Resolves the spec published as exactly `version` for `contractId`, or `null` if that version was never published. */
+  async getSpecByVersion(contractId: string, version: string): Promise<ContractSpec | null> {
+    const records = await this.getRecords(contractId);
+    const record = records.find((r) => r.version === version);
+    if (!record) return null;
+    return this.resolveRecord(contractId, record);
+  }
+
   /**
    * Resolves whichever spec version was current as of `ledger` - the most
    * recently published version whose `published_at_ledger` is `<= ledger`.
@@ -103,6 +148,113 @@ export class OnChainAbiRegistryClient {
     }
     if (!candidate) return null;
     return this.resolveRecord(contractId, candidate);
+  }
+
+  /**
+   * Enumerates contracts that have published a spec to this registry, by
+   * scanning the registry contract's own historical `SpecPublished` events
+   * via `getEvents` and keeping the highest-ledger record seen per
+   * `contract_id`.
+   *
+   * There is no on-chain index of "all registered contracts" - the registry
+   * contract keys every record by `(contract_id, publisher, version)`, so
+   * this is the only way to enumerate its contents. Consequently this method
+   * is a **bounded, best-effort scan**, not a complete listing: it only sees
+   * as far back as `options.lookbackLedgers` (see {@link DEFAULT_LOOKBACK_LEDGERS})
+   * and only as far back as the configured RPC endpoint's own event-history
+   * retention allows, whichever is shorter. Treat an empty or partial result
+   * as "nothing observed in the scanned window", not "nothing published".
+   */
+  async listRegisteredContracts(
+    options: ListRegisteredContractsOptions = {},
+  ): Promise<RegisteredContractSummary[]> {
+    const server = new SorobanRpc.Server(this.config.rpcUrl);
+    const publisherFilter = options.publisher ?? this.config.publisher;
+    const pageLimit = options.pageLimit ?? 100;
+
+    const { sequence: latestLedger } = await server.getLatestLedger();
+    const startLedger = Math.max(
+      1,
+      latestLedger - (options.lookbackLedgers ?? DEFAULT_LOOKBACK_LEDGERS),
+    );
+
+    const byContract = new Map<string, RegisteredContractSummary>();
+    let cursor: string | undefined;
+
+    for (;;) {
+      const page = await server.getEvents({
+        ...(cursor ? { cursor } : { startLedger }),
+        filters: [{ type: "contract", contractIds: [this.config.contractId] }],
+        limit: pageLimit,
+      });
+
+      for (const event of page.events) {
+        const summary = this.parseSpecPublishedEvent(event, publisherFilter);
+        if (!summary) continue;
+        const existing = byContract.get(summary.contractId);
+        if (!existing || summary.publishedAtLedger > existing.publishedAtLedger) {
+          byContract.set(summary.contractId, summary);
+        }
+      }
+
+      if (page.events.length < pageLimit) break;
+      const last = page.events[page.events.length - 1];
+      // `cursor` at the page level is preferred when the RPC provider
+      // returns one; falling back to the last event's own paging token keeps
+      // this working against providers that only surface per-event tokens.
+      cursor = (page as { cursor?: string }).cursor ?? last?.pagingToken;
+      if (!cursor) break;
+    }
+
+    return [...byContract.values()].sort((a, b) => a.contractId.localeCompare(b.contractId));
+  }
+
+  /**
+   * Decodes one raw `getEvents` record as a `SpecPublished` event, or returns
+   * `null` if it isn't one (wrong topic shape, wrong publisher, or any
+   * decoding failure) - this is a best-effort scan over a contract's full
+   * event history, so unrelated/malformed events are skipped, not fatal.
+   *
+   * Topic layout follows `#[contractevent]`'s convention (mirrored by
+   * `decode.ts` elsewhere in this package): `topic[0]` is the event's name
+   * symbol, followed by its `#[topic]`-marked fields in declaration order -
+   * here, `SpecPublished { contract_id, version, .. }`, so `topic[1]` is
+   * `contract_id` and `topic[2]` is `version`. The remaining, non-topic
+   * fields (`spec_hash`, `pointer`, `publisher`) are in the event's `value`.
+   */
+  private parseSpecPublishedEvent(
+    event: { topic: unknown[]; value: unknown; ledger: number },
+    publisherFilter: string,
+  ): RegisteredContractSummary | null {
+    try {
+      const topics = event.topic.map((t) => this.scValToNativeLoose(t));
+      if (topics.length < 3) return null;
+
+      const contractId = String(topics[1]);
+      const version = String(topics[2]);
+
+      const data = this.scValToNativeLoose(event.value) as Record<string, unknown>;
+      const publisher = String(data["publisher"]);
+      if (publisher !== publisherFilter) return null;
+
+      return {
+        contractId,
+        publisher,
+        latestVersion: version,
+        specHash: Buffer.from(data["spec_hash"] as Uint8Array).toString("hex"),
+        pointer: String(data["pointer"]),
+        publishedAtLedger: event.ledger,
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  /** Accepts either an already-parsed `xdr.ScVal` or a raw base64 XDR string, and returns its native JS value either way - different RPC transports/SDK versions surface `topic`/`value` in either form. */
+  private scValToNativeLoose(value: unknown): unknown {
+    if (value instanceof xdr.ScVal) return scValToNative(value);
+    if (typeof value === "string") return scValToNative(xdr.ScVal.fromXDR(value, "base64"));
+    return value;
   }
 
   private async getRecords(contractId: string): Promise<SpecRecord[]> {

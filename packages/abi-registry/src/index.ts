@@ -41,8 +41,13 @@ export type { WellKnownSpecRaw } from "./wellKnown.js";
 
 export { OnChainRegistryPublisher } from "./OnChainRegistryPublisher.js";
 export type { OnChainRegistryPublisherConfig } from "./OnChainRegistryPublisher.js";
-export { OnChainAbiRegistryClient } from "./OnChainAbiRegistryClient.js";
-export type { OnChainAbiRegistryClientConfig } from "./OnChainAbiRegistryClient.js";
+export { OnChainAbiRegistryClient, DEFAULT_LOOKBACK_LEDGERS } from "./OnChainAbiRegistryClient.js";
+export type {
+  OnChainAbiRegistryClientConfig,
+  RegisteredContractSummary,
+  ListRegisteredContractsOptions,
+  SpecRecord,
+} from "./OnChainAbiRegistryClient.js";
 
 export { BundledWellKnownClient } from "./BundledWellKnownClient.js";
 export { ChainedAbiRegistryClient } from "./ChainedAbiRegistryClient.js";
@@ -69,3 +74,28 @@ export type {
   SchemaFieldDiff,
   VerifySchemaOptions,
 } from "./verifySchema.js";
+
+export type {
+  TaxonomyScope,
+  TaxonomyMapping,
+  TaxonomyRecord,
+  TaxonomyTier,
+  TaxonomyResolveInput,
+  TaxonomyValidationResult,
+} from "./taxonomy/index.js";
+export {
+  TAXONOMY_TIER_ORDER,
+  tierOf,
+  scopeKeyOf,
+  TaxonomyConflictError,
+  InvalidTaxonomyRecordError,
+  validateTaxonomyRecord,
+  parseTaxonomyRecord,
+  TaxonomyResolver,
+  loadTaxonomyResolver,
+  wellKnownTaxonomy,
+  wellKnownTaxonomyMappings,
+  SEP41_SAC_INTERFACE_ID,
+  SOROBAN_AMM_V1_INTERFACE_ID,
+  classifyKnownInterface,
+} from "./taxonomy/index.js";

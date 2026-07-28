@@ -1,0 +1,71 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://raw.githubusercontent.com/determined-001/orbital_stellar/main/packages/abi-registry/schema/taxonomy.schema.json",
+  "title": "Orbital Semantic Taxonomy Record",
+  "description": "Maps raw Soroban contract events to canonical semantic names (e.g. \"swap.executed\", \"loan.liquidated\"). NOTE: this record format and its collision policy are a placeholder standing in for issue 7.7 (\"owns the taxonomy record format\"), which was not yet filed/landed anywhere findable at the time issue 11.1 (this resolver) was implemented - see packages/abi-registry/src/taxonomy/README.md. If/when 7.7 lands with a different shape, that shape wins and this file should be reconciled to it, not the other way around.",
+  "type": "object",
+  "required": ["version", "mappings"],
+  "additionalProperties": false,
+  "properties": {
+    "version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$",
+      "description": "Semver of this taxonomy record, independent of the schema's own version."
+    },
+    "mappings": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/mapping" }
+    }
+  },
+  "$defs": {
+    "mapping": {
+      "type": "object",
+      "required": ["scope", "eventTopic", "semantic"],
+      "additionalProperties": false,
+      "properties": {
+        "scope": { "$ref": "#/$defs/scope" },
+        "eventTopic": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The event's decoded first topic symbol (e.g. \"transfer\", \"swap\") - not the full topics array."
+        },
+        "semantic": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9]*(\\.[a-z][a-z0-9]*)+$",
+          "description": "Canonical dot-separated semantic name, e.g. \"swap.executed\", \"loan.liquidated\"."
+        },
+        "doc": { "type": "string" }
+      }
+    },
+    "scope": {
+      "type": "object",
+      "description": "Exactly one applicable-contract scope, in decreasing precedence: contractId (exact) > specHash (WASM/spec-hash family) > interfaceId (SEP-interface match).",
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["contractId"],
+          "additionalProperties": false,
+          "properties": {
+            "contractId": { "type": "string", "minLength": 1 }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["specHash"],
+          "additionalProperties": false,
+          "properties": {
+            "specHash": { "type": "string", "minLength": 1 }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["interfaceId"],
+          "additionalProperties": false,
+          "properties": {
+            "interfaceId": { "type": "string", "minLength": 1 }
+          }
+        }
+      ]
+    }
+  }
+}
