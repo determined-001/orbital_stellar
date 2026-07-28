@@ -56,9 +56,7 @@ export function loadCodegenConfig(cwd: string): {
 } {
   const errors: string[] = [];
 
-  const configPath = CONFIG_FILE_NAMES.map((name) => resolve(cwd, name)).find((p) =>
-    existsSync(p),
-  );
+  const configPath = CONFIG_FILE_NAMES.map((name) => resolve(cwd, name)).find((p) => existsSync(p));
 
   if (!configPath) {
     return { config: null, lockFile: null, errors: ["orbital config not found"] };
