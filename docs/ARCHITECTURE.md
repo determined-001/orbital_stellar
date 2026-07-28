@@ -254,6 +254,25 @@ For `engine.cursor_expired` notifications, the payload includes:
 Consumers can subscribe to these via `watcher.on("engine.reconnecting", …)`
 to surface UI banners or write structured logs.
 
+### In-process backpressure and bounded queues
+
+To protect consumers from unbounded memory growth when a watcher is slow or
+there's a burst of ledger activity, `EventEngine` now maintains a bounded
+internal queue. Configuration lives in `CoreConfig.queue` and exposes three
+knobs:
+
+- **`highWaterMark`**: the maximum queued events before backpressure triggers (default: 10000).
+- **`lowWaterMark`**: the level below which backpressure is considered cleared (default: 50% of highWaterMark).
+- **`policy`**: one of `pause` (default), `drop-oldest`, or `drop-newest`.
+
+When the high-water mark is crossed the engine emits `engine.backpressure`
+with `{ active: true, queued, policy }`. The default `pause` policy stops
+the underlying sources (Horizon and Soroban) until the queue drains below the
+low-water mark, at which point `engine.backpressure` with `{ active: false }`
+is emitted and sources are resumed. `drop-oldest` and `drop-newest` shed
+events deterministically instead of pausing the source; these are useful for
+best-effort dashboards where availability is preferred over perfect delivery.
+
 ---
 
 ## 6. Webhook delivery internals

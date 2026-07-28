@@ -142,7 +142,8 @@ export type WatcherNotificationType =
   | "engine.rate_limited"
   | "engine.stopped"
   | "engine.cursor_store_unhealthy"
-  | "engine.cursor_expired";
+  | "engine.cursor_expired"
+  | "engine.backpressure";
 
 export type OfferEventType = "offer.created" | "offer.updated" | "offer.deleted";
 export type BumpSequenceEventType = "account.bump_sequence";
@@ -455,6 +456,12 @@ export type WatcherNotification = {
   cursor?: string;
   /** The source that triggered this notification. */
   source?: "horizon" | "soroban";
+  /** Backpressure active flag (for `engine.backpressure`). */
+  active?: boolean;
+  /** Number of events currently queued inside the engine. */
+  queued?: number;
+  /** Queue policy in effect when backpressure was emitted. */
+  policy?: string;
   /** ISO 8601 timestamp of when this notification was emitted. */
   emittedAt: string;
   /** The cursor value that was expired or lost, if applicable. */
@@ -565,6 +572,15 @@ export type CoreConfig = {
   abiRegistry?: AbiRegistryClientLike | false;
   /** Soroban RPC configuration. Ignored when `network` is an array - set `soroban` per source instead. */
   soroban?: SorobanConfig;
+  /** Optional internal event queue tuning. */
+  queue?: {
+    /** High water mark for the internal engine queue. Defaults to 10000. */
+    highWaterMark?: number;
+    /** Low water mark at which backpressure is considered cleared. Defaults to 50% of highWaterMark. */
+    lowWaterMark?: number;
+    /** Backpressure policy: 'pause' | 'drop-oldest' | 'drop-newest'. Defaults to 'pause'. */
+    policy?: "pause" | "drop-oldest" | "drop-newest";
+  };
 };
 
 // Error class for invalid network validation

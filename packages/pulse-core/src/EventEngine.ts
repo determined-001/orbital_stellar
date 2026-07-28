@@ -206,6 +206,14 @@ export class EventEngine {
   private consecutiveCursorFailures = 0;
   private isCursorStoreUnhealthy = false;
   private pausedSources = new Set<"horizon" | "soroban">();
+  /** Internal bounded queue for normalized events to protect slow consumers. */
+  private eventQueue: Array<Timestamped<NormalizedEventOrPending>> = [];
+  private queueHighWaterMark: number;
+  private queueLowWaterMark: number;
+  private queuePolicy: "pause" | "drop-oldest" | "drop-newest";
+  private processingQueue = false;
+  private inBackpressure = false;
+  private wePausedSourcesForBackpressure = false;
   /**
    * Optional live Soroban subscriber. Wired only when the engine is configured
    * for live contract streaming; otherwise undefined, and the guarded calls
@@ -287,6 +295,14 @@ export class EventEngine {
     this.abiRegistry = EventEngine.resolveAbiRegistry(config.abiRegistry);
     this.cursorStore = config.cursorStore;
     this.network = config.network;
+    // Queue configuration
+    const defaultHigh = 10000;
+    this.queueHighWaterMark = Math.max(1, Math.floor(config.queue?.highWaterMark ?? defaultHigh));
+    this.queueLowWaterMark = Math.max(
+      1,
+      Math.floor(config.queue?.lowWaterMark ?? Math.floor(this.queueHighWaterMark / 2)),
+    );
+    this.queuePolicy = config.queue?.policy ?? "pause";
 
     if (config.soroban) {
       const rpc = new SorobanRpcClient({
@@ -1152,7 +1168,7 @@ export class EventEngine {
         }
 
         this.lastEventAt = event.timestamp;
-        this.route(event);
+        this.enqueueEvent(event);
       },
       onerror: (error) => {
         this.log.error("[pulse-core] SSE error.", { error });
@@ -1174,6 +1190,110 @@ export class EventEngine {
       this.horizonCursor = streamCursor;
       this.stopStream = this.server.operations().cursor(streamCursor).stream(callbacks);
     });
+  }
+
+  private enqueueEvent(event: Timestamped<NormalizedEventOrPending>): void {
+    // If over capacity, apply configured policy.
+    if (this.eventQueue.length >= this.queueHighWaterMark) {
+      if (this.queuePolicy === "pause") {
+        if (!this.inBackpressure) {
+          this.inBackpressure = true;
+          // Pause sources to prevent further incoming events.
+          try {
+            this.pauseSource("horizon");
+            this.pauseSource("soroban");
+            this.wePausedSourcesForBackpressure = true;
+          } catch (err) {
+            /* swallow - pauseSource logs */
+          }
+          this.notifyWatchers("engine.backpressure", {
+            type: "engine.backpressure",
+            attempt: 0,
+            emittedAt: new Date().toISOString(),
+            active: true,
+            queued: this.eventQueue.length,
+            policy: this.queuePolicy,
+          } as any);
+        }
+        // Still accept the event so in-flight sources pause and we can drain.
+        this.eventQueue.push(event);
+      } else if (this.queuePolicy === "drop-oldest") {
+        // Drop one oldest then push
+        this.eventQueue.shift();
+        this.eventQueue.push(event);
+        if (!this.inBackpressure) {
+          this.inBackpressure = true;
+          this.notifyWatchers("engine.backpressure", {
+            type: "engine.backpressure",
+            attempt: 0,
+            emittedAt: new Date().toISOString(),
+            active: true,
+            queued: this.eventQueue.length,
+            policy: this.queuePolicy,
+          } as any);
+        }
+      } else {
+        // drop-newest: ignore incoming
+        if (!this.inBackpressure) {
+          this.inBackpressure = true;
+          this.notifyWatchers("engine.backpressure", {
+            type: "engine.backpressure",
+            attempt: 0,
+            emittedAt: new Date().toISOString(),
+            active: true,
+            queued: this.eventQueue.length,
+            policy: this.queuePolicy,
+          } as any);
+        }
+        return;
+      }
+    } else {
+      this.eventQueue.push(event);
+    }
+
+    // Kick the async processor
+    this.processQueue().catch((err) => {
+      this.log.error("[pulse-core] event queue processor failed", { error: err });
+    });
+  }
+
+  private async processQueue(): Promise<void> {
+    if (this.processingQueue) return;
+    this.processingQueue = true;
+    try {
+      while (this.eventQueue.length > 0) {
+        const ev = this.eventQueue.shift()!;
+        try {
+          this.route(ev);
+        } catch (err) {
+          this.log.warn("[pulse-core] watcher handler threw while routing event", { error: err });
+        }
+
+        // Clear backpressure if we're below low watermark
+        if (this.inBackpressure && this.eventQueue.length <= this.queueLowWaterMark) {
+          this.inBackpressure = false;
+          if (this.wePausedSourcesForBackpressure) {
+            try {
+              this.resumeSource("horizon");
+              this.resumeSource("soroban");
+            } catch (err) {
+              /* swallow */
+            }
+            this.wePausedSourcesForBackpressure = false;
+          }
+          this.notifyWatchers("engine.backpressure", {
+            type: "engine.backpressure",
+            attempt: 0,
+            emittedAt: new Date().toISOString(),
+            active: false,
+            queued: this.eventQueue.length,
+            policy: this.queuePolicy,
+          } as any);
+        }
+      }
+    } finally {
+      this.processingQueue = false;
+    }
   }
 
   private getHorizonCursor(record: unknown): string | null {
