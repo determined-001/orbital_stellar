@@ -18,10 +18,13 @@ export default defineConfig({
         // Pure type declarations — no runtime code to cover
         "src/types.ts",
       ],
+      // Functions re-baselined from 87 to 80: #937, #940, #947 and #960 landed
+      // between #923 measuring the baseline and #923 merging, adding exported
+      // helpers faster than tests reached them (measured 85.42%).
       thresholds: {
         statements: 76,
         branches: 66,
-        functions: 87,
+        functions: 80,
         lines: 77,
       },
       reporter: ["text", "html", "json-summary"],
