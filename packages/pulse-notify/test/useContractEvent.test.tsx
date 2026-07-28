@@ -127,4 +127,112 @@ describe("useContractEvent Hook", () => {
 
     expect(getByTestId("event").textContent).toContain("transferred");
   });
+
+  test("validates event data against optional schema", async () => {
+    const schema = {
+      safeParse: (data: unknown) => {
+        if (typeof data === "string" && data === "valid") {
+          return { success: true as const, data };
+        }
+        return { success: false as const };
+      },
+    };
+
+    // Use Component that passes schema
+    function SchemaTestComponent() {
+      const { event } = useContractEvent({
+        serverUrl: "https://events.example.com",
+        contractId: "C123",
+        topics: ["test"],
+        schema,
+      });
+      return <div data-testid="event">{event ? JSON.stringify(event) : "null"}</div>;
+    }
+
+    const { getByTestId, findByText } = render(<SchemaTestComponent />);
+
+    await findByText("true", { selector: '[data-testid="connected"]' });
+
+    // Emit invalid data - should be filtered out
+    act(() => {
+      MockEventSource.instances[0].emit({
+        type: "contract.emitted",
+        contractId: "C123",
+        topics: ["test"],
+        data: "invalid",
+        timestamp: "2026-06-26T17:29:03Z",
+      });
+    });
+
+    expect(getByTestId("event").textContent).toBe("null");
+
+    // Emit valid data - should pass through
+    act(() => {
+      MockEventSource.instances[0].emit({
+        type: "contract.emitted",
+        contractId: "C123",
+        topics: ["test"],
+        data: "valid",
+        timestamp: "2026-06-26T17:29:03Z",
+      });
+    });
+
+    expect(getByTestId("event").textContent).toContain("valid");
+  });
+
+  test("shares one connection per (contractId, event) regardless of hook-instance count", async () => {
+    function HookInstance({ id }: { id: string }) {
+      useContractEvent({
+        serverUrl: "https://events.example.com",
+        contractId: "C123",
+        topics: ["transfer"],
+      });
+      return <div data-testid={`instance-${id}`}>{id}</div>;
+    }
+
+    const { findByText } = render(
+      <div>
+        <HookInstance id="a" />
+        <HookInstance id="b" />
+        <HookInstance id="c" />
+      </div>,
+    );
+
+    // Wait for all instances to connect
+    await findByText("a", { selector: '[data-testid="instance-a"]' });
+    await findByText("b", { selector: '[data-testid="instance-b"]' });
+    await findByText("c", { selector: '[data-testid="instance-c"]' });
+
+    // Should only have one EventSource for all three hook instances
+    // because they share the same serverUrl, contractId, topics, and token
+    expect(MockEventSource.instances.length).toBe(1);
+    expect(__getConnectionPoolSizeForTests()).toBe(1);
+  });
+
+  test("subscription count returns to zero after all instances unmount", async () => {
+    function MountedHook() {
+      useContractEvent({
+        serverUrl: "https://events.example.com",
+        contractId: "C123",
+      });
+      return <div data-testid="mounted">mounted</div>;
+    }
+
+    const { getByTestId, findByText, unmount } = render(<MountedHook />);
+    await findByText("mounted", { selector: '[data-testid="mounted"]' });
+
+    // Connection should exist while mounted
+    expect(__getConnectionPoolSizeForTests()).toBe(1);
+
+    // Track the close count before unmount
+    const es = MockEventSource.instances[0];
+    const closeCountBefore = es.closeCount;
+
+    // Unmount the component - subscription should go to zero
+    unmount();
+
+    // After unmount, the EventSource should have been closed
+    expect(es.closeCount).toBe(closeCountBefore + 1);
+    expect(__getConnectionPoolSizeForTests()).toBe(0);
+  });
 });

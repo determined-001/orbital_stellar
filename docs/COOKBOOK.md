@@ -29,6 +29,7 @@
 15. [Generate TypeScript types from a Soroban contract](#15-generate-typescript-types-from-a-soroban-contract)
 16. [Back up and restore cursor positions](#16-back-up-and-restore-cursor-positions)
 17. [Inspect or replay dead-letter-queue entries](#17-inspect-or-replay-dead-letter-queue-entries)
+18. [Subscribe to contract-specific typed events in React](#18-subscribe-to-contract-specific-typed-events-in-react)
 
 ---
 
@@ -629,6 +630,85 @@ orbital-dlq dlq replay <entry-id> --secret "$WEBHOOK_SECRET"
 ```
 
 The `orbital-dlq` binary ships with `@orbital-stellar/pulse-webhooks` and is available via `npx orbital-dlq`. Set `ORBITAL_WEBHOOK_SECRET` in your environment or pass `--secret` to re-sign replayed deliveries.
+
+---
+
+## 18. Subscribe to contract-specific typed events in React
+
+Use `orbital codegen` with a contract spec to generate per-event React hooks with
+Zod runtime validation, then consume them in your components. ✅
+
+**Step 1: Generate types and hooks from a registry spec**
+
+```ts
+import { generateContractArtifacts, generateContractHooks } from "@orbital-stellar/abi-registry";
+import type { ContractSpec } from "@orbital-stellar/abi-registry";
+
+// Load the spec - from a registry client, local file, or WASM discovery
+const spec: ContractSpec = { /* ... contract spec ... */ };
+
+const artifacts = generateContractArtifacts(spec);
+// artifacts.declarations  → TypeScript interfaces + types
+// artifacts.schemas        → Zod validation schemas
+// artifacts.hooks          → React hook wrappers (e.g. useSwapExecuted)
+
+// Or use the standalone hook generator:
+const hooks = generateContractHooks(spec);
+```
+
+**Step 2: Use generated hooks in a React component**
+
+```tsx
+import { useContractEvent } from "@orbital-stellar/pulse-notify";
+import { SwapExecutedEventSchema } from "./generated/MyContract";
+
+function SwapActivity({ serverUrl, contractId }: { serverUrl: string; contractId: string }) {
+  const { event, connected, error } = useContractEvent({
+    serverUrl,
+    contractId,
+    topics: ["swap_executed"],
+    schema: SwapExecutedEventSchema, // Zod validation
+  });
+
+  if (error) return <div>Error: {error}</div>;
+  if (!connected) return <div>Connecting...</div>;
+  if (!event) return <div>Waiting for swap events...</div>;
+
+  // event.data is now validated and typed
+  return (
+    <div>
+      <p>Swap executed: {JSON.stringify(event.data)}</p>
+      <p>Ledger: {event.ledger}</p>
+    </div>
+  );
+}
+```
+
+**Step 3: Use auto-generated hook wrappers (from `orbital codegen`)**
+
+For contracts with registered schemas, `orbital codegen` emits named hooks
+like `useSwapExecuted()` that wrap `useContractEvent` with the correct
+Zod schema pre-applied:
+
+```tsx
+import { useSwapExecuted } from "@orbital-stellar/generated/MyContract";
+
+function SwapWatcher({ serverUrl, contractId }: { serverUrl: string; contractId: string }) {
+  const { event, connected } = useSwapExecuted({ serverUrl, contractId });
+
+  if (event) {
+    // event is typed as the SwapExecutedEvent interface
+    return <div>Swapped at ledger {event.ledger}: {event.data.amount}</div>;
+  }
+  return <div>Watching for swaps...</div>;
+}
+```
+
+**Connection lifecycle:**
+- One SSE connection is shared per `(contractId, topics)` regardless of how
+  many hook instances mount it - asserted by the test suite.
+- When all hook instances unmount, the connection closes and the subscription
+  count returns to zero.
 
 ---
 
