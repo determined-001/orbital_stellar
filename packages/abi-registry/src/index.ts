@@ -41,8 +41,13 @@ export type { WellKnownSpecRaw } from "./wellKnown.js";
 
 export { OnChainRegistryPublisher } from "./OnChainRegistryPublisher.js";
 export type { OnChainRegistryPublisherConfig } from "./OnChainRegistryPublisher.js";
-export { OnChainAbiRegistryClient } from "./OnChainAbiRegistryClient.js";
-export type { OnChainAbiRegistryClientConfig } from "./OnChainAbiRegistryClient.js";
+export { OnChainAbiRegistryClient, DEFAULT_LOOKBACK_LEDGERS } from "./OnChainAbiRegistryClient.js";
+export type {
+  OnChainAbiRegistryClientConfig,
+  RegisteredContractSummary,
+  ListRegisteredContractsOptions,
+  SpecRecord,
+} from "./OnChainAbiRegistryClient.js";
 
 export { BundledWellKnownClient } from "./BundledWellKnownClient.js";
 export { ChainedAbiRegistryClient } from "./ChainedAbiRegistryClient.js";

@@ -61,6 +61,8 @@ function specRecordScVal(record: {
 
 type MockServer = {
   simulateTransaction: ReturnType<typeof vi.fn>;
+  getEvents?: ReturnType<typeof vi.fn>;
+  getLatestLedger?: ReturnType<typeof vi.fn>;
 };
 
 function installMockServer(simulateTransaction: ReturnType<typeof vi.fn>): MockServer {
@@ -71,6 +73,52 @@ function installMockServer(simulateTransaction: ReturnType<typeof vi.fn>): MockS
     return server;
   });
   return server;
+}
+
+function installMockEventsServer(server: {
+  getEvents: ReturnType<typeof vi.fn>;
+  getLatestLedger: ReturnType<typeof vi.fn>;
+}): void {
+  (SorobanRpc.Server as unknown as ReturnType<typeof vi.fn>).mockImplementation(function (
+    this: unknown,
+  ) {
+    return server;
+  });
+}
+
+/**
+ * Hand-builds a raw `getEvents` record for the registry's `SpecPublished`
+ * event. Per `#[contractevent]`'s convention (mirrored by `decode.ts`
+ * elsewhere in this package), `topic[0]` is the event's name symbol and the
+ * remaining `#[topic]`-marked fields follow in declaration order
+ * (`contract_id`, then `version`); the non-topic fields (`spec_hash`,
+ * `pointer`, `publisher`) live in `value`.
+ */
+function specPublishedEvent(record: {
+  contractId: string;
+  version: string;
+  specHash: Buffer;
+  pointer: string;
+  publisher: string;
+  ledger: number;
+}): { topic: xdr.ScVal[]; value: xdr.ScVal; ledger: number; pagingToken: string } {
+  const entry = (key: string, val: xdr.ScVal) =>
+    new xdr.ScMapEntry({ key: xdr.ScVal.scvSymbol(key), val });
+
+  return {
+    topic: [
+      xdr.ScVal.scvSymbol("SpecPublished"),
+      new Address(record.contractId).toScVal(),
+      xdr.ScVal.scvString(record.version),
+    ],
+    value: xdr.ScVal.scvMap([
+      entry("spec_hash", xdr.ScVal.scvBytes(record.specHash)),
+      entry("pointer", xdr.ScVal.scvString(record.pointer)),
+      entry("publisher", new Address(record.publisher).toScVal()),
+    ]),
+    ledger: record.ledger,
+    pagingToken: `${record.ledger}-0`,
+  };
 }
 
 /** Routes simulateTransaction calls to list_versions / get_version based on the invoked function name. */
@@ -247,5 +295,127 @@ describe("OnChainAbiRegistryClient", () => {
 
     expect(simulate).toHaveBeenCalledTimes(2); // list_versions + get_version, once total
     expect(transport).toHaveBeenCalledTimes(1);
+  });
+
+  describe("listRegisteredContracts", () => {
+    const OTHER_CONTRACT_ID = "CBQHNAXSI55GX2GN6D67GK7BHVPSLJUGZQEU7WJ5LKR3PP2CHXYQNTV5";
+    const OTHER_PUBLISHER = Keypair.random().publicKey();
+
+    it("returns one summary per contract, keeping the highest-ledger record seen", async () => {
+      const getLatestLedger = vi.fn().mockResolvedValue({ sequence: 1000 });
+      const getEvents = vi.fn().mockResolvedValue({
+        events: [
+          specPublishedEvent({
+            contractId: TARGET_CONTRACT_ID,
+            version: "1.0.0",
+            specHash: createHash("sha256").update("v1").digest(),
+            pointer: "https://example.com/v1.json",
+            publisher: PUBLISHER_ADDRESS,
+            ledger: 100,
+          }),
+          specPublishedEvent({
+            contractId: TARGET_CONTRACT_ID,
+            version: "2.0.0",
+            specHash: createHash("sha256").update("v2").digest(),
+            pointer: "https://example.com/v2.json",
+            publisher: PUBLISHER_ADDRESS,
+            ledger: 200,
+          }),
+        ],
+        latestLedger: 1000,
+      });
+      installMockEventsServer({ getEvents, getLatestLedger });
+      const client = makeClient();
+
+      const result = await client.listRegisteredContracts();
+
+      expect(result).toEqual([
+        {
+          contractId: TARGET_CONTRACT_ID,
+          publisher: PUBLISHER_ADDRESS,
+          latestVersion: "2.0.0",
+          specHash: createHash("sha256").update("v2").digest().toString("hex"),
+          pointer: "https://example.com/v2.json",
+          publishedAtLedger: 200,
+        },
+      ]);
+      expect(getEvents).toHaveBeenCalledWith(
+        expect.objectContaining({
+          startLedger: 1000 - 17_280,
+          filters: [{ type: "contract", contractIds: [REGISTRY_CONTRACT_ID] }],
+        }),
+      );
+    });
+
+    it("filters out events published by a different publisher", async () => {
+      const getLatestLedger = vi.fn().mockResolvedValue({ sequence: 1000 });
+      const getEvents = vi.fn().mockResolvedValue({
+        events: [
+          specPublishedEvent({
+            contractId: OTHER_CONTRACT_ID,
+            version: "1.0.0",
+            specHash: createHash("sha256").update("other").digest(),
+            pointer: "https://example.com/other.json",
+            publisher: OTHER_PUBLISHER,
+            ledger: 150,
+          }),
+        ],
+        latestLedger: 1000,
+      });
+      installMockEventsServer({ getEvents, getLatestLedger });
+      const client = makeClient();
+
+      expect(await client.listRegisteredContracts()).toEqual([]);
+      expect(await client.listRegisteredContracts({ publisher: OTHER_PUBLISHER })).toHaveLength(1);
+    });
+
+    it("pages through getEvents until a short page signals the end", async () => {
+      const getLatestLedger = vi.fn().mockResolvedValue({ sequence: 1000 });
+      const page1Events = Array.from({ length: 2 }, (_, i) =>
+        specPublishedEvent({
+          contractId: TARGET_CONTRACT_ID,
+          version: `1.${i}.0`,
+          specHash: createHash("sha256").update(`p1-${i}`).digest(),
+          pointer: `https://example.com/p1-${i}.json`,
+          publisher: PUBLISHER_ADDRESS,
+          ledger: 100 + i,
+        }),
+      );
+      const getEvents = vi
+        .fn()
+        .mockResolvedValueOnce({ events: page1Events, latestLedger: 1000, cursor: "cursor-1" })
+        .mockResolvedValueOnce({
+          events: [
+            specPublishedEvent({
+              contractId: OTHER_CONTRACT_ID,
+              version: "1.0.0",
+              specHash: createHash("sha256").update("p2").digest(),
+              pointer: "https://example.com/p2.json",
+              publisher: PUBLISHER_ADDRESS,
+              ledger: 300,
+            }),
+          ],
+          latestLedger: 1000,
+        });
+      installMockEventsServer({ getEvents, getLatestLedger });
+      const client = makeClient();
+
+      const result = await client.listRegisteredContracts({ pageLimit: 2 });
+
+      expect(getEvents).toHaveBeenCalledTimes(2);
+      expect(getEvents.mock.calls[1]![0]).toEqual(expect.objectContaining({ cursor: "cursor-1" }));
+      expect(result.map((r) => r.contractId).sort()).toEqual(
+        [TARGET_CONTRACT_ID, OTHER_CONTRACT_ID].sort(),
+      );
+    });
+
+    it("returns an empty list when no SpecPublished events are within the scanned window", async () => {
+      const getLatestLedger = vi.fn().mockResolvedValue({ sequence: 1000 });
+      const getEvents = vi.fn().mockResolvedValue({ events: [], latestLedger: 1000 });
+      installMockEventsServer({ getEvents, getLatestLedger });
+      const client = makeClient();
+
+      expect(await client.listRegisteredContracts()).toEqual([]);
+    });
   });
 });

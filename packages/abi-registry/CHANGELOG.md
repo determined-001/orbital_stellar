@@ -13,6 +13,8 @@
 - `PrimitiveType` gained `"error"` - the generic Soroban error-value slot (`scvError`); real and common, since it's how `Result<T, Error>`'s error arm is encoded on the wire regardless of which `#[contracterror]` enum is named (verified against a real soroban-sdk 27 build).
 - SEP-41 event definitions (`transfer`, `mint`, `burn`, `clawback`, `set_authorized`, `approve`) added to the bundled well-known specs (`usdc.json`, `eurc.json`, `aqua.json`, `native-asset-wrapper.json` - the native wrapper only gets `transfer`/`approve`, matching its actual function set).
 
+- **`OnChainAbiRegistryClient.listRegisteredContracts()`** (issue 913) - enumerates contracts that have published a spec, by scanning the registry contract's own historical `SpecPublished` events via `getEvents` (there is no on-chain index of "all registered contracts" - every record is keyed by `(contract_id, publisher, version)` - so this is the only way to enumerate them). This is a **bounded, best-effort scan**: it only sees as far back as `lookbackLedgers` (default `DEFAULT_LOOKBACK_LEDGERS`, ~24h of ledgers) and only as far as the configured RPC endpoint's own event-history retention allows, whichever is shorter - an empty or partial result means "nothing observed in the scanned window", not "nothing published". Also added `OnChainAbiRegistryClient.listVersions()`, a public wrapper exposing a contract's full version history (previously only reachable internally via `getSpec`/`getSpecAt`).
+
 ### Fixed
 - `decodeContractEvent()` now accepts a canonical `ContractSpec` in addition to `XdrContractSpec` - previously only the latter typechecked, even though a `ContractSpec`'s `xdrEntries` made it structurally usable.
 
