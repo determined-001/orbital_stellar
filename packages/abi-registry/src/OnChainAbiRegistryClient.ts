@@ -122,6 +122,14 @@ export class OnChainAbiRegistryClient {
     return this.getRecords(contractId);
   }
 
+  /** Resolves the spec published as exactly `version` for `contractId`, or `null` if that version was never published. */
+  async getSpecByVersion(contractId: string, version: string): Promise<ContractSpec | null> {
+    const records = await this.getRecords(contractId);
+    const record = records.find((r) => r.version === version);
+    if (!record) return null;
+    return this.resolveRecord(contractId, record);
+  }
+
   /**
    * Resolves whichever spec version was current as of `ledger` - the most
    * recently published version whose `published_at_ledger` is `<= ledger`.

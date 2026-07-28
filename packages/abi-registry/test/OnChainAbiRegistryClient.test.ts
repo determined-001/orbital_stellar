@@ -272,6 +272,44 @@ describe("OnChainAbiRegistryClient", () => {
     expect(await client.getSpecAt(TARGET_CONTRACT_ID, 50)).toBeNull();
   });
 
+  it("getSpecByVersion resolves the exact version requested, and null for an unpublished one", async () => {
+    const specV1 = testSpec({ version: "1.0.0" });
+    const specV2 = testSpec({ version: "2.0.0" });
+    const blobV1 = JSON.stringify(specV1);
+    const blobV2 = JSON.stringify(specV2);
+
+    installMockServer(
+      routingSimulate({
+        versions: ["1.0.0", "2.0.0"],
+        records: {
+          "1.0.0": specRecordScVal({
+            version: "1.0.0",
+            specHash: createHash("sha256").update(blobV1).digest(),
+            pointer: "https://example.com/v1.json",
+            publisher: PUBLISHER_ADDRESS,
+            publishedAtLedger: 100,
+          }),
+          "2.0.0": specRecordScVal({
+            version: "2.0.0",
+            specHash: createHash("sha256").update(blobV2).digest(),
+            pointer: "https://example.com/v2.json",
+            publisher: PUBLISHER_ADDRESS,
+            publishedAtLedger: 200,
+          }),
+        },
+      }),
+    );
+    const transport = vi.fn().mockImplementation(async (url: string) => ({
+      ok: true,
+      text: async () => (url.includes("v1") ? blobV1 : blobV2),
+    }));
+    const client = makeClient({ transport: transport as unknown as typeof fetch });
+
+    expect(await client.getSpecByVersion(TARGET_CONTRACT_ID, "1.0.0")).toEqual(specV1);
+    expect(await client.getSpecByVersion(TARGET_CONTRACT_ID, "2.0.0")).toEqual(specV2);
+    expect(await client.getSpecByVersion(TARGET_CONTRACT_ID, "9.9.9")).toBeNull();
+  });
+
   it("caches resolved specs - a second getSpec call does not re-simulate", async () => {
     const spec = testSpec();
     const blob = JSON.stringify(spec);
