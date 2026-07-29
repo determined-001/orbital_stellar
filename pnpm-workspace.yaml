@@ -1,6 +1,7 @@
 packages:
   - "packages/*"
   - "apps/*"
+  - "examples/*"
 allowBuilds:
   esbuild: false
 # pnpm v10 reads dependency overrides from here, NOT from package.json.

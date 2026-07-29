@@ -59,3 +59,14 @@ resulting contract IDs. See that script's header comment and the maintainer
 plan's "manual/gated steps" section for the secret-provisioning steps that
 follow (GitHub repo secrets for the nightly integration test, Vercel env vars
 for the demo's "Fire test event" route).
+
+## Deployment Provenance & Reproducible Builds
+
+`contracts/deployed.testnet.json` serves as the trust anchor for the whole registry: consumers resolve specs through the contract ID it names. To prevent this file from drifting from the source in `contracts/registry`, CI enforces deployment provenance on every PR and push.
+
+The procedure:
+1. CI builds the contracts reproducibly using the pinned `rust-toolchain.toml` (ensuring byte-for-byte identical WASM across environments).
+2. The `wasmHash` values recorded in `deployed.testnet.json` are compared against the newly built WASM hashes. A mismatch fails the job with a diff of expected vs actual.
+3. The deployed WASM bytecodes are fetched directly from the Stellar testnet and hashed to ensure they exactly match the local build.
+
+Changing contract source without redeploying turns the CI job red. If you intentionally modify a contract, you must rebuild, redeploy (which updates `deployed.testnet.json`), and commit both the source changes and the updated JSON file together.

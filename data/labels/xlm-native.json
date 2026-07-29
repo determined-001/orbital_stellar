@@ -1,0 +1,14 @@
+{
+  "schemaVersion": "1.0.0",
+  "contractId": "CAS3J7GYLGXMF6TDJBBYYSE3HQ6BBSMLNUQ34T6TZMYMW2EVH34XOWMA",
+  "label": "Stellar Native (XLM SAC)",
+  "entityType": "issuer",
+  "confidence": 1.0,
+  "sources": [
+    "https://developers.stellar.org/docs/learn/fundamentals/stellar-native-asset",
+    "https://stellar.expert/explorer/public/contract/CAS3J7GYLGXMF6TDJBBYYSE3HQ6BBSMLNUQ34T6TZMYMW2EVH34XOWMA"
+  ],
+  "verifiedAt": "2025-02-01T00:00:00.000Z",
+  "submittedBy": "orbital-maintainers",
+  "notes": "The Stellar Asset Contract (SAC) wrapping the native XLM asset. The Stellar network itself is the 'issuer' of XLM."
+}

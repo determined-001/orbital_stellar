@@ -1,10 +1,42 @@
 #!/usr/bin/env node
 import { readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { fileURLToPath } from "node:url";
-import { generateContractTypes } from "../src/generate.js";
+import { generateContractTypes } from "../dist/generate.js";
 
-const [, , inputPath, outputPath] = process.argv;
+const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
+
+function printVersion() {
+  console.log(pkg.version);
+  process.exit(0);
+}
+
+function printHelp() {
+  console.error(
+    `Usage: abi-registry-generate <input-spec.json> <output.d.ts>
+
+Generates TypeScript type declarations from a Soroban contract spec JSON file.
+
+Options:
+  --help, -h      Show this help message
+  --version, -v   Show version number
+`,
+  );
+  process.exit(0);
+}
+
+const args = process.argv.slice(2);
+
+// Handle --version and --help flags
+for (const arg of args) {
+  if (arg === "--version" || arg === "-v") {
+    printVersion();
+  }
+  if (arg === "--help" || arg === "-h") {
+    printHelp();
+  }
+}
+
+const [inputPath, outputPath] = args;
 
 if (!inputPath || !outputPath) {
   console.error("Usage: abi-registry-generate <input-spec.json> <output.d.ts>");

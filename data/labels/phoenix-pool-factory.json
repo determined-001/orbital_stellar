@@ -1,0 +1,14 @@
+{
+  "schemaVersion": "1.0.0",
+  "contractId": "CDFB27PIVZ4XMGD2QT6W3PZ2GFLEZ34QPRS3OJKFIZH2BLOJGGFAHKKM",
+  "label": "Phoenix Pool Factory",
+  "entityType": "protocol",
+  "confidence": 0.9,
+  "sources": [
+    "https://phoenix-lab.gitbook.io/phoenix-protocol",
+    "https://stellar.expert/explorer/public/contract/CDFB27PIVZ4XMGD2QT6W3PZ2GFLEZ34QPRS3OJKFIZH2BLOJGGFAHKKM"
+  ],
+  "verifiedAt": "2025-03-15T00:00:00.000Z",
+  "submittedBy": "orbital-maintainers",
+  "notes": "Phoenix is a concentrated liquidity AMM and lending protocol on Soroban. The pool factory deploys individual liquidity pool contracts. Confidence 0.9 pending on-chain admin verification."
+}

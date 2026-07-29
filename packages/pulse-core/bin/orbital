@@ -1,7 +1,10 @@
 #!/usr/bin/env node
 
+import { readFileSync } from "node:fs";
 import yargs from "yargs";
 import { hideBin } from "yargs/helpers";
+
+const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
 
 async function main() {
   yargs(hideBin(process.argv))
@@ -12,8 +15,16 @@ async function main() {
           "Dumps all cursors as line-delimited JSON to stdout",
           () => {},
           async () => {
-            const { PostgresCursorStore } = await import("../src/PostgresCursorStore.js");
-            const { Pool } = await import("pg");
+            let Pool, PostgresCursorStore;
+            try {
+              ({ Pool } = await import("pg"));
+              ({ PostgresCursorStore } = await import("../dist/PostgresCursorStore.js"));
+            } catch (err) {
+              console.error(
+                "The 'cursor' command requires the 'pg' package. Please install it with 'npm install pg' or 'pnpm add pg'.",
+              );
+              process.exit(1);
+            }
 
             const pg = new Pool();
             const cursorStore = new PostgresCursorStore(pg);
@@ -33,8 +44,16 @@ async function main() {
           "Restores cursors from line-delimited JSON from stdin",
           () => {},
           async () => {
-            const { PostgresCursorStore } = await import("../src/PostgresCursorStore.js");
-            const { Pool } = await import("pg");
+            let Pool, PostgresCursorStore;
+            try {
+              ({ Pool } = await import("pg"));
+              ({ PostgresCursorStore } = await import("../dist/PostgresCursorStore.js"));
+            } catch (err) {
+              console.error(
+                "The 'cursor' command requires the 'pg' package. Please install it with 'npm install pg' or 'pnpm add pg'.",
+              );
+              process.exit(1);
+            }
 
             const pg = new Pool();
             const cursorStore = new PostgresCursorStore(pg);
@@ -213,6 +232,8 @@ async function main() {
       },
     )
     .demandCommand(1, "Please provide a command (cursor, typegen, codegen)")
+    .demandCommand(1, "Please provide a command (cursor, typegen)")
+    .version(pkg.version)
     .help().argv;
 }
 
