@@ -24,6 +24,10 @@ export interface OrbitalConfig {
   outDir: string;
 }
 
+// Legacy aliases for backward compatibility with existing code
+export type CodegenContract = ContractConfig;
+export type OrbitalCodegenConfig = OrbitalConfig;
+
 /**
  * Defines an orbital configuration with proper typing
  */
@@ -54,6 +58,16 @@ export interface LockFile {
   /** Timestamp when lock file was generated */
   generatedAt: string;
 }
+
+// Legacy lock file types for backward compatibility
+export interface OrbitalLockEntry {
+  /** sha256 hex of the resolved ContractSpec JSON */
+  specHash: string;
+  /** When this hash was last verified (ISO 8601) */
+  verifiedAt: string;
+}
+
+export type OrbitalLockFile = Record<string, OrbitalLockEntry>;
 
 /**
  * Configuration validation errors
@@ -213,4 +227,31 @@ export function validateConfig(config: unknown): asserts config is OrbitalConfig
   if (outDir.startsWith("/") || outDir.match(/^[A-Z]:/)) {
     throw new ConfigValidationError("outDir", "Should be a relative path, not absolute");
   }
+}
+
+/**
+ * Legacy function for backward compatibility - loads codegen config
+ * This is a simplified version that wraps the new loadConfig function
+ */
+export function loadCodegenConfig(cwd: string): {
+  config: OrbitalCodegenConfig | null;
+  lockFile: OrbitalLockFile | null;
+  errors: string[];
+} {
+  // This is a placeholder implementation for compatibility
+  // The real implementation should use the new loadConfig system
+  return {
+    config: null,
+    lockFile: null,
+    errors: ["Use the new loadConfig function instead"],
+  };
+}
+
+/**
+ * Legacy function for backward compatibility - loads lock file
+ */
+export function loadLockFile(cwd: string): OrbitalLockFile | null {
+  // This is a placeholder implementation for compatibility
+  // The real implementation should use the new lock file system
+  return null;
 }

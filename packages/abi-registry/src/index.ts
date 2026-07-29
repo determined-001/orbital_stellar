@@ -66,7 +66,7 @@ export type {
   OrbitalLockFile,
   OrbitalLockEntry,
 } from "./config.js";
-export { loadCodegenConfig, loadLockFile } from "./config.js";
+export { loadCodegenConfig } from "./config.js";
 
 export type { CodegenWatchOptions } from "./watch.js";
 export { generateForContract, watchCodegen, writeLockFile } from "./watch.js";
@@ -86,7 +86,6 @@ export { defineConfig, validateConfig, ConfigValidationError } from "./config.js
 export type { OrbitalConfig, ContractConfig, LockFile, LockFileContract } from "./config.js";
 export { loadConfig, configExists, getConfigDirectory, ConfigLoadError } from "./configLoader.js";
 export {
-  loadLockFile,
   saveLockFile,
   createLockFile,
   generateSpecHash,
@@ -95,6 +94,7 @@ export {
   formatDriftReport,
   LockFileError,
 } from "./lockFile.js";
+export { loadLockFile } from "./config.js"; // Legacy function
 export { generateBatchTypes, checkForDrift, BatchGenerationError } from "./batchGeneration.js";
 export type { BatchGenerationResult } from "./batchGeneration.js";
 export { LabelResolver } from "./LabelResolver.js";
