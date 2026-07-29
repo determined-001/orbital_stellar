@@ -91,6 +91,13 @@ jobs:
         run: pnpm tsc --noEmit -p packages/pulse-notify/tsconfig.json
       - name: Validate ABI specs
         run: pnpm --filter @orbital-stellar/abi-registry validate
+      - name: Generate Horizon types & check drift
+        run: |
+          node scripts/generate-horizon-types.mjs
+          git diff --exit-code packages/pulse-core/src/_raw-horizon.gen.ts || {
+            echo "ERROR: Generated Horizon types are stale. Run 'pnpm generate:horizon-types' and commit the changes."
+            exit 1
+          }
       - name: Test packages
         run: pnpm -r --if-present test
 

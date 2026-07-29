@@ -1,3 +1,27 @@
+/**
+ * Raw (un-normalized) Horizon API response types.
+ *
+ * Auto-generated types from the Horizon OpenAPI description are available from
+ * `_raw-horizon.gen.ts` (do not edit that file directly) and re-exported here
+ * for convenience.
+ *
+ * The hand-written `RawHorizon*` operation interfaces below are kept for types
+ * that the OpenAPI spec does not model (e.g. SetOptions, ManageSellOffer) and
+ * for backward compatibility. Over time the plan is to migrate toward the
+ * OpenAPI-generated types as the single source of truth.
+ *
+ * To regenerate:  node scripts/generate-horizon-types.mjs
+ */
+
+// ---------------------------------------------------------------------------
+// Re-export generated Horizon OpenAPI component types
+// ---------------------------------------------------------------------------
+export type { components, operations, paths } from "./_raw-horizon.gen.js";
+
+// ---------------------------------------------------------------------------
+// Hand-written raw operation interfaces (keep for backward compatibility)
+// ---------------------------------------------------------------------------
+
 export interface RawHorizonBaseOperation {
   id: string;
   paging_token: string;
