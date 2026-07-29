@@ -251,7 +251,6 @@ export class HostedAbiRegistryClient implements AbiRegistryReader {
     const chainHash = specHash(chainSpec as XdrContractSpec);
 
     if (hostedHash !== chainHash) {
-      // eslint-disable-next-line no-console
       console.error(
         `HostedAbiRegistryClient: hash mismatch for ${contractId} - ` +
           `hosted=${hostedHash} chain=${chainHash}. ` +

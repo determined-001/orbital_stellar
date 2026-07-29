@@ -315,8 +315,10 @@ describe("HostedAbiRegistryClient", () => {
       await client.getSpec(CONTRACT_ID);
 
       const [url] = transport.mock.calls[0] as [string];
-      expect(url).not.toMatch(/\/\//);
-      expect(url).toStartWith(`${BASE_URL}/v1/`);
+      // The protocol's own "//" must not count - only a doubled slash in the
+      // path would indicate the trailing slash survived.
+      expect(new URL(url).pathname).not.toMatch(/\/\//);
+      expect(url.startsWith(`${BASE_URL}/v1/`)).toBe(true);
     });
 
     it("URL-encodes the contractId in the path", async () => {

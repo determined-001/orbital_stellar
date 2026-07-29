@@ -6,6 +6,8 @@ labels: 'type:feature,needs-design'
 assignees: ''
 ---
 
+Before filing: check [`ROADMAP.md`](../../ROADMAP.md) — feature requests inside current phases are welcome; requests for items in the [Frozen section](../../ROADMAP.md#frozen--out-of-scope-until-the-core-thesis-is-proven) will be closed with a pointer to the roadmap.
+
 **Is this on the roadmap?**
 Check [`ROADMAP.md`](../../ROADMAP.md) first. If it is, link the relevant section and add context about your specific use case.
 
