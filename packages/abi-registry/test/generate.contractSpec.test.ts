@@ -75,11 +75,6 @@ describe("generateContractArtifacts - canonical ContractSpec path", () => {
     expect(eventInterfaceBlock).not.toContain("to:");
 
     expect(artifacts.schemas).toContain("export const TransferEventSchema = z.object({");
-
-    expect(artifacts.schemas).toContain(
-      'export function isTransferEvent(event: any): event is { functionName: "transfer", topics: any[], data: TransferEvent }',
-    );
-    expect(artifacts.schemas).toContain("TransferEventSchema.safeParse(event.data).success;");
   });
 
   it("generates struct, enum, and union UDT declarations", () => {

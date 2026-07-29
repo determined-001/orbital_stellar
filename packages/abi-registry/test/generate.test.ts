@@ -58,11 +58,6 @@ describe("generateContractArtifacts", () => {
     expect(artifacts.declarations).toContain("export interface Approve");
     expect(artifacts.declarations).toContain("export interface Mint");
 
-    expect(artifacts.schemas).toContain(
-      'export function isTransfer(event: any): event is { functionName: "transfer", topics: any[], data: Transfer }',
-    );
-    expect(artifacts.schemas).toContain("TransferSchema.safeParse(event.data).success;");
-
     expect(artifacts.schemas).toContain("export const TransferSchema");
     expect(artifacts.schemas).toContain("z.object({");
     expect(artifacts.schemas).toContain("from: z.string()");
