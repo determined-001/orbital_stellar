@@ -135,6 +135,10 @@ export type ClaimableClaimedEventType = "claimable.claimed";
 export type TrustlineEventType = "trustline.added" | "trustline.removed" | "trustline.updated";
 /** Event type for account merges (one account merged into another). */
 export type AccountMergeEventType = "account.merged";
+/** Event types for anchor lifecycle events. */
+export type AnchorPaymentEventType = "anchor.payment";
+export type AnchorDepositEventType = "anchor.deposit";
+export type AnchorWithdrawalEventType = "anchor.withdrawal";
 /** Notification types emitted by the EventEngine during reconnection. */
 export type WatcherNotificationType =
   | "engine.reconnecting"
@@ -393,6 +397,64 @@ export type AccountMergeEvent = {
 };
 
 /**
+ * A normalized anchor payment event.
+ */
+export type AnchorPaymentEvent = {
+  type: AnchorPaymentEventType;
+  payment_id: string;
+  source: string;
+  destination: string;
+  amount: string;
+  asset: string;
+  timestamp: string;
+  /** Lazy, cached `Date` derived from `event.timestamp`. Non-enumerable; does not appear in JSON.stringify output. */
+  readonly timestampDate: Date;
+  protocol_status: {
+    protocol: "sep31";
+    status: string;
+  };
+  raw?: any;
+};
+
+/**
+ * A normalized anchor deposit event.
+ */
+export type AnchorDepositEvent = {
+  type: AnchorDepositEventType;
+  transaction_id: string;
+  source: string;
+  amount: string;
+  asset: string;
+  timestamp: string;
+  /** Lazy, cached `Date` derived from `event.timestamp`. Non-enumerable; does not appear in JSON.stringify output. */
+  readonly timestampDate: Date;
+  protocol_status: {
+    protocol: "sep24";
+    status: string;
+  };
+  raw?: any;
+};
+
+/**
+ * A normalized anchor withdrawal event.
+ */
+export type AnchorWithdrawalEvent = {
+  type: AnchorWithdrawalEventType;
+  transaction_id: string;
+  source: string;
+  amount: string;
+  asset: string;
+  timestamp: string;
+  /** Lazy, cached `Date` derived from `event.timestamp`. Non-enumerable; does not appear in JSON.stringify output. */
+  readonly timestampDate: Date;
+  protocol_status: {
+    protocol: "sep24";
+    status: string;
+  };
+  raw?: any;
+};
+
+/**
  * A union of all normalized events supported by pulse-core.
  *
  * This is the broad catch-all type. For precise type narrowing and better
@@ -427,6 +489,9 @@ export type NormalizedEvent = (
   | LiquidityPoolWithdrawEvent
   | TrustAuthEvent
   | ContractEvent
+  | AnchorPaymentEvent
+  | AnchorDepositEvent
+  | AnchorWithdrawalEvent
 ) & {
   /** Lazy, cached `Date` derived from `event.timestamp`. Non-enumerable; does not appear in JSON.stringify output. */
   readonly timestampDate: Date;

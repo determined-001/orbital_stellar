@@ -40,6 +40,12 @@ export function describeEvent(event: NormalizedEvent): string {
       return `Contract invoked ${event.contractId}`;
     case "contract.emitted":
       return `Contract emitted ${event.contractId}`;
+    case "anchor.payment":
+      return `Anchor payment ${event.payment_id}`;
+    case "anchor.deposit":
+      return `Anchor deposit ${event.transaction_id}`;
+    case "anchor.withdrawal":
+      return `Anchor withdrawal ${event.transaction_id}`;
     default: {
       const _exhaustiveCheck: never = event;
       return _exhaustiveCheck;
