@@ -1,0 +1,14 @@
+{
+  "schemaVersion": "1.0.0",
+  "contractId": "CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75",
+  "label": "Circle (USDC Issuer)",
+  "entityType": "issuer",
+  "confidence": 1.0,
+  "sources": [
+    "https://developers.circle.com/stablecoins/usdc-contract-addresses",
+    "https://stellar.expert/explorer/public/contract/CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75"
+  ],
+  "verifiedAt": "2025-01-15T00:00:00.000Z",
+  "submittedBy": "orbital-maintainers",
+  "notes": "USDC is Circle's USD-backed stablecoin on Stellar mainnet, deployed as a Stellar Asset Contract (SAC). The admin account is controlled by Circle."
+}

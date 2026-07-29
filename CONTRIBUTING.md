@@ -112,7 +112,12 @@ All packages use [Vitest](https://vitest.dev). Tests live in `packages/<name>/te
 
 - Write a test for every new public API.
 - Update existing tests when you change behaviour.
-- Coverage is tracked with `@vitest/coverage-v8`. Run `pnpm --filter @orbital-stellar/pulse-core test:coverage` to generate a report.
+- Coverage is tracked with `@vitest/coverage-v8`. Run `pnpm --filter @orbital-stellar/pulse-core test:coverage` to generate a report. Every package enforces a coverage floor via Vitest thresholds - CI fails if coverage drops below the floor. The per-package floors are documented in each `vitest.config.ts`.
+
+To run coverage across all packages:
+```bash
+pnpm -r --if-present test:coverage
+```
 
 CI runs tests on Node 20 and Node 22. Make sure your changes pass on both.
 
@@ -145,6 +150,8 @@ Orbital participates in the [Drips Stellar Wave Program](https://drips.network).
 | `complexity:trivial` | 100 |
 | `complexity:medium` | 150 |
 | `complexity:high` | 200 |
+
+**Frozen-scope eligibility.** Issues targeting scope frozen in [ROADMAP.md's Frozen section](./ROADMAP.md#frozen--out-of-scope-until-the-core-thesis-is-proven) — `@orbital-stellar/payments`, `@orbital-stellar/auth`, identity, `x402`, `agent-sdk`, the intent compiler, shadow-fork, reactor contracts, `@orbital-stellar/analytics`, and "10+ SEPs" meta-work — are not eligible for Wave points. In-flight frozen-scope work as of the 2026-07-16 roadmap refocus is honored in full per the `grace-window` comment on the affected issue or PR; new work against frozen scope will not be accepted. Going forward, the highest-point areas are the roadmap's Phase 2 items (SEP draft, `orbital codegen`, semantic layer, hosted registry) and Phase 3 (`@orbital-stellar/anchor-sdk`).
 
 **To claim an issue:**
 1. Comment on the issue to signal intent.

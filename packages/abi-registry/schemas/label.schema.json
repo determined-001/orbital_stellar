@@ -1,0 +1,79 @@
+{
+  "title": "OrbitalEntityLabel",
+  "description": "Schema for a single entity label record in the Orbital ABI Registry. Labels attach human-readable identity to otherwise opaque contract addresses — \"this is Soroswap's router\", \"this issuer is Circle\" — making event streams readable. Labels are advisory metadata, never load-bearing for correctness.",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "contractId",
+    "label",
+    "entityType",
+    "confidence",
+    "sources",
+    "verifiedAt",
+    "submittedBy"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "description": "Schema revision this record conforms to, in MAJOR.MINOR.PATCH semver format.",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$"
+    },
+    "contractId": {
+      "type": "string",
+      "description": "Canonical mainnet Soroban contract address (C-prefixed strkey, 56 characters) that this label describes.",
+      "pattern": "^C[A-Z2-7]{55}$"
+    },
+    "label": {
+      "type": "string",
+      "description": "Human-readable entity name (e.g. 'Circle', 'Soroswap Router', 'Aquarius DAO').",
+      "minLength": 1,
+      "maxLength": 120
+    },
+    "entityType": {
+      "type": "string",
+      "description": "Classification of what the labeled address represents. 'protocol' for a smart-contract protocol (DEX, lending market, etc.), 'issuer' for a token issuer (Circle, Aquarius DAO, etc.), 'deployer' for the account that deployed the contract, 'bridge' for a cross-chain bridge contract, 'unknown' when the type is not yet determined.",
+      "enum": ["protocol", "issuer", "deployer", "bridge", "unknown"]
+    },
+    "confidence": {
+      "type": "number",
+      "description": "Certainty of this label attribution, expressed as a floating-point value between 0.0 (no confidence) and 1.0 (verified). Values: 1.0 = verified on-chain or via signed attestation, 0.9 = confirmed via multiple independent off-chain sources, 0.7 = single authoritative source, 0.5 = community consensus with partial evidence, 0.3 = heuristic inference.",
+      "minimum": 0.0,
+      "maximum": 1.0
+    },
+    "sources": {
+      "type": "array",
+      "description": "Verifiable source URLs supporting this label attribution. At least one entry is required — CI rejects any record without a verifiable source URL.",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "description": "URL pointing to evidence for this label (e.g. official project documentation, explorer link, signed attestation, or published audit).",
+        "minLength": 1,
+        "maxLength": 2048
+      }
+    },
+    "verifiedAt": {
+      "type": "string",
+      "description": "ISO 8601 UTC timestamp of when this label was last verified against the listed sources.",
+      "minLength": 1,
+      "maxLength": 30
+    },
+    "submittedBy": {
+      "type": "string",
+      "description": "GitHub username or entity identifier of the person or process that submitted this label record.",
+      "minLength": 1,
+      "maxLength": 100
+    },
+    "parentContractId": {
+      "type": "string",
+      "description": "Optional reference to a parent label record. Used when a contract is a sub-deployment of a larger protocol (e.g. a specific pool contract parented by a factory).",
+      "pattern": "^C[A-Z2-7]{55}$"
+    },
+    "notes": {
+      "type": "string",
+      "description": "Optional free-text notes providing context for the attribution, such as how the label was determined or caveats about confidence.",
+      "maxLength": 2000
+    }
+  }
+}

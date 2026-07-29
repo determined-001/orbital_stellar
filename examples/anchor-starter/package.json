@@ -1,0 +1,25 @@
+{
+  "name": "orbital-anchor-starter",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Audit-grade, replay-safe event capture for Stellar anchors. Composes CursorStore + RetryQueue + DeadLetterStore for at-least-once delivery with an append-only audit log.",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@orbital-stellar/pulse-core": "workspace:*",
+    "@orbital-stellar/pulse-webhooks": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^26.0.1",
+    "typescript": "^6.0.3"
+  }
+}

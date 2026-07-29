@@ -38,8 +38,8 @@
   },
   "dependencies": {
     "@orbital-stellar/abi-registry": "workspace:*",
-    "@stellar/stellar-sdk": "^16.0.1",
-    "yargs": "^18.0.0"
+    "@stellar/stellar-sdk": "^16.1.0",
+    "yargs": "^18.1.0"
   },
   "devDependencies": {
     "@types/node": "^26.0.1",

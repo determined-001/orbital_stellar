@@ -24,6 +24,11 @@ export type CreateDefaultAbiRegistryClientOptions = {
   rpcUrl?: string;
 };
 
+function readEnv(name: string): string | undefined {
+  const value = typeof process !== "undefined" ? process.env[name] : undefined;
+  return value?.trim() ? value.trim() : undefined;
+}
+
 /**
  * Builds `EventEngine`'s default registry resolution chain.
  *
@@ -50,13 +55,19 @@ export function createDefaultAbiRegistryClient(
 
   clients.push(new BundledWellKnownClient());
 
-  if (ORBITAL_REGISTRY_TESTNET_CONTRACT_ID) {
+  const registryContractId =
+    readEnv("ORBITAL_REGISTRY_TESTNET_CONTRACT_ID") ?? ORBITAL_REGISTRY_TESTNET_CONTRACT_ID;
+  const publisherAddress =
+    readEnv("ORBITAL_REGISTRY_PUBLISHER_ADDRESS") ?? ORBITAL_REGISTRY_PUBLISHER_ADDRESS;
+  const rpcUrl = readEnv("ORBITAL_REGISTRY_TESTNET_RPC_URL") ?? ORBITAL_REGISTRY_TESTNET_RPC_URL;
+
+  if (registryContractId) {
     clients.push(
       new OnChainAbiRegistryClient({
-        contractId: ORBITAL_REGISTRY_TESTNET_CONTRACT_ID,
-        rpcUrl: ORBITAL_REGISTRY_TESTNET_RPC_URL,
+        contractId: registryContractId,
+        rpcUrl,
         networkPassphrase: Networks.TESTNET,
-        publisher: ORBITAL_REGISTRY_PUBLISHER_ADDRESS,
+        publisher: publisherAddress,
       }),
     );
   }
