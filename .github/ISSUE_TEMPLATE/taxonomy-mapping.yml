@@ -1,0 +1,124 @@
+name: Taxonomy mapping submission
+description: Submit a contract-to-protocol taxonomy mapping for the ABI Registry
+title: '[taxonomy] <contract name> → <protocol category>'
+labels: ['area:semantic-data']
+assignees: ''
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for contributing a taxonomy mapping. Every mapping maps a Soroban
+        contract address to a protocol category so the registry can label event
+        streams with the correct project identity.
+
+        **Before submitting**, please check:
+        - The contract ID is the canonical mainnet Soroban address (C-prefixed, 56 chars)
+        - The protocol category is one of the recognised taxonomy categories
+        - Source URLs point to verifiable evidence (explorer links, official docs, signed attestations)
+
+        ---
+
+  - type: input
+    id: contractId
+    attributes:
+      label: Contract ID
+      description: Canonical mainnet Soroban contract address (C-prefixed strkey, 56 characters)
+      placeholder: 'C…'
+    validations:
+      required: true
+
+  - type: input
+    id: contractName
+    attributes:
+      label: Contract name
+      description: Human-readable name for the contract (e.g. Soroswap Router, Circle USDC Issuer)
+      placeholder: e.g. Soroswap Router
+    validations:
+      required: true
+
+  - type: dropdown
+    id: entityType
+    attributes:
+      label: Entity type
+      description: Classification of what the contract represents
+      options:
+        - protocol
+        - issuer
+        - deployer
+        - bridge
+        - unknown
+    validations:
+      required: true
+
+  - type: dropdown
+    id: protocolCategory
+    attributes:
+      label: Protocol category (taxonomy)
+      description: The functional category this protocol belongs to
+      options:
+        - amm/dex
+        - lending
+        - bridge
+        - stablecoin
+        - dao/governance
+        - nft/marketplace
+        - oracle
+        - wallet/infrastructure
+        - yield/restaking
+        - payments/remittance
+        - identity/verification
+        - other
+    validations:
+      required: true
+
+  - type: input
+    id: label
+    attributes:
+      label: Display label
+      description: Short entity name for display (e.g. 'Circle', 'Soroswap Router', 'Aquarius DAO')
+      placeholder: e.g. Circle (USDC Issuer)
+    validations:
+      required: true
+
+  - type: textarea
+    id: sources
+    attributes:
+      label: Source URLs
+      description: One or more verifiable URLs supporting this mapping (official docs, explorer links, attestations)
+      placeholder: |
+        - https://stellar.expert/explorer/public/contract/<contract-id>
+        - https://docs.example.com/contract
+    validations:
+      required: true
+
+  - type: dropdown
+    id: confidence
+    attributes:
+      label: Confidence level
+      description: Certainty of this mapping
+      options:
+        - '1.0 (Verified on-chain or signed attestation)'
+        - '0.9 (Multiple independent off-chain sources)'
+        - '0.7 (Single authoritative source)'
+        - '0.5 (Community consensus, partial evidence)'
+        - '0.3 (Heuristic inference)'
+    validations:
+      required: true
+
+  - type: input
+    id: submittedBy
+    attributes:
+      label: Submitted by
+      description: Your GitHub username or entity identifier
+      placeholder: GitHub username
+    validations:
+      required: true
+
+  - type: textarea
+    id: notes
+    attributes:
+      label: Additional notes (optional)
+      description: Context about how the mapping was determined
+      placeholder: Any caveats or additional context…
+    validations:
+      required: false

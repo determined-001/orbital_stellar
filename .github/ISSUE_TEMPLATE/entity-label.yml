@@ -1,0 +1,104 @@
+name: Entity label submission
+description: Submit an entity label record for a Soroban contract
+title: '[label] <contract name> → <entity label>'
+labels: ['area:semantic-data']
+assignees: ''
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for contributing an entity label. Labels attach human-readable
+        identity to otherwise opaque contract addresses — "this is Soroswap's
+        router", "this issuer is Circle" — making event streams readable.
+
+        **Before submitting**, please check:
+        - The contract ID is the canonical mainnet Soroban address (C-prefixed, 56 chars)
+        - The label is concise and human-readable (max 120 characters)
+        - Source URLs point to verifiable evidence
+        - You are not labelling a contract you own or control (see conflict-of-interest rule)
+
+        ---
+
+  - type: input
+    id: contractId
+    attributes:
+      label: Contract ID
+      description: Canonical mainnet Soroban contract address (C-prefixed strkey, 56 characters)
+      placeholder: 'C…'
+    validations:
+      required: true
+
+  - type: input
+    id: label
+    attributes:
+      label: Entity label
+      description: Human-readable entity name (e.g. 'Circle', 'Soroswap Router', 'Aquarius DAO'). Max 120 characters.
+      placeholder: e.g. Circle (USDC Issuer)
+    validations:
+      required: true
+
+  - type: dropdown
+    id: entityType
+    attributes:
+      label: Entity type
+      description: Classification of what the labelled address represents
+      options:
+        - protocol
+        - issuer
+        - deployer
+        - bridge
+        - unknown
+    validations:
+      required: true
+
+  - type: dropdown
+    id: confidence
+    attributes:
+      label: Confidence level
+      description: Certainty of this label attribution
+      options:
+        - '1.0 (Verified on-chain or signed attestation)'
+        - '0.9 (Multiple independent off-chain sources)'
+        - '0.7 (Single authoritative source)'
+        - '0.5 (Community consensus, partial evidence)'
+        - '0.3 (Heuristic inference)'
+    validations:
+      required: true
+
+  - type: textarea
+    id: sources
+    attributes:
+      label: Source URLs
+      description: One or more verifiable URLs supporting this label (official docs, explorer links, attestations). At least one required.
+      placeholder: |
+        - https://stellar.expert/explorer/public/contract/<contract-id>
+        - https://docs.example.com/protocol
+    validations:
+      required: true
+
+  - type: input
+    id: submittedBy
+    attributes:
+      label: Submitted by
+      description: Your GitHub username or entity identifier
+      placeholder: GitHub username
+    validations:
+      required: true
+
+  - type: input
+    id: parentContractId
+    attributes:
+      label: Parent contract ID (optional)
+      description: Reference to a parent label record (e.g. a specific pool contract parented by a factory)
+      placeholder: 'C…'
+    validations:
+      required: false
+
+  - type: textarea
+    id: notes
+    attributes:
+      label: Additional notes (optional)
+      description: Context about how the label was determined (max 2000 characters)
+      placeholder: Any caveats or additional context…
+    validations:
+      required: false
