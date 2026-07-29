@@ -1,0 +1,102 @@
+#!/usr/bin/env node
+import { readFileSync, writeFileSync } from "node:fs";
+import { resolve } from "node:path";
+import { generateContractTypes } from "../src/generate.js";
+import { loadCodegenConfig } from "../src/config.js";
+import { generateForContract, watchCodegen } from "../src/watch.js";
+
+const args = process.argv.slice(2);
+const isWatch = args.indexOf("--watch") !== -1;
+const isCheck = args.indexOf("--check") !== -1;
+
+const pollIntervalArg = args.find((a) => a.startsWith("--poll-interval=")) ?? "";
+const pollIntervalMs = pollIntervalArg
+  ? parseInt(pollIntervalArg.split("=")[1] ?? "15000", 10)
+  : 15000;
+
+if (args.includes("--help") || args.includes("-h")) {
+  console.log(`
+orbital codegen - Generate TypeScript types from contract specs
+
+USAGE
+  orbital codegen                    Generate types for all contracts in orbital.config.ts
+  orbital codegen --watch            Watch for spec changes and regenerate
+  orbital codegen --watch --poll-interval=10000  Custom poll interval (ms)
+  orbital codegen --check            Check for drift without writing
+  orbital codegen <input.json> <output.d.ts>    Legacy single-file mode
+
+FLAGS
+  --watch             Poll the registry on an interval and regenerate on hash changes
+  --poll-interval=ms  Polling interval in milliseconds (default: 15000)
+  --check             Regenerate into memory and exit non-zero if output would differ
+  --help, -h          Show this help
+`);
+  process.exit(0);
+}
+
+if (args.length >= 2 && !isWatch && !isCheck && !args[0]?.startsWith("--")) {
+  const [inputPath, outputPath] = args;
+  const resolvedInputPath = resolve(process.cwd(), inputPath!);
+  const resolvedOutputPath = resolve(process.cwd(), outputPath!);
+  const spec = JSON.parse(readFileSync(resolvedInputPath, "utf8"));
+  const generated = generateContractTypes(spec);
+  writeFileSync(resolvedOutputPath, generated, "utf8");
+  console.log(`Generated ${outputPath}`);
+  process.exit(0);
+}
+
+const cwd = process.cwd();
+const { config, lockFile, errors } = loadCodegenConfig(cwd);
+
+if (!config) {
+  console.error("Error: Could not load orbital config.");
+  for (const err of errors) console.error(`  - ${err}`);
+  console.error("Run `orbital codegen --help` for usage.");
+  process.exit(1);
+}
+
+(async () => {
+  if (isCheck) {
+    let exitCode = 0;
+    for (const contract of config.contracts) {
+      // eslint-disable-next-line no-await-in-loop
+      const hash = await generateForContract(contract.contractId, config, contract.name);
+      const name = contract.name ?? contract.contractId;
+      if (hash === null) {
+        console.error(`  [${name}] SKIP - spec not resolvable`);
+        continue;
+      }
+      const lockEntry = lockFile?.[name];
+      if (!lockEntry) {
+        console.error(`  [${name}] DRIFT - no lock entry found`);
+        exitCode = 1;
+      } else if (lockEntry.specHash !== hash) {
+        console.error(
+          `  [${name}] DRIFT - spec hash changed (was ${lockEntry.specHash.slice(0, 12)}..., now ${hash.slice(0, 12)}...)`,
+        );
+        exitCode = 1;
+      } else {
+        console.log(`  [${name}] OK - hash matches`);
+      }
+    }
+    process.exit(exitCode);
+  }
+
+  for (const contract of config.contracts) {
+    // eslint-disable-next-line no-await-in-loop
+    const hash = await generateForContract(contract.contractId, config, contract.name);
+    const name = contract.name ?? contract.contractId;
+    console.log(
+      `  [${name}] ${hash ? `Generated (hash: ${hash.slice(0, 12)}...)` : "SKIP - spec not resolvable"}`,
+    );
+  }
+  console.log("Done.");
+
+  if (isWatch) {
+    console.log("\nStarting watch mode...");
+    await watchCodegen(config, { pollIntervalMs, cwd });
+  }
+})().catch((err) => {
+  console.error("orbital codegen failed:", err);
+  process.exit(1);
+});

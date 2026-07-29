@@ -60,6 +60,17 @@ export { fetchContractWasm } from "./discovery/fetchContractCode.js";
 export { parseWasmSpec } from "./discovery/parseContractSpec.js";
 export { UnsupportedSpecTypeError } from "./discovery/xdrToSpec.js";
 
+export type {
+  OrbitalCodegenConfig,
+  CodegenContract,
+  OrbitalLockFile,
+  OrbitalLockEntry,
+} from "./config.js";
+export { loadCodegenConfig, loadLockFile } from "./config.js";
+
+export type { CodegenWatchOptions } from "./watch.js";
+export { generateForContract, watchCodegen, writeLockFile } from "./watch.js";
+
 export { verifySchema } from "./verifySchema.js";
 export type {
   SchemaVerdict,
@@ -69,3 +80,11 @@ export type {
   SchemaFieldDiff,
   VerifySchemaOptions,
 } from "./verifySchema.js";
+
+export { LabelResolver } from "./LabelResolver.js";
+export type {
+  LabelRecord,
+  LabelResolverConfig,
+  ResolvedLabel,
+  EntityType,
+} from "./LabelResolver.js";

@@ -36,4 +36,8 @@ export class TtlLruCache<V> {
   set(key: string, value: V): void {
     this.cache.set(key, { value, expiresAt: Date.now() + this.ttlMs });
   }
+
+  clear(): void {
+    this.cache.clear();
+  }
 }
