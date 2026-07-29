@@ -134,6 +134,11 @@ function generateConfigHash(config: OrbitalConfig): string {
  */
 export function configExists(configPath?: string): boolean {
   try {
+    if (configPath) {
+      // For explicit paths, check if the file exists directly
+      return existsSync(resolve(configPath));
+    }
+    // For no path provided, use the resolver which checks common locations
     resolveConfigPath(configPath);
     return true;
   } catch {
