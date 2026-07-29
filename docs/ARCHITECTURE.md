@@ -113,6 +113,12 @@ together inside a single Next.js route handler - about 50 lines of glue.
 
 The package-level reference lives in [`packages/abi-registry/README.md`](../packages/abi-registry/README.md).
 
+Above decode sits the **semantic layer** — taxonomy mappings (e.g.
+`transfer` → `token.transferred`, `swap` → `swap.executed`) and entity
+labels (contract → protocol / issuer). Unmapped events stay unmapped; the
+layer never guesses a name. Full explanation and a live mainnet worked
+example: [`docs/semantic-layer.md`](./semantic-layer.md).
+
 ---
 
 ## 3. Event lifecycle
@@ -481,6 +487,7 @@ orbital_stellar/
 - [`PROGRESS.md`](../PROGRESS.md) - Status snapshot and completion checklist
 - [`ROADMAP.md`](../ROADMAP.md) - Phase 0 → Phase 4 timeline
 - [`CHANGELOG.md`](../CHANGELOG.md) - Per-release notes
+- [`docs/semantic-layer.md`](./semantic-layer.md) - Semantic taxonomy, labels, precedence, honesty rule
 - [`docs/proposal.md`](./proposal.md) - SCF grant proposal
 - Per-package READMEs:
   [`pulse-core`](../packages/pulse-core/README.md),
