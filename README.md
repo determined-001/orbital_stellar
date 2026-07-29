@@ -186,6 +186,8 @@ The reference composition - a Next.js route handler that subscribes to an addres
 | [`PROGRESS.md`](PROGRESS.md) | Phase 0 completion status, project structure, architecture overview |
 | [`ROADMAP.md`](ROADMAP.md) | Multi-year plan (Phase 0 → Phase 3): the decoding standard, SEP draft, anchor events |
 | [`CHANGELOG.md`](CHANGELOG.md) | Release notes (top-level; per-package changelogs roll up) |
+| [`STABILITY.md`](STABILITY.md) | Semver pledge, deprecation window, migration-path policy from `v1.0.0` |
+| [`docs/migration/0.1-to-1.0.md`](docs/migration/0.1-to-1.0.md) | Breaking-change before/after guide from `0.1.0` → `1.0.0` |
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | Setup, coding standards, PR process, Drips Wave Program |
 | [`SECURITY.md`](SECURITY.md) | Vulnerability disclosure policy |
 | [`packages/pulse-core/README.md`](packages/pulse-core/README.md) | EventEngine API, event taxonomy, configuration |

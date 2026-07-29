@@ -18,6 +18,11 @@ Per-package changelogs live in each package directory.
   semantics, `NormalizedEvent` JSON shape, cursor format, registry schema
   format), a 6-month deprecation window, and a documented security exception.
   Closes the outstanding Wave 1.5 release-gate item.
+- [`docs/migration/0.1-to-1.0.md`](docs/migration/0.1-to-1.0.md) - procedural
+  before/after migration guide for the `0.1.0` → `1.0.0` bump (breaking
+  `abiRegistry` default, `decodedData` shape, Wave 8 registry configuration).
+  Narrative release notes remain in this file’s `[1.0.0]` entry when cut;
+  do not duplicate them into the guide.
 
 ### Changed
 
