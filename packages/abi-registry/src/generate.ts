@@ -5,6 +5,8 @@ import type { ContractSpec, EventSpec, FunctionSpec, TypeSpec, UserDefinedType }
 export type GeneratedContractArtifacts = {
   declarations: string;
   schemas: string;
+  guards?: string;
+  testDts?: string;
 };
 
 function toPascalCase(value: string): string {
@@ -146,6 +148,12 @@ function generateFromXdrContractSpec(spec: XdrContractSpec): GeneratedContractAr
   declarations.push('import { z } from "zod";');
   declarations.push("");
 
+  const guards: string[] = [];
+  const testDts: string[] = [];
+  const eventTypes: string[] = [];
+
+  declarations.unshift('import type { ContractEmittedEvent } from "@orbital-stellar/pulse-core";');
+
   for (const event of entries) {
     const eventName = String((event as any).name());
     const baseName = toPascalCase(eventName);
@@ -183,10 +191,15 @@ function generateFromXdrContractSpec(spec: XdrContractSpec): GeneratedContractAr
     schemas.push("}");
     schemas.push("");
   }
+  testDts.push(`  }`);
+  testDts.push(`}`);
+  testDts.push("");
 
   return {
     declarations: declarations.join("\n"),
     schemas: schemas.join("\n"),
+    guards: guards.join("\n"),
+    testDts: testDts.join("\n"),
   };
 }
 
@@ -371,10 +384,15 @@ function generateFunctionDeclarations(functions: ReadonlyArray<FunctionSpec>): s
 function generateEventDeclarations(events: ReadonlyArray<EventSpec>): {
   declarations: string[];
   schemas: string[];
+  guards: string[];
+  testDts: string[];
 } {
   const usedNames = new Set<string>();
   const declarations: string[] = [];
   const schemas: string[] = [];
+  const guards: string[] = [];
+  const testDts: string[] = [];
+  const eventTypes: string[] = [];
 
   for (const event of events) {
     const baseName = toPascalCase(event.name);
@@ -405,7 +423,46 @@ function generateEventDeclarations(events: ReadonlyArray<EventSpec>): {
     schemas.push("");
   }
 
-  return { declarations, schemas };
+  guards.push(
+    `export type ContractEventUnion = ${eventTypes.length > 0 ? eventTypes.join(" | ") : "never"};`,
+  );
+  guards.push("");
+
+  guards.push(`export function assertExhaustiveContractEvent(event: ContractEventUnion): string {`);
+  guards.push(`  switch (event.topics[0]) {`);
+  for (const event of events) {
+    guards.push(`    case "${event.name}":`);
+    guards.push(`      return event.topics[0];`);
+  }
+  if (events.length > 0) {
+    guards.push(`    default: {`);
+    guards.push(`      const _exhaustive: never = event;`);
+    guards.push(`      return _exhaustive;`);
+    guards.push(`    }`);
+  }
+  guards.push(`  }`);
+  guards.push(`}`);
+  guards.push("");
+
+  testDts.push(`import type { ContractEventUnion } from "./generated.js";`);
+  testDts.push("");
+  testDts.push(`export function assertExhaustive(event: ContractEventUnion): string {`);
+  testDts.push(`  switch (event.topics[0]) {`);
+  for (const event of events) {
+    testDts.push(`    case "${event.name}":`);
+    testDts.push(`      return event.topics[0];`);
+  }
+  if (events.length > 0) {
+    testDts.push(`    default: {`);
+    testDts.push(`      const _exhaustive: never = event;`);
+    testDts.push(`      return _exhaustive;`);
+    testDts.push(`    }`);
+  }
+  testDts.push(`  }`);
+  testDts.push(`}`);
+  testDts.push("");
+
+  return { declarations, schemas, guards, testDts };
 }
 
 function generateFromContractSpec(spec: ContractSpec): GeneratedContractArtifacts {
@@ -425,6 +482,8 @@ function generateFromContractSpec(spec: ContractSpec): GeneratedContractArtifact
   return {
     declarations: declarations.join("\n"),
     schemas: schemas.join("\n"),
+    guards: events.guards.join("\n"),
+    testDts: events.testDts.join("\n"),
   };
 }
 
@@ -438,5 +497,5 @@ export function generateContractArtifacts(
 
 export function generateContractTypes(spec: XdrContractSpec | ContractSpec): string {
   const artifacts = generateContractArtifacts(spec);
-  return [artifacts.declarations, artifacts.schemas].filter(Boolean).join("\n\n");
+  return [artifacts.declarations, artifacts.schemas, artifacts.guards].filter(Boolean).join("\n\n");
 }

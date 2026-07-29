@@ -50,13 +50,13 @@ export function createDefaultAbiRegistryClient(
 
   clients.push(new BundledWellKnownClient());
 
-  if (ORBITAL_REGISTRY_TESTNET_CONTRACT_ID) {
+  if (registryContractId) {
     clients.push(
       new OnChainAbiRegistryClient({
-        contractId: ORBITAL_REGISTRY_TESTNET_CONTRACT_ID,
-        rpcUrl: ORBITAL_REGISTRY_TESTNET_RPC_URL,
+        contractId: registryContractId,
+        rpcUrl,
         networkPassphrase: Networks.TESTNET,
-        publisher: ORBITAL_REGISTRY_PUBLISHER_ADDRESS,
+        publisher: publisherAddress,
       }),
     );
   }

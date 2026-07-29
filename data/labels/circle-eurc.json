@@ -1,0 +1,14 @@
+{
+  "schemaVersion": "1.0.0",
+  "contractId": "CDTKPWPLOURQA2SGTKTUQOWRCBZEORB4BWBOMJ3D3ZTQQSGE5F6JBQLV",
+  "label": "Circle (EURC Issuer)",
+  "entityType": "issuer",
+  "confidence": 1.0,
+  "sources": [
+    "https://developers.circle.com/stablecoins/eurc-contract-addresses",
+    "https://stellar.expert/explorer/public/contract/CDTKPWPLOURQA2SGTKTUQOWRCBZEORB4BWBOMJ3D3ZTQQSGE5F6JBQLV"
+  ],
+  "verifiedAt": "2025-01-15T00:00:00.000Z",
+  "submittedBy": "orbital-maintainers",
+  "notes": "EURC is Circle's EUR-backed stablecoin on Stellar mainnet, deployed as a Stellar Asset Contract (SAC). MiCA-compliant since September 2023."
+}

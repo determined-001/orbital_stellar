@@ -1,0 +1,15 @@
+{
+  "schemaVersion": "1.0.0",
+  "contractId": "CAUIKL3IYGMERDRUN5QQVPKPLZTRNVXV27LFCWQIRNOHSNGB3ZXAEFBX",
+  "label": "Aquarius DAO (AQUA Issuer)",
+  "entityType": "issuer",
+  "confidence": 1.0,
+  "sources": [
+    "https://aqua.network",
+    "https://stellar.expert/explorer/public/contract/CAUIKL3IYGMERDRUN5QQVPKPLZTRNVXV27LFCWQIRNOHSNGB3ZXAEFBX",
+    "https://docs.aqua.network/developers/code-examples/prerequisites-and-basics"
+  ],
+  "verifiedAt": "2025-02-01T00:00:00.000Z",
+  "submittedBy": "orbital-maintainers",
+  "notes": "AQUA is the governance and liquidity incentive token of the Aquarius protocol on Stellar mainnet. The admin account is controlled by the Aquarius DAO."
+}
