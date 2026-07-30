@@ -95,9 +95,7 @@ function routingSimulate(opts: { versions: string[]; records: Record<string, xdr
             result: {
               retval: xdr.ScVal.scvVec([
                 xdr.ScVal.scvVec(page.map((v) => xdr.ScVal.scvString(v))),
-                nextCursor !== null
-                  ? xdr.ScVal.scvU32(nextCursor)
-                  : xdr.ScVal.scvVoid(),
+                nextCursor !== null ? xdr.ScVal.scvU32(nextCursor) : xdr.ScVal.scvVoid(),
               ]),
             },
           };
