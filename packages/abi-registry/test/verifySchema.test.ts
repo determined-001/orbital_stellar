@@ -4,7 +4,6 @@ import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 import { rpc as SorobanRpc } from "@stellar/stellar-sdk";
 import { verifySchema } from "../src/verifySchema.js";
-import { NoEmbeddedSpecError } from "../src/discovery/parseContractSpec.js";
 import type { ContractSpec } from "../src/spec.js";
 
 vi.mock("@stellar/stellar-sdk", async (importOriginal) => {
@@ -65,46 +64,6 @@ function getDemoEmitterSpec(): ContractSpec {
         ],
       },
     ],
-    types: {},
-  };
-}
-
-// Helper to get a sample spec from registry contract
-function getRegistrySpec(): ContractSpec {
-  return {
-    version: "1.0.0",
-    name: "registry",
-    contractId: CONTRACT_ID,
-    network: "testnet",
-    functions: [
-      {
-        name: "publish_schema",
-        params: [
-          { name: "contract_id", type: "address" },
-          { name: "name", type: "string" },
-          { name: "version", type: "string" },
-          {
-            name: "types",
-            type: {
-              type: "map",
-              key: "string",
-              value: "bytes",
-            },
-          },
-        ],
-        returns: "void",
-      },
-      {
-        name: "get_latest_schema",
-        params: [{ name: "contract_id", type: "address" }],
-        returns: {
-          type: "result",
-          ok: "bytes",
-          err: "error",
-        },
-      },
-    ],
-    events: [],
     types: {},
   };
 }

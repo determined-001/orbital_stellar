@@ -1,19 +1,56 @@
 #!/usr/bin/env node
 
+import { readFileSync } from "node:fs";
 import { MemoryDeadLetterStore } from "../dist/MemoryDeadLetterStore.js";
 import { listDLQ, dumpDLQ, replayDLQ } from "../dist/cli.js";
 import { signWebhookPayload } from "../dist/signing.js";
 
-function printUsage() {
+const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
+
+function printVersion() {
+  console.log(pkg.version);
+  process.exit(0);
+}
+
+function printHelp(exitCode = 1) {
   console.error(
-    `Usage: orbital dlq <command> [options]\n\nCommands:\n  list  --url <url> [--since <ISO8601>] [--limit <n>]\n  dump\n  replay <id> [--secret <value>]\n\nEnv:\n  ORBITAL_WEBHOOK_SECRET  Signing secret used to re-sign replayed deliveries\n                          (overridden by --secret).\n`,
+    `Usage: orbital-dlq <command> [options]
+
+Commands:
+  list  --url <url> [--since <ISO8601>] [--limit <n>]  List DLQ entries (in-memory)
+  dump                                                   Dump all DLQ entries (in-memory)
+  replay <id> [--secret <value>]                         Replay a DLQ entry (in-memory)
+
+Options:
+  --help, -h      Show this help message
+  --version, -v   Show version number
+
+Env:
+  ORBITAL_WEBHOOK_SECRET  Signing secret used to re-sign replayed deliveries
+                          (overridden by --secret).
+
+Note: The DLQ store is in-memory only. Entries are not persisted across restarts.
+For a persistent DLQ, use the PostgresDeadLetterStore or RedisDeadLetterStore
+from @orbital-stellar/pulse-webhooks directly.
+`,
   );
-  process.exit(1);
+  process.exit(exitCode);
 }
 
 const args = process.argv.slice(2);
+
+// Handle --version and --help flags
+for (const arg of args) {
+  if (arg === "--version" || arg === "-v") {
+    printVersion();
+  }
+  if (arg === "--help" || arg === "-h") {
+    printHelp(0);
+  }
+}
+
 if (args.length < 2 || args[0] !== "dlq") {
-  printUsage();
+  printHelp(1);
 }
 
 const command = args[1];
@@ -33,7 +70,7 @@ async function main() {
           options.limit = parseInt(args[++i], 10);
         } else {
           console.error(`Unknown option ${arg}`);
-          printUsage();
+          printHelp(1);
         }
       }
       await listDLQ(store, options);
@@ -47,7 +84,7 @@ async function main() {
       const id = args[2];
       if (!id) {
         console.error("Missing dlq id");
-        printUsage();
+        printHelp(1);
         return;
       }
 
@@ -90,7 +127,7 @@ async function main() {
     }
     default:
       console.error(`Unknown subcommand ${command}`);
-      printUsage();
+      printHelp(1);
   }
 }
 

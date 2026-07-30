@@ -39,7 +39,7 @@ jobs:
         uses: pnpm/action-setup@v6
 
       - name: Setup Node.js ${{ matrix.node-version }}
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: ${{ matrix.node-version }}
           cache: "pnpm"
@@ -59,6 +59,9 @@ jobs:
           # test/integration/soroban.test.ts self-skips with a clear message.
           SOROBAN_CONTRACT_ID: ${{ secrets.SOROBAN_CONTRACT_ID }}
           SOROBAN_INVOKER_SECRET: ${{ secrets.SOROBAN_INVOKER_SECRET }}
+          ORBITAL_REGISTRY_TESTNET_CONTRACT_ID: ${{ secrets.ORBITAL_REGISTRY_TESTNET_CONTRACT_ID }}
+          ORBITAL_REGISTRY_PUBLISHER_SECRET: ${{ secrets.ORBITAL_REGISTRY_PUBLISHER_SECRET }}
+          ORBITAL_REGISTRY_PUBLISHER_ADDRESS: ${{ secrets.ORBITAL_REGISTRY_PUBLISHER_ADDRESS }}
           # Backfill/replay e2e (issue #15): a reachable Soroban RPC + a
           # ledger window with emitted events. Unset until those repo secrets
           # are added, in which case the live case in

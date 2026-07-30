@@ -110,6 +110,7 @@ describe("OnChainRegistryPublisher", () => {
       contractId: spec.contractId,
       version: spec.version,
       etag: expectedHash,
+      txHash: "deadbeef",
     });
     expect(server.getAccount).toHaveBeenCalledTimes(1);
     expect(server.sendTransaction).toHaveBeenCalledTimes(1);
