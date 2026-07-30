@@ -18,6 +18,11 @@ const LIFETIME_THRESHOLD: u32 = BUMP_AMOUNT - DAY_IN_LEDGERS;
 /// results using the returned cursor.
 pub const MAX_PAGE_SIZE: u32 = 25;
 
+/// Appended as the final entry by the unpaged `list_versions` accessor when
+/// the full set exceeded `MAX_PAGE_SIZE`, so callers can detect clipping
+/// instead of silently receiving a short list.
+pub const TRUNCATION_MARKER: &str = "__truncated__";
+
 #[contracterror]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 #[repr(u32)]
@@ -183,14 +188,15 @@ pub fn list_versions(env: Env, contract_id: Address, publisher: Address) -> Vec<
     // Cap at MAX_PAGE_SIZE and emit a warning marker via truncation.
     // The last entry is replaced with a sentinel when truncated so callers
     // know the list was clipped.
-    let max = MAX_PAGE_SIZE as u32;
+    let max = MAX_PAGE_SIZE;
     if all.len() > max {
-        let mut capped: Vec<String> = all.slice(0, max).into_iter().collect();
-        let truncation_marker = String::from_str(
-            &env,
-            &format!("__truncated_{}_total__", all.len()),
-        );
-        capped.push_back(truncation_marker);
+        // `slice` takes a range and already returns a Vec; soroban_sdk::Vec
+        // does not implement FromIterator, so no collect() here.
+        let mut capped: Vec<String> = all.slice(0..max);
+        // The contract is #![no_std] with no alloc, so the marker cannot
+        // interpolate the total. Callers needing the count use
+        // `list_versions_paged`, whose cursor walks the full set.
+        capped.push_back(String::from_str(&env, TRUNCATION_MARKER));
         capped
     } else {
         all
@@ -230,7 +236,7 @@ pub fn list_versions_paged(
 
     let effective_limit = limit.min(MAX_PAGE_SIZE);
     let end = (start + effective_limit).min(total);
-    let page: Vec<String> = all.slice(start, end - start).into_iter().collect();
+    let page: Vec<String> = all.slice(start..end);
     let next_cursor = if end < total { Some(end) } else { None };
 
     (page, next_cursor)

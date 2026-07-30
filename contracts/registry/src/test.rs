@@ -13,6 +13,21 @@ fn hash(env: &Env, byte: u8) -> BytesN<32> {
     BytesN::from_array(env, &[byte; 32])
 }
 
+/// Version strings for the paging tests, indexed by publish order.
+///
+/// The crate is `#![no_std]` with no `alloc`, so `format!` is unavailable here -
+/// these are table-driven instead. Index 0 is unused; callers pass 1-based `i`.
+const VERSION_STRINGS: [&str; 31] = [
+    "0.0.0", "1.0.0", "2.0.0", "3.0.0", "4.0.0", "5.0.0", "6.0.0", "7.0.0", "8.0.0", "9.0.0",
+    "10.0.0", "11.0.0", "12.0.0", "13.0.0", "14.0.0", "15.0.0", "16.0.0", "17.0.0", "18.0.0",
+    "19.0.0", "20.0.0", "21.0.0", "22.0.0", "23.0.0", "24.0.0", "25.0.0", "26.0.0", "27.0.0",
+    "28.0.0", "29.0.0", "30.0.0",
+];
+
+fn version_str(env: &Env, i: u32) -> String {
+    String::from_str(env, VERSION_STRINGS[i as usize])
+}
+
 #[test]
 fn publish_then_resolve_latest_and_get_version() {
     let env = Env::default();
@@ -149,18 +164,18 @@ fn list_versions_paged_exactly_limit() {
     let limit = 5u32;
 
     for i in 1..=limit {
-        let version = String::from_str(&env, &format!("{}.0.0", i));
+        let version = version_str(&env, i);
         client.publish(&publisher, &contract_id, &version, &hash(&env, i as u8), &pointer);
     }
 
     let (versions, next) = client.list_versions_paged(&contract_id, &publisher, &0u32, &limit);
-    assert_eq!(versions.len(), limit as usize);
+    assert_eq!(versions.len(), limit);
     assert_eq!(next, None); // exactly limit = no more pages
 
     // Verify order: oldest first
     assert_eq!(versions.get(0).unwrap(), String::from_str(&env, "1.0.0"));
     assert_eq!(
-        versions.get((limit - 1) as usize).unwrap(),
+        versions.get(limit - 1).unwrap(),
         String::from_str(&env, "5.0.0")
     );
 }
@@ -177,12 +192,12 @@ fn list_versions_paged_limit_plus_one() {
     let limit = 3u32; // request 3, publish 4
 
     for i in 1..=4 {
-        let version = String::from_str(&env, &format!("{}.0.0", i));
+        let version = version_str(&env, i);
         client.publish(&publisher, &contract_id, &version, &hash(&env, i as u8), &pointer);
     }
 
     let (page1, next) = client.list_versions_paged(&contract_id, &publisher, &0u32, &limit);
-    assert_eq!(page1.len(), limit as usize);
+    assert_eq!(page1.len(), limit);
     assert_eq!(next, Some(limit)); // cursor points to next page start
 
     // Fetch second page
@@ -224,7 +239,7 @@ fn list_versions_paged_max_page_size_enforced() {
 
     // Publish 30 versions
     for i in 1..=30 {
-        let version = String::from_str(&env, &format!("{}.0.0", i));
+        let version = version_str(&env, i);
         client.publish(&publisher, &contract_id, &version, &hash(&env, i as u8), &pointer);
     }
 
