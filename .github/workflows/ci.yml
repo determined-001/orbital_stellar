@@ -158,4 +158,12 @@ jobs:
       # workspace deps, incl. abi-registry) and generates reference docs, so
       # no manual dependency-order steps here.
       - name: Build apps/web
+        env:
+          # Canary invoker secret for the post-build client-bundle assertion.
+          # Must never appear in .next/static (#892).
+          DEMO_EMITTER_SECRET: SDEMOSECRET_CANARY_DO_NOT_SHIP_000000000000000000000000000
         run: pnpm --filter orbital/web run build
+      - name: Assert DEMO_EMITTER_SECRET stays out of the client bundle
+        env:
+          DEMO_EMITTER_SECRET: SDEMOSECRET_CANARY_DO_NOT_SHIP_000000000000000000000000000
+        run: node scripts/assert-demo-secret-not-in-bundle.mjs

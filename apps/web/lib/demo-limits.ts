@@ -8,8 +8,13 @@ export const DEMO_LIMITS = {
   streamDurationMs: 25_000,
   /** One webhook-sample signing call per IP every N ms. */
   webhookCooldownMs: 20_000,
-  /** One "fire test event" on-chain invocation per IP every N ms - a real signed testnet transaction, cooled down independently of the webhook sample. */
-  fireEventCooldownMs: 20_000,
+  /**
+   * One "fire test event" on-chain invocation per IP every N ms.
+   * The live `/api/demo/fire-event` path uses Upstash (`fireEventRateLimit.ts`)
+   * at this interval — the in-memory helper below is retained only for
+   * non-serverless local experiments and must not be used on Vercel.
+   */
+  fireEventCooldownMs: 10_000,
   /** Upgrade URL surfaced in 429 responses. */
   upgradeUrl: "/cloud",
 } as const;

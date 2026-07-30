@@ -1,3 +1,5 @@
+import "server-only";
+
 import { readFileSync, existsSync } from "node:fs";
 import { resolve } from "node:path";
 import {
@@ -25,7 +27,7 @@ export class DemoEmitterNotConfiguredError extends Error {
 /** Returns the demo-emitter contract ID from env var or deployed.testnet.json, or null. */
 function resolveDemoEmitterContractId(): string | null {
   const fromEnv = process.env.DEMO_EMITTER_CONTRACT_ID;
-  if (fromEnv) return fromEnv;
+  if (fromEnv && !isPlaceholderContractId(fromEnv)) return fromEnv;
 
   try {
     const deployManifestPath = resolve(
@@ -39,12 +41,18 @@ function resolveDemoEmitterContractId(): string | null {
       const manifest = JSON.parse(readFileSync(deployManifestPath, "utf-8")) as {
         contracts?: { demoEmitter?: { contractId?: string } };
       };
-      return manifest.contracts?.demoEmitter?.contractId ?? null;
+      const id = manifest.contracts?.demoEmitter?.contractId ?? null;
+      if (id && !isPlaceholderContractId(id)) return id;
     }
   } catch {
     // File may not exist (pre-deployment)
   }
   return null;
+}
+
+/** Honest placeholders from deploy_testnet.sh must not count as configured. */
+function isPlaceholderContractId(id: string): boolean {
+  return id.startsWith("<") || id.includes("POPULATED BY") || id.length < 8;
 }
 
 /**
