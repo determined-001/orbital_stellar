@@ -172,8 +172,8 @@ export class OnChainAbiRegistryClient {
       const retval = await this.simulate("list_versions_paged", [
         nativeToScVal(targetContractId, { type: "address" }),
         nativeToScVal(this.config.publisher, { type: "address" }),
-        nativeToScVal(cursor, { type: "i32" }),
-        nativeToScVal(25, { type: "i32" }), // MAX_PAGE_SIZE
+        nativeToScVal(cursor, { type: "u32" }),
+        nativeToScVal(25, { type: "u32" }), // MAX_PAGE_SIZE
       ]);
 
       if (!retval) break;

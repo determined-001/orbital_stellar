@@ -1,8 +1,12 @@
 #![cfg(test)]
 
-use super::{AbiRegistry, AbiRegistryClient, Error};
+extern crate std;
+
+use super::{AbiRegistry, AbiRegistryClient, Error, MAX_PAGE_SIZE};
 use soroban_sdk::testutils::Address as _;
 use soroban_sdk::{Address, BytesN, Env, String};
+use std::fs;
+use std::path::PathBuf;
 
 fn setup(env: &Env) -> AbiRegistryClient<'_> {
     let contract_id = env.register(AbiRegistry, ());
@@ -247,6 +251,71 @@ fn list_versions_paged_max_page_size_enforced() {
     let (page, next) = client.list_versions_paged(&contract_id, &publisher, &0u32, &100u32);
     assert_eq!(page.len(), 25);
     assert_eq!(next, Some(25));
+}
+
+/// Records CPU/memory cost of a full-page `list_versions_paged` read so
+/// regressions show up as snapshot diffs (see #895).
+///
+/// Update the snapshot with `UPDATE_SNAPSHOTS=1 cargo test -p orbital-abi-registry
+/// list_versions_paged_full_page_cost_snapshot`.
+#[test]
+fn list_versions_paged_full_page_cost_snapshot() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let client = setup(&env);
+
+    let publisher = Address::generate(&env);
+    let contract_id = Address::generate(&env);
+    let pointer = String::from_str(&env, "https://example.com/spec.json");
+
+    for i in 1..=MAX_PAGE_SIZE {
+        let version = version_str(&env, i);
+        client.publish(
+            &publisher,
+            &contract_id,
+            &version,
+            &hash(&env, i as u8),
+            &pointer,
+        );
+    }
+
+    let (page, next) =
+        client.list_versions_paged(&contract_id, &publisher, &0u32, &MAX_PAGE_SIZE);
+    assert_eq!(page.len(), MAX_PAGE_SIZE);
+    assert_eq!(next, None);
+
+    let budget = env.cost_estimate().budget();
+    let actual = std::format!(
+        "list_versions_paged full page (limit={MAX_PAGE_SIZE})\n\
+         cpu_instructions={}\n\
+         memory_bytes={}\n",
+        budget.cpu_instruction_cost(),
+        budget.memory_bytes_cost(),
+    );
+
+    let snapshot_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("snapshots")
+        .join("list_versions_paged_full_page.snap");
+
+    if std::env::var("UPDATE_SNAPSHOTS").ok().as_deref() == Some("1") {
+        if let Some(parent) = snapshot_path.parent() {
+            fs::create_dir_all(parent).expect("create snapshots dir");
+        }
+        fs::write(&snapshot_path, &actual).expect("write cost snapshot");
+        return;
+    }
+
+    let expected = fs::read_to_string(&snapshot_path).unwrap_or_else(|err| {
+        panic!(
+            "missing cost snapshot at {}: {err}\n\
+             Run with UPDATE_SNAPSHOTS=1 to create it.\n\nActual:\n{actual}",
+            snapshot_path.display()
+        )
+    });
+    assert_eq!(
+        actual, expected,
+        "resource cost snapshot drifted; re-run with UPDATE_SNAPSHOTS=1 if the change is intentional"
+    );
 }
 
 #[test]
