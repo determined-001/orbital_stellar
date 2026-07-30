@@ -9,10 +9,13 @@ export async function POST(req: Request) {
   const ip = clientIp(req);
   const cooldown = await checkFireEventRateLimit(ip);
   if (!cooldown.ok) {
-    return Response.json(cooldown.body, {
-      status: cooldown.status,
-      headers: { "Retry-After": String(Math.ceil(cooldown.body.retryAfterMs / 1000)) },
-    });
+    if (cooldown.status === 429) {
+      return Response.json(cooldown.body, {
+        status: 429,
+        headers: { "Retry-After": String(Math.ceil(cooldown.body.retryAfterMs / 1000)) },
+      });
+    }
+    return Response.json(cooldown.body, { status: 503 });
   }
 
   try {

@@ -16,6 +16,10 @@ The site runs on `http://localhost:3000`.
 | Variable | Required | Values | Purpose |
 |---|---|---|---|
 | `NEXT_PUBLIC_NETWORK` | yes | `testnet` \| `mainnet` | Stellar network the demo `EventEngine` subscribes to. Surfaced in the UI's network notice. Fails loudly at first request if missing or invalid. |
+| `DEMO_EMITTER_CONTRACT_ID` | for fire-event | contract ID | Demo-emitter contract; falls back to `contracts/deployed.testnet.json` when unset. |
+| `DEMO_EMITTER_SECRET` | for fire-event | Stellar secret | Server-only invoker for `ping()` — never exposed to the client. |
+| `UPSTASH_REDIS_REST_URL` | for fire-event | URL | Shared Upstash Redis REST URL (serverless rate limit). |
+| `UPSTASH_REDIS_REST_TOKEN` | for fire-event | token | Shared Upstash Redis REST token. |
 
 ## Demo limits
 
@@ -23,6 +27,7 @@ The on-page demos are intentionally sandboxed so they don't burn Vercel resource
 
 - **`/api/events/[address]`** - 1 concurrent SSE stream per IP, 25-second max duration per stream.
 - **`/api/webhook-sample`** - 1 signing request per IP every 20 seconds.
+- **`/api/demo/fire-event`** - 1 on-chain fire per IP every 10 seconds via Upstash Redis (`lib/fireEventRateLimit.ts`). Without Upstash env vars the route returns `503` (fail closed).
 
 When a limit trips, the route returns `429` with a JSON envelope (`{ error: "demo_limit_reached", reason, message, upgradeUrl }`) and the demo components surface an "Upgrade to Orbital Cloud" call-to-action. Tune the numbers in `lib/demo-limits.ts`.
 

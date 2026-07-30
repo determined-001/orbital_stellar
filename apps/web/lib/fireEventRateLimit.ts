@@ -1,3 +1,5 @@
+import "server-only";
+
 import { Ratelimit } from "@upstash/ratelimit";
 import { Redis } from "@upstash/redis";
 import { DEMO_LIMITS, type RateLimitEnvelope } from "@/lib/demo-limits";
@@ -10,8 +12,10 @@ import { DEMO_LIMITS, type RateLimitEnvelope } from "@/lib/demo-limits";
  * Redis is the shared counter (same stack the maintainer pointed at for #892).
  *
  * Default: 1 fire / 10s per IP.
+ *
+ * Requires UPSTASH_REDIS_REST_URL + UPSTASH_REDIS_REST_TOKEN. If unset, we
+ * fail closed with 503 so a misconfigured deploy cannot open the faucet.
  */
-const WINDOW_MS = 10_000;
 
 let ratelimit: Ratelimit | null | undefined;
 
@@ -27,7 +31,7 @@ function getRatelimit(): Ratelimit | null {
 
   ratelimit = new Ratelimit({
     redis: new Redis({ url, token }),
-    limiter: Ratelimit.slidingWindow(1, "10 s"),
+    limiter: Ratelimit.slidingWindow(1, `${DEMO_LIMITS.fireEventCooldownMs / 1000} s`),
     prefix: "orbital:demo:fire-event",
     analytics: false,
   });
@@ -36,7 +40,12 @@ function getRatelimit(): Ratelimit | null {
 
 export type FireEventRateLimitResult =
   | { ok: true }
-  | { ok: false; body: RateLimitEnvelope; status: 429 | 503 };
+  | { ok: false; status: 429; body: RateLimitEnvelope }
+  | {
+      ok: false;
+      status: 503;
+      body: { error: "rate_limiter_not_configured"; message: string };
+    };
 
 /**
  * Enforce 1 fire / 10s per IP via Upstash. If Upstash is not configured,
@@ -50,12 +59,9 @@ export async function checkFireEventRateLimit(ip: string): Promise<FireEventRate
       ok: false,
       status: 503,
       body: {
-        error: "demo_limit_reached",
-        upgradeUrl: DEMO_LIMITS.upgradeUrl,
-        reason: "rate_limit",
+        error: "rate_limiter_not_configured",
         message:
           "Fire-event rate limiting is not configured (UPSTASH_REDIS_REST_URL / UPSTASH_REDIS_REST_TOKEN). Refusing to fire.",
-        retryAfterMs: WINDOW_MS,
       },
     };
   }

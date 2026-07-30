@@ -1,5 +1,8 @@
 // In-memory rate / concurrency tracking for the public marketing demo.
 // Sized to keep Vercel costs bounded - this is a sandbox, not a service.
+//
+// Fire-event limiting is NOT here — see fireEventRateLimit.ts (Upstash Redis).
+// In-memory Maps are per-instance on serverless and cannot protect the faucet.
 
 export const DEMO_LIMITS = {
   /** One concurrent SSE stream per IP. */
@@ -10,9 +13,7 @@ export const DEMO_LIMITS = {
   webhookCooldownMs: 20_000,
   /**
    * One "fire test event" on-chain invocation per IP every N ms.
-   * The live `/api/demo/fire-event` path uses Upstash (`fireEventRateLimit.ts`)
-   * at this interval — the in-memory helper below is retained only for
-   * non-serverless local experiments and must not be used on Vercel.
+   * Enforced via shared Upstash Redis in `fireEventRateLimit.ts`.
    */
   fireEventCooldownMs: 10_000,
   /** Upgrade URL surfaced in 429 responses. */
@@ -21,7 +22,6 @@ export const DEMO_LIMITS = {
 
 const activeStreams = new Map<string, number>();
 const lastWebhookAt = new Map<string, number>();
-const lastFireEventAt = new Map<string, number>();
 
 type EnvelopeBase = { error: "demo_limit_reached"; upgradeUrl: string };
 
@@ -88,29 +88,6 @@ export function checkWebhookCooldown(
     };
   }
   lastWebhookAt.set(ip, now);
-  return { ok: true };
-}
-
-export function checkFireEventCooldown(
-  ip: string,
-): { ok: true } | { ok: false; body: RateLimitEnvelope } {
-  const now = Date.now();
-  const last = lastFireEventAt.get(ip);
-  if (last !== undefined && now - last < DEMO_LIMITS.fireEventCooldownMs) {
-    const retryAfterMs = DEMO_LIMITS.fireEventCooldownMs - (now - last);
-    return {
-      ok: false,
-      body: {
-        error: "demo_limit_reached",
-        upgradeUrl: DEMO_LIMITS.upgradeUrl,
-        reason: "rate_limit",
-        message:
-          "Firing test events is rate-limited on the demo. Sign up for Orbital Cloud for production use.",
-        retryAfterMs,
-      },
-    };
-  }
-  lastFireEventAt.set(ip, now);
   return { ok: true };
 }
 
