@@ -90,15 +90,12 @@ function routingSimulate(opts: { versions: string[]; records: Record<string, xdr
           const start = Number((args[2] as xdr.ScVal).i32());
           const limit = Math.min(Number((args[3] as xdr.ScVal).i32()), MAX_PAGE_SIZE);
           const page = opts.versions.slice(start, start + limit);
-          const nextCursor =
-            start + limit < opts.versions.length ? start + limit : null;
+          const nextCursor = start + limit < opts.versions.length ? start + limit : null;
           return {
             result: {
               retval: xdr.ScVal.scvVec([
                 xdr.ScVal.scvVec(page.map((v) => xdr.ScVal.scvString(v))),
-                nextCursor !== null
-                  ? xdr.ScVal.scvI32(nextCursor)
-                  : xdr.ScVal.scvVoid(),
+                nextCursor !== null ? xdr.ScVal.scvI32(nextCursor) : xdr.ScVal.scvVoid(),
               ]),
             },
           };

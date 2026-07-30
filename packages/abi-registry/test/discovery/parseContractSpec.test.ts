@@ -86,7 +86,10 @@ describe("parseWasmSpec - real WASM fixtures (contracts/demo-emitter, contracts/
     expect(listVersionsPaged.params).toHaveLength(4);
     expect(listVersionsPaged.returns).toEqual({
       type: "tuple",
-      elements: [{ type: "vec", item: "string" }, { type: "option", inner: "i32" }],
+      elements: [
+        { type: "vec", item: "string" },
+        { type: "option", inner: "i32" },
+      ],
     });
 
     expect(parsed.events).toHaveLength(1);
