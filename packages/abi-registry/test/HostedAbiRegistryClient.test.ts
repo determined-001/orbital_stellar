@@ -46,7 +46,10 @@ function makeClient(
   const client = new HostedAbiRegistryClient({
     baseUrl: BASE_URL,
     sampleRate: 0, // off by default unless a test overrides it
-    transport: transport as unknown as (input: RequestInfo, init?: RequestInit) => Promise<Response>,
+    transport: transport as unknown as (
+      input: RequestInfo,
+      init?: RequestInit,
+    ) => Promise<Response>,
     ...overrides,
   });
   return { client, transport };
@@ -141,20 +144,23 @@ describe("HostedAbiRegistryClient", () => {
 
   describe("timeout fallback", () => {
     it("returns null when the request exceeds timeoutMs (AbortError)", async () => {
-      const { client } = makeClient(async (_url, init) => {
-        // Simulate the AbortController firing.
-        const signal = (init as RequestInit & { signal?: AbortSignal }).signal;
-        if (signal) {
-          await new Promise<never>((_resolve, reject) => {
-            signal.addEventListener("abort", () => {
-              const err = new DOMException("The operation was aborted.", "AbortError");
-              reject(err);
+      const { client } = makeClient(
+        async (_url, init) => {
+          // Simulate the AbortController firing.
+          const signal = (init as RequestInit & { signal?: AbortSignal }).signal;
+          if (signal) {
+            await new Promise<never>((_resolve, reject) => {
+              signal.addEventListener("abort", () => {
+                const err = new DOMException("The operation was aborted.", "AbortError");
+                reject(err);
+              });
             });
-          });
-        }
-        // Unreachable, but keeps TS happy.
-        throw new Error("should not reach here");
-      }, { timeoutMs: 10 });
+          }
+          // Unreachable, but keeps TS happy.
+          throw new Error("should not reach here");
+        },
+        { timeoutMs: 10 },
+      );
 
       const result = await client.getSpec(CONTRACT_ID);
 
@@ -162,10 +168,13 @@ describe("HostedAbiRegistryClient", () => {
     });
 
     it("does not log an error on timeout - silent fall-through", async () => {
-      const { client } = makeClient(async () => {
-        const err = new DOMException("The operation was aborted.", "AbortError");
-        throw err;
-      }, { timeoutMs: 10 });
+      const { client } = makeClient(
+        async () => {
+          const err = new DOMException("The operation was aborted.", "AbortError");
+          throw err;
+        },
+        { timeoutMs: 10 },
+      );
 
       await client.getSpec(CONTRACT_ID);
 
@@ -309,7 +318,10 @@ describe("HostedAbiRegistryClient", () => {
       const client = new HostedAbiRegistryClient({
         baseUrl: `${BASE_URL}/`,
         sampleRate: 0,
-        transport: transport as unknown as (input: RequestInfo, init?: RequestInit) => Promise<Response>,
+        transport: transport as unknown as (
+          input: RequestInfo,
+          init?: RequestInit,
+        ) => Promise<Response>,
       });
 
       await client.getSpec(CONTRACT_ID);

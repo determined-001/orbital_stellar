@@ -136,10 +136,7 @@ export class HostedAbiRegistryClient implements AbiRegistryReader {
    *
    * Returns the spec on success, or `null` to signal fall-through.
    */
-  private async fetchSpec(
-    contractId: string,
-    url: string,
-  ): Promise<XdrContractSpec | null> {
+  private async fetchSpec(contractId: string, url: string): Promise<XdrContractSpec | null> {
     let response: Response;
     try {
       response = await this.fetchWithTimeout(url);
