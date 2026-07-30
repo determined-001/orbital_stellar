@@ -2470,7 +2470,7 @@ export class EventEngine {
               (event as ContractEmittedEvent).decodedData = undefined;
               this.emitDecodeFailedNotification(
                 event,
-                `No ABI spec found for contract ${contractId}`,
+                `No ABI spec found for contract ${contractId}; publish an ABI spec through the registry or follow issue #8.1 for guidance.`,
               );
             }
             this.dispatchContractEvent(event);

@@ -3,6 +3,7 @@
 [![npm](https://img.shields.io/npm/v/@orbital-stellar/pulse-core?style=flat-square&logo=npm&label=pulse-core)](https://www.npmjs.com/package/@orbital-stellar/pulse-core)
 [![License: MIT](https://img.shields.io/github/license/determined-001/orbital_stellar?style=flat-square)](LICENSE)
 [![CI](https://img.shields.io/github/actions/workflow/status/determined-001/orbital_stellar/ci.yml?branch=main&style=flat-square&label=ci)](https://github.com/determined-001/orbital_stellar/actions/workflows/ci.yml)
+[![Coverage](https://img.shields.io/badge/coverage-≥67%25-brightgreen?style=flat-square)](https://github.com/determined-001/orbital_stellar/actions/workflows/ci.yml)
 [![CodeQL](https://img.shields.io/github/actions/workflow/status/determined-001/orbital_stellar/codeql.yml?branch=main&style=flat-square&label=codeql)](https://github.com/determined-001/orbital_stellar/actions/workflows/codeql.yml)
 [![TypeScript](https://img.shields.io/badge/typescript-strict-3178c6?style=flat-square&logo=typescript)](tsconfig.base.json)
 [![Node](https://img.shields.io/badge/node-20%20%7C%2022-339933?style=flat-square&logo=node.js)](.github/workflows/ci.yml)
