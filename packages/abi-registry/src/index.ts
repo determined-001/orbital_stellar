@@ -69,3 +69,18 @@ export type {
   SchemaFieldDiff,
   VerifySchemaOptions,
 } from "./verifySchema.js";
+
+export { InMemoryVerdictStore } from "./verdictStore.js";
+export type { VerdictStore, VerdictRecord, VerdictStatus } from "./verdictStore.js";
+
+export { InMemorySpecStore } from "./specStore.js";
+export type { SpecStore, RegisteredSpec } from "./specStore.js";
+
+export { GitHubIssueReporter, NoopIssueReporter } from "./issueReporter.js";
+export type { IssueReporter, MismatchReportParams } from "./issueReporter.js";
+
+export { ConsoleAlertManager, NoopAlertManager } from "./alertManager.js";
+export type { AlertManager } from "./alertManager.js";
+
+export { runVerificationJob } from "./verificationJob.js";
+export type { VerificationJobConfig, JobResult } from "./verificationJob.js";

@@ -43,6 +43,9 @@ importers:
 
   apps/web:
     dependencies:
+      '@orbital-stellar/abi-registry':
+        specifier: workspace:*
+        version: link:../../packages/abi-registry
       '@orbital-stellar/pulse-core':
         specifier: workspace:*
         version: link:../../packages/pulse-core
