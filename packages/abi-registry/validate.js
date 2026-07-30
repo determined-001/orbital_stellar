@@ -174,7 +174,6 @@ for (const file of labelFiles) {
 // ---------------------------------------------------------------------------
 const totalPassed = specPassed + labelPassed;
 const totalFailed = specFailed + labelFailed;
-const totalFiles = specFiles.length + labelFiles.length;
 
 process.stdout.write(`\n[validate] ${specPassed}/${specFiles.length} specs passed, ${labelPassed}/${labelFiles.length} labels passed (${totalPassed} passed, ${totalFailed} failed overall)\n`);
 

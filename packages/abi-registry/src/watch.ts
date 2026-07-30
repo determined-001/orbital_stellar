@@ -110,7 +110,6 @@ export async function watchCodegen(
     let anyChanged = false;
 
     for (const contract of config.contracts) {
-      // eslint-disable-next-line no-await-in-loop
       const hash = await generateForContract(contract.contractId, config, contract.name);
 
       if (hash === null) {
