@@ -140,13 +140,18 @@ describe("useContractEvent Hook", () => {
 
     // Use Component that passes schema
     function SchemaTestComponent() {
-      const { event } = useContractEvent({
+      const { event, connected } = useContractEvent({
         serverUrl: "https://events.example.com",
         contractId: "C123",
         topics: ["test"],
         schema,
       });
-      return <div data-testid="event">{event ? JSON.stringify(event) : "null"}</div>;
+      return (
+        <div>
+          <div data-testid="connected">{connected ? "true" : "false"}</div>
+          <div data-testid="event">{event ? JSON.stringify(event) : "null"}</div>
+        </div>
+      );
     }
 
     const { getByTestId, findByText } = render(<SchemaTestComponent />);
