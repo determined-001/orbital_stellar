@@ -88,7 +88,7 @@ describe("parseWasmSpec - real WASM fixtures (contracts/demo-emitter, contracts/
       type: "tuple",
       elements: [
         { type: "vec", item: "string" },
-        { type: "option", inner: "i32" },
+        { type: "option", inner: "u32" },
       ],
     });
 
