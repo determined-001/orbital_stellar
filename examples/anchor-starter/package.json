@@ -19,6 +19,7 @@
     "@orbital-stellar/pulse-webhooks": "workspace:*"
   },
   "devDependencies": {
+    "@orbital-stellar/abi-registry": "workspace:*",
     "@types/node": "^26.0.1",
     "typescript": "^6.0.3"
   }
