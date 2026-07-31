@@ -208,6 +208,28 @@ export type ContractSpec = {
   readonly pointer?: string;
 };
 
+// ── Spec provenance ──────────────────────────────────────────────────────────
+
+/**
+ * Identifies where a resolved spec originated in the resolution chain.
+ *
+ * - `sep48`     – embedded `#[contractevent]` entries in the contract's WASM
+ *                 (`contractspecv0` section, protocol-23+). Canonical source.
+ * - `registry`  – on-chain Orbital ABI registry attestation.
+ * - `wellKnown` – bundled offline well-known specs (USDC, EURC, etc.).
+ * - `discovery` – auto-discovered via `discoverContractSpec` (WASM fetch + parse).
+ */
+export type SpecSource = "sep48" | "registry" | "wellKnown" | "discovery";
+
+/**
+ * A {@link ContractSpec} paired with provenance metadata so consumers can
+ * display which source answered and apply source-specific trust policies.
+ */
+export type ResolvedSpec = {
+  readonly spec: ContractSpec;
+  readonly specSource: SpecSource;
+};
+
 // ── Runtime validation ────────────────────────────────────────────────────────
 
 /** Result returned by {@link validateSpec}. */

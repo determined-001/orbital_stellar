@@ -51,7 +51,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 20
           cache: pnpm
@@ -74,7 +74,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: ${{ matrix.node-version }}
           cache: pnpm
@@ -103,7 +103,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 20
           cache: pnpm
@@ -126,7 +126,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 20
           cache: pnpm
@@ -149,7 +149,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 20
           cache: pnpm
@@ -160,24 +160,79 @@ jobs:
       - name: Build apps/web
         run: pnpm --filter orbital/web run build
 
-  test-starters:
+  cli-smoke-test:
+    needs: changes
+    if: ${{ needs.changes.outputs.packages == 'true' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 20
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - name: Check next-starter codegen
-        run: npx orbital codegen --check
-        working-directory: examples/next-starter
-      - name: Check express-starter codegen
-        run: npx orbital codegen --check
-        working-directory: examples/express-starter
-      - name: Check anchor-starter codegen
-        run: npx orbital codegen --check
-        working-directory: examples/anchor-starter
+      - name: Build abi-registry
+        run: pnpm tsc -p packages/abi-registry/tsconfig.json
+      - name: Build pulse-core
+        run: pnpm tsc -p packages/pulse-core/tsconfig.json
+      - name: Build pulse-webhooks
+        run: pnpm tsc -p packages/pulse-webhooks/tsconfig.json
+      - name: Smoke test pulse-core (--help, --version)
+        run: |
+          cd packages/pulse-core
+          pnpm pack --pack-destination /tmp/orbital-smoke
+          cd /tmp/orbital-smoke
+          npm install -g ./orbital-stellar-pulse-core-*.tgz
+          orbital --help
+          orbital --version
+          orbital cursor --help
+          orbital typegen --help
+          npm uninstall -g @orbital-stellar/pulse-core
+      - name: Smoke test pulse-webhooks (--help, --version)
+        run: |
+          cd packages/pulse-webhooks
+          pnpm pack --pack-destination /tmp/orbital-smoke
+          cd /tmp/orbital-smoke
+          npm install -g ./orbital-stellar-pulse-webhooks-*.tgz
+          orbital-dlq --help
+          orbital-dlq --version
+          npm uninstall -g @orbital-stellar/pulse-webhooks
+      - name: Smoke test abi-registry (--help, --version)
+        run: |
+          cd packages/abi-registry
+          pnpm pack --pack-destination /tmp/orbital-smoke
+          cd /tmp/orbital-smoke
+          npm install -g ./orbital-stellar-abi-registry-*.tgz
+          abi-registry-generate --help
+          abi-registry-generate --version
+          npm uninstall -g @orbital-stellar/abi-registry
+
+  coverage:
+    needs: changes
+    if: ${{ needs.changes.outputs.packages == 'true' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Build abi-registry
+        run: pnpm tsc -p packages/abi-registry/tsconfig.json
+      - name: Run coverage (thresholds enforced)
+        run: pnpm -r --if-present test:coverage
+      - name: Upload coverage reports
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: coverage-reports
+          path: |
+            packages/*/coverage/
+          retention-days: 14

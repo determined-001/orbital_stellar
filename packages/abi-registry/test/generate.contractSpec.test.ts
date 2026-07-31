@@ -197,7 +197,7 @@ describe("generateContractArtifacts - canonical ContractSpec path", () => {
       );
     } catch (err) {
       const { stdout, stderr } = err as { stdout?: string; stderr?: string };
-      throw new Error(`tsc failed:\n${stdout ?? ""}\n${stderr ?? ""}`);
+      throw new Error(`tsc failed:\n${stdout ?? ""}\n${stderr ?? ""}`, { cause: err });
     }
   }, 60_000);
 });

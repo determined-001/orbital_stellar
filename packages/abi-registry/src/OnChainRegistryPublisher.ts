@@ -126,6 +126,7 @@ export class OnChainRegistryPublisher implements RegistryPublisher {
           contractId: contractSpec.contractId,
           version: contractSpec.version,
           etag: specHash.toString("hex"),
+          txHash: sent.hash,
         };
       }
       await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));

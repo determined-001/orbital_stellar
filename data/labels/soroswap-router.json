@@ -1,0 +1,15 @@
+{
+  "schemaVersion": "1.0.0",
+  "contractId": "CCB6TKA2DJJBWNOD72VFG5FJIBX3ZRAJ7X43SF7XPI46SPXMX5OYNKRG",
+  "label": "Soroswap Router",
+  "entityType": "protocol",
+  "confidence": 0.9,
+  "sources": [
+    "https://soroswap.finance",
+    "https://github.com/soroswap/core",
+    "https://stellar.expert/explorer/public/contract/CCB6TKA2DJJBWNOD72VFG5FJIBX3ZRAJ7X43SF7XPI46SPXMX5OYNKRG"
+  ],
+  "verifiedAt": "2025-03-10T00:00:00.000Z",
+  "submittedBy": "orbital-maintainers",
+  "notes": "Soroswap is the leading automated market maker (AMM) DEX on Soroban. The router contract facilitates token swaps and liquidity management. Confidence 0.9 pending on-chain admin verification."
+}
