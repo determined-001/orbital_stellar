@@ -46,16 +46,16 @@
     "@orbital-stellar/pulse-core": "workspace:*"
   },
   "devDependencies": {
-    "@size-limit/preset-small-lib": "^12.1.0",
+    "@size-limit/preset-small-lib": "^13.0.2",
     "@testing-library/react": "^16.3.2",
-    "@types/node": "^26.0.1",
+    "@types/node": "^26.1.2",
     "@types/react": "^19.2.17",
-    "@vitest/coverage-v8": "^4.1.9",
-    "jsdom": "^29.1.1",
+    "@vitest/coverage-v8": "^4.1.10",
+    "jsdom": "^30.0.1",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
-    "size-limit": "^12.1.0",
-    "vitest": "^4.1.9"
+    "size-limit": "^13.0.2",
+    "vitest": "^4.1.10"
   },
   "peerDependencies": {
     "react": "^18.0.0 || ^19.0.0"
