@@ -7,6 +7,10 @@ strict [semver](https://semver.org/spec/v2.0.0.html). Breaking changes ship
 only in majors. Deprecated surfaces get at least a 6-month window before
 removal. Every breaking change has a documented migration path.
 
+The `0.1.0` → `1.0.0` migration path (before/after edits, source-compatible
+“nothing to do” list, registry configuration) is
+[`docs/migration/0.1-to-1.0.md`](./docs/migration/0.1-to-1.0.md).
+
 ---
 
 ## What is covered
@@ -53,7 +57,7 @@ TypeScript:
 |---|---|
 | **Patch** | Bug fixes, security fixes, docs, non-observable internal changes |
 | **Minor** | New exports, new optional fields/params, new event types added to unions, deprecations with warnings |
-| **Major** | Removal of surfaces deprecated ≥6 months prior, behavioral changes, dependency floor bumps - every break documented in the migration guide |
+| **Major** | Removal of surfaces deprecated ≥6 months prior, behavioral changes, dependency floor bumps - every break documented in the [migration guide](./docs/migration/0.1-to-1.0.md) |
 
 > **Footnote.** New `NormalizedEvent` variants may be added in minors.
 > Consumers using `switch (event.type)` should keep a `default` branch that
