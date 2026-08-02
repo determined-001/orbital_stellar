@@ -45,7 +45,13 @@ describe("parseWasmSpec - real WASM fixtures (contracts/demo-emitter, contracts/
     const parsed = parseWasmSpec(loadFixture("registry.wasm"));
 
     const fnNames = parsed.functions.map((f) => f.name).sort();
-    expect(fnNames).toEqual(["get_version", "latest", "list_versions", "publish"]);
+    expect(fnNames).toEqual([
+      "get_version",
+      "latest",
+      "list_versions",
+      "list_versions_paged",
+      "publish",
+    ]);
 
     const publish = parsed.functions.find((f) => f.name === "publish")!;
     expect(publish.params.map((p) => p.name)).toEqual([
@@ -74,6 +80,17 @@ describe("parseWasmSpec - real WASM fixtures (contracts/demo-emitter, contracts/
 
     const listVersions = parsed.functions.find((f) => f.name === "list_versions")!;
     expect(listVersions.returns).toEqual({ type: "vec", item: "string" });
+
+    const listVersionsPaged = parsed.functions.find((f) => f.name === "list_versions_paged")!;
+    expect(listVersionsPaged).toBeDefined();
+    expect(listVersionsPaged.params).toHaveLength(4);
+    expect(listVersionsPaged.returns).toEqual({
+      type: "tuple",
+      elements: [
+        { type: "vec", item: "string" },
+        { type: "option", inner: "u32" },
+      ],
+    });
 
     expect(parsed.events).toHaveLength(1);
     const published = parsed.events[0]!;

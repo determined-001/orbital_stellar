@@ -388,7 +388,8 @@ describe("verifySchema", () => {
             (d) =>
               d.path.includes("latest") ||
               d.path.includes("get_version") ||
-              d.path.includes("list_versions"),
+              d.path.includes("list_versions") ||
+              d.path.includes("list_versions_paged"),
           ),
         ).toBe(true);
       }
@@ -670,6 +671,22 @@ describe("verifySchema", () => {
             },
           },
           {
+            name: "list_versions_paged",
+            params: [
+              { name: "contract_id", type: "address" },
+              { name: "publisher", type: "address" },
+              { name: "start", type: "u32" },
+              { name: "limit", type: "u32" },
+            ],
+            returns: {
+              type: "tuple",
+              elements: [
+                { type: "vec", item: "string" },
+                { type: "option", inner: "u32" },
+              ],
+            },
+          },
+          {
             name: "get_version",
             params: [
               { name: "contract_id", type: "address" },
@@ -732,9 +749,23 @@ describe("verifySchema", () => {
             kind: "enum",
             name: "Error",
             variants: [
-              { name: "AlreadyPublished", discriminant: 1 },
+              {
+                name: "AlreadyPublished",
+                doc: "A spec for this (contract_id, publisher, version) already exists.\nSpecs are immutable per version - republish under a new version instead.",
+                discriminant: 1,
+              },
               { name: "EmptyVersion", discriminant: 2 },
               { name: "EmptyPointer", discriminant: 3 },
+              {
+                name: "StartPastEnd",
+                doc: "The requested start cursor exceeds the total number of versions.",
+                discriminant: 4,
+              },
+              {
+                name: "LimitExceedsMax",
+                doc: "The requested page limit exceeds MAX_PAGE_SIZE.",
+                discriminant: 5,
+              },
             ],
           },
         },
