@@ -1,0 +1,26 @@
+# Postgres for the cursor store and the retry queue.
+#
+#   docker compose up -d
+#   DATABASE_URL=postgres://orbital:orbital@127.0.0.1:5432/orbital pnpm dev
+#
+# Without DATABASE_URL the starter uses a file-backed cursor and needs no
+# containers at all - the resume guarantee holds either way.
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: orbital
+      POSTGRES_PASSWORD: orbital
+      POSTGRES_DB: orbital
+    ports:
+      - "5432:5432"
+    volumes:
+      - orbital-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U orbital -d orbital"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  orbital-pgdata:

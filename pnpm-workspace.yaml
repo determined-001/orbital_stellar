@@ -9,8 +9,11 @@ allowBuilds:
 # postcss <8.5.10 has the </style> XSS advisory (GHSA-qx2v-qp2m-jg93) - next pins 8.4.31.
 # js-yaml 3.x <3.15.0 has the merge-key DoS advisory (GHSA-h67p-54hq-rp68) via gray-matter;
 # scoped to @3 so a future js-yaml 4.x consumer is never downgraded.
+# path-to-regexp 0.x has the backtracking-ReDoS advisory (GHSA-9wv6-86v2-598j);
+# scoped to @0 so express 5 - which requires 8.x - is not dragged back to a
+# version whose router API it cannot use.
 overrides:
-  path-to-regexp: 0.1.13
+  "path-to-regexp@0": 0.1.13
   vite: 7.3.6
   axios: 1.17.0
   postcss: ^8.5.16
