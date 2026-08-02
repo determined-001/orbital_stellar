@@ -72,11 +72,13 @@ stellar contract id --wasm-hash <hash> --network testnet
 
 ### 5. Seed well-known specs (post-deployment)
 
-After the registry is deployed, run the seeding script to publish the bundled
-well-known ABI specs under the deployer's address:
-```bash
-# TODO: Add seeding script invocation
-```
+Once the registry is deployed, the bundled well-known ABI specs need to be
+published under the deployer's address. There is no seeding script in the
+repository yet — it is tracked by
+[issue #890](https://github.com/determined-001/orbital_stellar/issues/890)
+(*8.3 Seed the registry with the four bundled well-known specs*). Until it
+lands, `createDefaultAbiRegistryClient` resolves those specs from the bundled
+copies, so nothing depends on the registry being seeded.
 
 ## Troubleshooting
 
