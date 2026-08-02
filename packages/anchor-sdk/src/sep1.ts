@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { stripInlineComment, stripScheme, stripTrailingSlashes } from "./strings.js";
 
 /**
  * SEP-1 discovery: fetch and parse the anchor's `stellar.toml` to learn which
@@ -67,11 +68,7 @@ export function parseStellarToml(toml: string): StellarToml {
     const key = line.slice(0, separator).trim();
     if (!KEYS_OF_INTEREST.has(key)) continue;
 
-    const value = line
-      .slice(separator + 1)
-      .trim()
-      .replace(/\s+#.*$/, "")
-      .trim();
+    const value = stripInlineComment(line.slice(separator + 1).trim());
 
     const unquoted = /^"(.*)"$/.exec(value) ?? /^'(.*)'$/.exec(value);
     if (!unquoted) continue;
@@ -97,7 +94,7 @@ export async function discoverAnchor(
   const transport = options.transport ?? fetch.bind(globalThis);
   const timeoutMs = options.timeoutMs ?? 10_000;
 
-  const host = homeDomain.replace(/^https?:\/\//, "").replace(/\/+$/, "");
+  const host = stripTrailingSlashes(stripScheme(homeDomain));
   if (host === "") {
     throw new Sep1DiscoveryError("home domain is empty");
   }

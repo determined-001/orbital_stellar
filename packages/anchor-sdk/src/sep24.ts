@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { stripTrailingSlashes } from "./strings.js";
 import type { Sep24Status } from "@orbital-stellar/pulse-core";
 
 /**
@@ -111,7 +112,7 @@ export class Sep24Client {
   private readonly timeoutMs: number;
 
   constructor(transferServer: string, options: Sep24ClientOptions = {}) {
-    this.transferServer = transferServer.replace(/\/+$/, "");
+    this.transferServer = stripTrailingSlashes(transferServer);
     this.transport = options.transport ?? fetch.bind(globalThis);
     this.timeoutMs = options.timeoutMs ?? 10_000;
   }

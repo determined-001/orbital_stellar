@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { stripTrailingSlashes } from "./strings.js";
 
 /**
  * SEP-10 authentication: fetch a challenge transaction, sign it, exchange it
@@ -57,7 +58,7 @@ export class Sep10Client {
   private readonly timeoutMs: number;
 
   constructor(webAuthEndpoint: string, options: Sep10ClientOptions = {}) {
-    this.webAuthEndpoint = webAuthEndpoint.replace(/\/+$/, "");
+    this.webAuthEndpoint = stripTrailingSlashes(webAuthEndpoint);
     this.transport = options.transport ?? fetch.bind(globalThis);
     this.timeoutMs = options.timeoutMs ?? 10_000;
   }
