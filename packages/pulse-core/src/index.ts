@@ -422,6 +422,13 @@ export type Sep31Status =
   | "completed"
   | "error";
 
+/**
+ * @deprecated Use the `anchor.deposit.*` / `anchor.withdrawal.*` /
+ * `anchor.payment.*` family ({@link AnchorFlowEvent}) instead. This single
+ * catch-all event forces consumers to branch on `protocol` and a raw status
+ * string; the flow events carry the lifecycle in the type. Kept so the shape
+ * shipped in #942 still narrows, and scheduled for removal before `v2.0.0`.
+ */
 export type AnchorTransactionEvent = {
   type: "anchor.transaction_status_changed";
   protocol: "sep24" | "sep31";
@@ -433,6 +440,96 @@ export type AnchorTransactionEvent = {
   amount_out?: string;
   timestamp: string;
   readonly timestampDate: Date;
+  raw?: unknown;
+};
+
+/** The anchor protocol an event came from. */
+export type AnchorProtocol = "sep24" | "sep31";
+
+/**
+ * Lifecycle stage of an anchor flow, shared by deposits, withdrawals and
+ * cross-border payments so a consumer can branch on the stage without caring
+ * which SEP produced it.
+ *
+ * - `initiated` - the anchor has accepted the request and returned an id
+ * - `pending` - waiting on the user, the anchor, an external rail, or Stellar
+ * - `completed` - funds delivered; terminal
+ * - `refunded` - returned to the sender; terminal
+ * - `failed` - errored, expired, or rejected; terminal
+ */
+export type AnchorFlowStage = "initiated" | "pending" | "completed" | "refunded" | "failed";
+
+/** Event types for SEP-24 deposits. */
+export type AnchorDepositEventType =
+  | "anchor.deposit.initiated"
+  | "anchor.deposit.pending"
+  | "anchor.deposit.completed"
+  | "anchor.deposit.refunded"
+  | "anchor.deposit.failed";
+
+/** Event types for SEP-24 withdrawals. */
+export type AnchorWithdrawalEventType =
+  | "anchor.withdrawal.initiated"
+  | "anchor.withdrawal.pending"
+  | "anchor.withdrawal.completed"
+  | "anchor.withdrawal.refunded"
+  | "anchor.withdrawal.failed";
+
+/** Event types for SEP-31 cross-border payments between anchors. */
+export type AnchorPaymentEventType =
+  | "anchor.payment.initiated"
+  | "anchor.payment.pending"
+  | "anchor.payment.completed"
+  | "anchor.payment.refunded"
+  | "anchor.payment.failed";
+
+export type AnchorFlowEventType =
+  AnchorDepositEventType | AnchorWithdrawalEventType | AnchorPaymentEventType;
+
+/**
+ * A normalized anchor lifecycle event.
+ *
+ * Off-chain anchor state and on-chain settlement are two views of one payment.
+ * These events carry the anchor's own status verbatim in `protocolStatus`
+ * alongside the normalized `type`, so nothing is lost for a compliance
+ * consumer, and expose the settlement transaction in `settlementTxHash` when -
+ * and only when - the anchor published it.
+ */
+export type AnchorFlowEvent = {
+  /** Normalized lifecycle event type. */
+  type: AnchorFlowEventType;
+  /** Which SEP the transaction belongs to. */
+  protocol: AnchorProtocol;
+  /** Lifecycle stage, duplicated from `type` for consumers that switch on it. */
+  stage: AnchorFlowStage;
+  /** The anchor's transaction id. */
+  transactionId: string;
+  /**
+   * The anchor's own status string, unmodified. `type` is the normalization;
+   * this is the source of truth a compliance consumer needs.
+   */
+  protocolStatus: Sep24Status | Sep31Status;
+  /** Base URL of the anchor that reported this transaction. */
+  anchorUrl: string;
+  /**
+   * Hash of the Stellar transaction that settled this flow, or `null` when the
+   * anchor did not expose one. Never inferred - a hash guessed from timing
+   * would be indistinguishable from fabricated data.
+   */
+  settlementTxHash: string | null;
+  /** Amount received by the anchor, when reported. */
+  amountIn?: string;
+  /** Amount delivered by the anchor, when reported. */
+  amountOut?: string;
+  /** Fee charged by the anchor, when reported. */
+  amountFee?: string;
+  /** Human-readable message from the anchor, when reported. */
+  message?: string;
+  /** ISO 8601 timestamp of the transition. */
+  timestamp: string;
+  /** Lazy, cached `Date` derived from `event.timestamp`. Non-enumerable; does not appear in JSON.stringify output. */
+  readonly timestampDate: Date;
+  /** The raw transaction record the anchor returned. */
   raw?: unknown;
 };
 
@@ -472,6 +569,7 @@ export type NormalizedEvent = (
   | TrustAuthEvent
   | ContractEvent
   | AnchorTransactionEvent
+  | AnchorFlowEvent
 ) & {
   /** Lazy, cached `Date` derived from `event.timestamp`. Non-enumerable; does not appear in JSON.stringify output. */
   readonly timestampDate: Date;

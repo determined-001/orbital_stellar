@@ -42,6 +42,22 @@ export function describeEvent(event: NormalizedEvent): string {
       return `Contract emitted ${event.contractId}`;
     case "anchor.transaction_status_changed":
       return `Anchor transaction ${event.transaction_id} status changed to ${event.status}`;
+    case "anchor.deposit.initiated":
+    case "anchor.deposit.pending":
+    case "anchor.deposit.completed":
+    case "anchor.deposit.refunded":
+    case "anchor.deposit.failed":
+    case "anchor.withdrawal.initiated":
+    case "anchor.withdrawal.pending":
+    case "anchor.withdrawal.completed":
+    case "anchor.withdrawal.refunded":
+    case "anchor.withdrawal.failed":
+    case "anchor.payment.initiated":
+    case "anchor.payment.pending":
+    case "anchor.payment.completed":
+    case "anchor.payment.refunded":
+    case "anchor.payment.failed":
+      return `Anchor ${event.type.split(".")[1]} ${event.transactionId} ${event.stage} (${event.protocolStatus})`;
     default: {
       const _exhaustiveCheck: never = event;
       return _exhaustiveCheck;

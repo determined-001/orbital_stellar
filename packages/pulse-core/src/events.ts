@@ -24,4 +24,5 @@ export type {
   ContractEmittedEvent,
   ContractEvent,
   AnchorTransactionEvent,
+  AnchorFlowEvent,
 } from "./index.js";
