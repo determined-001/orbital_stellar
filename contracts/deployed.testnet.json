@@ -1,0 +1,15 @@
+{
+  "network": "testnet",
+  "deployerPublicKey": "<RUN contracts/deploy/deploy_testnet.sh TO POPULATE>",
+  "deployedAt": "",
+  "contracts": {
+    "registry": {
+      "contractId": "<POPULATED BY deploy_testnet.sh>",
+      "wasmHash": ""
+    },
+    "demoEmitter": {
+      "contractId": "<POPULATED BY deploy_testnet.sh>",
+      "wasmHash": ""
+    }
+  }
+}
