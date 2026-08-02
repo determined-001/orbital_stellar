@@ -169,69 +169,6 @@ async function main() {
         }
       },
     )
-    .command(
-      "codegen",
-      "Generates TypeScript types for all contracts in orbital.config.ts",
-      (yargs) =>
-        yargs
-          .option("config", {
-            type: "string",
-            describe: "Path to orbital.config.ts file (defaults to orbital.config.ts in current directory)",
-          })
-          .option("check", {
-            type: "boolean",
-            default: false,
-            describe: "Check for drift without writing files (exits with non-zero on changes)",
-          }),
-      async (argv) => {
-        const {
-          loadConfig,
-          ConfigLoadError,
-          generateBatchTypes,
-          BatchGenerationError,
-        } = await import("@orbital-stellar/abi-registry");
-
-        try {
-          const { config, configPath, configHash } = await loadConfig(argv.config);
-          
-          if (argv.check) {
-            const { checkForDrift } = await import("@orbital-stellar/abi-registry");
-            const driftResult = await checkForDrift(config, configHash, configPath);
-            
-            if (driftResult.hasChanges) {
-              console.error(driftResult.report);
-              process.exit(1);
-            } else {
-              console.log("✓ No changes detected - generated files are up to date");
-            }
-          } else {
-            const result = await generateBatchTypes(config, configHash, configPath);
-            
-            console.log(`[orbital codegen] Generated types for ${result.contractsProcessed} contracts:`);
-            for (const contract of result.contracts) {
-              console.log(`  ✓ ${contract.name} → ${contract.outputPath}`);
-            }
-            
-            if (result.lockFileUpdated) {
-              console.log(`[orbital codegen] Updated orbital.lock.json`);
-            }
-          }
-        } catch (error) {
-          if (error instanceof ConfigLoadError) {
-            console.error(`[orbital codegen] Configuration error: ${error.message}`);
-            process.exit(1);
-          }
-          
-          if (error instanceof BatchGenerationError) {
-            console.error(`[orbital codegen] Generation error: ${error.message}`);
-            process.exit(1);
-          }
-          
-          throw error;
-        }
-      },
-    )
-    .demandCommand(1, "Please provide a command (cursor, typegen, codegen)")
     .demandCommand(1, "Please provide a command (cursor, typegen)")
     .version(pkg.version)
     .help().argv;

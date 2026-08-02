@@ -1,3 +1,7 @@
+import { existsSync, readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import { loadLockFile as loadStructuredLockFile } from "./lockFile.js";
+
 /**
  * Configuration system for orbital.config.ts contract manifests
  */
@@ -238,12 +242,33 @@ export function loadCodegenConfig(cwd: string): {
   lockFile: OrbitalLockFile | null;
   errors: string[];
 } {
-  // This is a placeholder implementation for compatibility
-  // The real implementation should use the new loadConfig system
+  const errors: string[] = [];
+  let config: OrbitalCodegenConfig | null = null;
+
+  const configPath = resolveLegacyConfigPath(cwd);
+
+  if (!configPath) {
+    errors.push(
+      "No orbital configuration file found. Looked for: orbital.config.json, orbital.config.ts, orbital.config.js, orbital.config.mjs, orbital.config.cjs",
+    );
+  } else {
+    try {
+      const loadedConfig = loadLegacyConfigFile(configPath);
+      validateConfig(loadedConfig);
+      config = loadedConfig;
+    } catch (error) {
+      errors.push(
+        `Failed to load orbital config from ${configPath}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+  }
+
   return {
-    config: null,
-    lockFile: null,
-    errors: ["Use the new loadConfig function instead"],
+    config,
+    lockFile: loadLockFile(cwd),
+    errors,
   };
 }
 
@@ -251,7 +276,88 @@ export function loadCodegenConfig(cwd: string): {
  * Legacy function for backward compatibility - loads lock file
  */
 export function loadLockFile(cwd: string): OrbitalLockFile | null {
-  // This is a placeholder implementation for compatibility
-  // The real implementation should use the new lock file system
+  try {
+    const lockFile = loadStructuredLockFile(resolve(cwd, "orbital.lock.json"));
+    return toLegacyLockFile(lockFile);
+  } catch {
+    return null;
+  }
+}
+
+function resolveLegacyConfigPath(cwd: string): string | null {
+  const possiblePaths = [
+    "orbital.config.json",
+    "orbital.config.ts",
+    "orbital.config.js",
+    "orbital.config.mjs",
+    "orbital.config.cjs",
+  ];
+
+  for (const relativePath of possiblePaths) {
+    const absolutePath = resolve(cwd, relativePath);
+    if (existsSync(absolutePath)) {
+      return absolutePath;
+    }
+  }
+
   return null;
+}
+
+function loadLegacyConfigFile(configPath: string): OrbitalCodegenConfig {
+  if (configPath.endsWith(".json")) {
+    return JSON.parse(readFileSync(configPath, "utf-8")) as OrbitalCodegenConfig;
+  }
+
+  const source = readFileSync(configPath, "utf-8");
+  const expression = extractConfigExpression(source);
+
+  try {
+    return Function(
+      "defineConfig",
+      `"use strict"; return (${expression});`,
+    )(defineConfig) as OrbitalCodegenConfig;
+  } catch (error) {
+    throw new Error(
+      `Synchronous compatibility loader could not evaluate this config. Prefer loadConfig() for full module support. ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    );
+  }
+}
+
+function extractConfigExpression(source: string): string {
+  const normalizedSource = source.replace(/^\uFEFF/, "").trim();
+  const exportDefaultMatch = normalizedSource.match(/export\s+default\s+([\s\S]+?);?\s*$/);
+  if (exportDefaultMatch?.[1]) {
+    return exportDefaultMatch[1].trim();
+  }
+
+  const moduleExportsMatch = normalizedSource.match(/module\.exports\s*=\s*([\s\S]+?);?\s*$/);
+  if (moduleExportsMatch?.[1]) {
+    return moduleExportsMatch[1].trim();
+  }
+
+  throw new Error(
+    "Unsupported config module format. Expected `export default ...` or `module.exports = ...`.",
+  );
+}
+
+function toLegacyLockFile(
+  lockFile: {
+    contracts: Array<{ name: string; contractId: string; specHash: string; resolvedAt: string }>;
+  } | null,
+): OrbitalLockFile | null {
+  if (!lockFile) {
+    return null;
+  }
+
+  return Object.fromEntries(
+    lockFile.contracts.map((contract) => [
+      contract.name || contract.contractId,
+      {
+        specHash: contract.specHash,
+        verifiedAt: contract.resolvedAt,
+      },
+    ]),
+  );
 }

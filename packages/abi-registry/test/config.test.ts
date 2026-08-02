@@ -1,12 +1,15 @@
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, it, expect } from "vitest";
 import {
   defineConfig,
   validateConfig,
   ConfigValidationError,
   loadCodegenConfig,
-  loadLockFile,
+  loadLockFile as loadLegacyLockFile,
 } from "../src/config.js";
-import type { OrbitalConfig, ContractConfig } from "../src/config.js";
+import type { OrbitalConfig } from "../src/config.js";
 
 // Valid Stellar contract IDs (56 characters, C + 55 base32 chars)
 const VALID_CONTRACT_ID_1 = "C" + "A".repeat(55);
@@ -263,19 +266,7 @@ describe("ConfigValidationError", () => {
   });
 });
 
-describe("Legacy functions", () => {
-  it("loadCodegenConfig should return placeholder result", () => {
-    const result = loadCodegenConfig("/test");
-    expect(result.config).toBeNull();
-    expect(result.lockFile).toBeNull();
-    expect(result.errors).toEqual(["Use the new loadConfig function instead"]);
-  });
-
-  it("loadLockFile should return null", () => {
-    const result = loadLockFile("/test");
-    expect(result).toBeNull();
-  });
-
+describe("Additional validation coverage", () => {
   it("should handle edge case with contract without name", () => {
     const config = {
       contracts: [
@@ -288,5 +279,82 @@ describe("Legacy functions", () => {
     };
 
     expect(() => validateConfig(config)).not.toThrow();
+  });
+});
+
+describe("legacy compatibility helpers", () => {
+  it("loads legacy codegen config from orbital.config.json", () => {
+    const testDir = mkdtempSync(join(tmpdir(), "orbital-config-"));
+
+    try {
+      writeFileSync(
+        join(testDir, "orbital.config.json"),
+        JSON.stringify({
+          contracts: [{ contractId: VALID_CONTRACT_ID_1, name: "FriendlyName" }],
+          outDir: "./generated",
+        }),
+        "utf-8",
+      );
+      writeFileSync(
+        join(testDir, "orbital.lock.json"),
+        JSON.stringify({
+          FriendlyName: {
+            specHash: "abc123",
+            verifiedAt: "2024-01-01T00:00:00.000Z",
+          },
+        }),
+        "utf-8",
+      );
+
+      const result = loadCodegenConfig(testDir);
+
+      expect(result.errors).toEqual([]);
+      expect(result.config).toEqual({
+        contracts: [{ contractId: VALID_CONTRACT_ID_1, name: "FriendlyName" }],
+        outDir: "./generated",
+      });
+      expect(result.lockFile).toEqual({
+        FriendlyName: {
+          specHash: "abc123",
+          verifiedAt: "2024-01-01T00:00:00.000Z",
+        },
+      });
+    } finally {
+      rmSync(testDir, { recursive: true, force: true });
+    }
+  });
+
+  it("converts the new lock-file shape back to the legacy lock API", () => {
+    const testDir = mkdtempSync(join(tmpdir(), "orbital-lock-"));
+
+    try {
+      writeFileSync(
+        join(testDir, "orbital.lock.json"),
+        JSON.stringify({
+          version: "1.0.0",
+          configHash: "config-hash",
+          generatedAt: "2024-01-02T00:00:00.000Z",
+          contracts: [
+            {
+              contractId: VALID_CONTRACT_ID_1,
+              name: "FriendlyName",
+              specHash: "def456",
+              resolvedAt: "2024-01-02T00:00:00.000Z",
+              source: "registry",
+            },
+          ],
+        }),
+        "utf-8",
+      );
+
+      expect(loadLegacyLockFile(testDir)).toEqual({
+        FriendlyName: {
+          specHash: "def456",
+          verifiedAt: "2024-01-02T00:00:00.000Z",
+        },
+      });
+    } finally {
+      rmSync(testDir, { recursive: true, force: true });
+    }
   });
 });

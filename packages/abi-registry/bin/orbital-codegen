@@ -1,17 +1,22 @@
 #!/usr/bin/env node
 import { readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { generateContractTypes } from "../src/generate.js";
-import { loadCodegenConfig } from "../src/config.js";
-import { generateForContract, watchCodegen } from "../src/watch.js";
+import { generateContractTypes } from "../dist/generate.js";
+import { loadConfig, ConfigLoadError } from "../dist/configLoader.js";
+import {
+  generateBatchTypes,
+  checkForDrift,
+  BatchGenerationError,
+} from "../dist/batchGeneration.js";
 
+const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
 const args = process.argv.slice(2);
 const isWatch = args.indexOf("--watch") !== -1;
 const isCheck = args.indexOf("--check") !== -1;
-
-const pollIntervalArg = args.find((a) => a.startsWith("--poll-interval=")) ?? "";
-const pollIntervalMs = pollIntervalArg
-  ? parseInt(pollIntervalArg.split("=")[1] ?? "15000", 10)
+const configPath = readOptionValue(args, "--config");
+const pollIntervalValue = readOptionValue(args, "--poll-interval");
+const pollIntervalMs = pollIntervalValue
+  ? parseInt(pollIntervalValue, 10)
   : 15000;
 
 if (args.includes("--help") || args.includes("-h")) {
@@ -20,12 +25,14 @@ orbital codegen - Generate TypeScript types from contract specs
 
 USAGE
   orbital codegen                    Generate types for all contracts in orbital.config.ts
+  orbital codegen --config path/to/orbital.config.ts
   orbital codegen --watch            Watch for spec changes and regenerate
   orbital codegen --watch --poll-interval=10000  Custom poll interval (ms)
   orbital codegen --check            Check for drift without writing
   orbital codegen <input.json> <output.d.ts>    Legacy single-file mode
 
 FLAGS
+  --config path       Path to orbital.config.ts (defaults to auto-discovery)
   --watch             Poll the registry on an interval and regenerate on hash changes
   --poll-interval=ms  Polling interval in milliseconds (default: 15000)
   --check             Regenerate into memory and exit non-zero if output would differ
@@ -34,10 +41,15 @@ FLAGS
   process.exit(0);
 }
 
+if (args.includes("--version") || args.includes("-v")) {
+  console.log(pkg.version);
+  process.exit(0);
+}
+
 if (args.length >= 2 && !isWatch && !isCheck && !args[0]?.startsWith("--")) {
   const [inputPath, outputPath] = args;
-  const resolvedInputPath = resolve(process.cwd(), inputPath!);
-  const resolvedOutputPath = resolve(process.cwd(), outputPath!);
+  const resolvedInputPath = resolve(process.cwd(), inputPath);
+  const resolvedOutputPath = resolve(process.cwd(), outputPath);
   const spec = JSON.parse(readFileSync(resolvedInputPath, "utf8"));
   const generated = generateContractTypes(spec);
   writeFileSync(resolvedOutputPath, generated, "utf8");
@@ -45,58 +57,144 @@ if (args.length >= 2 && !isWatch && !isCheck && !args[0]?.startsWith("--")) {
   process.exit(0);
 }
 
-const cwd = process.cwd();
-const { config, lockFile, errors } = loadCodegenConfig(cwd);
-
-if (!config) {
-  console.error("Error: Could not load orbital config.");
-  for (const err of errors) console.error(`  - ${err}`);
-  console.error("Run `orbital codegen --help` for usage.");
+if (Number.isNaN(pollIntervalMs) || pollIntervalMs <= 0) {
+  console.error("[orbital codegen] --poll-interval must be a positive integer");
   process.exit(1);
+}
+
+function readOptionValue(argv, name) {
+  const inline = argv.find((arg) => arg.startsWith(`${name}=`));
+  if (inline) {
+    return inline.slice(name.length + 1);
+  }
+
+  const index = argv.indexOf(name);
+  if (index === -1) {
+    return undefined;
+  }
+
+  const next = argv[index + 1];
+  return next && !next.startsWith("--") ? next : undefined;
+}
+
+function logGenerationResult(result) {
+  console.log(`[orbital codegen] Generated types for ${result.contractsProcessed} contracts:`);
+  for (const contract of result.contracts) {
+    console.log(`  ✓ ${contract.name} → ${contract.outputPath}`);
+  }
+
+  if (result.lockFileUpdated) {
+    console.log("[orbital codegen] Updated orbital.lock.json");
+  }
+}
+
+async function loadResolvedConfig() {
+  return loadConfig(configPath);
+}
+
+async function runCheck() {
+  const { config, configHash, configPath: resolvedConfigPath } = await loadResolvedConfig();
+  const driftResult = await checkForDrift(config, configHash, resolvedConfigPath);
+
+  if (driftResult.hasChanges) {
+    console.error(driftResult.report);
+    return 1;
+  }
+
+  console.log("✓ No changes detected - generated files are up to date");
+  return 0;
+}
+
+async function runGeneration() {
+  const { config, configHash, configPath: resolvedConfigPath } = await loadResolvedConfig();
+  const result = await generateBatchTypes(config, configHash, resolvedConfigPath);
+  logGenerationResult(result);
+  return 0;
+}
+
+async function runWatch() {
+  console.log(
+    `[orbital codegen] Watching for configuration or ABI drift every ${pollIntervalMs}ms...`,
+  );
+
+  let running = false;
+  let intervalId = null;
+  let resolveExit;
+
+  const exitPromise = new Promise((resolveExitPromise) => {
+    resolveExit = resolveExitPromise;
+  });
+
+  const stop = () => {
+    if (intervalId) {
+      clearInterval(intervalId);
+    }
+    process.off("SIGINT", stop);
+    process.off("SIGTERM", stop);
+    console.log("[orbital codegen] Watch mode stopped.");
+    resolveExit();
+  };
+
+  const tick = async (forceGenerate = false) => {
+    if (running) {
+      return;
+    }
+
+    running = true;
+    try {
+      const { config, configHash, configPath: resolvedConfigPath } = await loadResolvedConfig();
+
+      if (!forceGenerate) {
+        const driftResult = await checkForDrift(config, configHash, resolvedConfigPath);
+        if (!driftResult.hasChanges) {
+          return;
+        }
+        console.log(driftResult.report);
+      }
+
+      const result = await generateBatchTypes(config, configHash, resolvedConfigPath);
+      logGenerationResult(result);
+    } catch (error) {
+      reportError(error);
+    } finally {
+      running = false;
+    }
+  };
+
+  process.on("SIGINT", stop);
+  process.on("SIGTERM", stop);
+
+  await tick(true);
+  intervalId = setInterval(() => {
+    void tick(false);
+  }, pollIntervalMs);
+
+  await exitPromise;
+}
+
+function reportError(error) {
+  if (error instanceof ConfigLoadError) {
+    console.error(`[orbital codegen] Configuration error: ${error.message}`);
+    return;
+  }
+
+  if (error instanceof BatchGenerationError) {
+    console.error(`[orbital codegen] Generation error: ${error.message}`);
+    return;
+  }
+
+  console.error("[orbital codegen] Unexpected error:", error);
 }
 
 (async () => {
   if (isCheck) {
-    let exitCode = 0;
-    for (const contract of config.contracts) {
-      // eslint-disable-next-line no-await-in-loop
-      const hash = await generateForContract(contract.contractId, config, contract.name);
-      const name = contract.name ?? contract.contractId;
-      if (hash === null) {
-        console.error(`  [${name}] SKIP - spec not resolvable`);
-        continue;
-      }
-      const lockEntry = lockFile?.[name];
-      if (!lockEntry) {
-        console.error(`  [${name}] DRIFT - no lock entry found`);
-        exitCode = 1;
-      } else if (lockEntry.specHash !== hash) {
-        console.error(
-          `  [${name}] DRIFT - spec hash changed (was ${lockEntry.specHash.slice(0, 12)}..., now ${hash.slice(0, 12)}...)`,
-        );
-        exitCode = 1;
-      } else {
-        console.log(`  [${name}] OK - hash matches`);
-      }
-    }
-    process.exit(exitCode);
-  }
-
-  for (const contract of config.contracts) {
-    // eslint-disable-next-line no-await-in-loop
-    const hash = await generateForContract(contract.contractId, config, contract.name);
-    const name = contract.name ?? contract.contractId;
-    console.log(
-      `  [${name}] ${hash ? `Generated (hash: ${hash.slice(0, 12)}...)` : "SKIP - spec not resolvable"}`,
-    );
-  }
-  console.log("Done.");
-
-  if (isWatch) {
-    console.log("\nStarting watch mode...");
-    await watchCodegen(config, { pollIntervalMs, cwd });
+    process.exit(await runCheck());
+  } else if (isWatch) {
+    await runWatch();
+  } else {
+    process.exit(await runGeneration());
   }
 })().catch((err) => {
-  console.error("orbital codegen failed:", err);
+  reportError(err);
   process.exit(1);
 });

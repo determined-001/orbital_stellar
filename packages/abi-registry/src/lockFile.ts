@@ -1,7 +1,7 @@
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { createHash } from "node:crypto";
-import type { LockFile, LockFileContract, OrbitalConfig } from "./config.js";
+import type { LockFile, LockFileContract, OrbitalLockFile } from "./config.js";
 import type { ContractSpec } from "./spec.js";
 
 /**
@@ -27,14 +27,21 @@ export function loadLockFile(lockPath: string): LockFile | null {
 
   try {
     const content = readFileSync(lockPath, "utf-8");
-    const lockFile = JSON.parse(content) as LockFile;
+    const parsedLockFile = JSON.parse(content) as unknown;
 
-    // Validate lock file structure
-    if (!lockFile.version || !lockFile.contracts || !Array.isArray(lockFile.contracts)) {
+    if (isLockFile(parsedLockFile)) {
+      return parsedLockFile;
+    }
+
+    if (isLegacyLockFile(parsedLockFile)) {
+      return upgradeLegacyLockFile(parsedLockFile);
+    }
+
+    if (!parsedLockFile || typeof parsedLockFile !== "object") {
       throw new LockFileError(`Invalid lock file format: ${lockPath}`, lockPath);
     }
 
-    return lockFile;
+    throw new LockFileError(`Invalid lock file format: ${lockPath}`, lockPath);
   } catch (error) {
     if (error instanceof LockFileError) {
       throw error;
@@ -138,9 +145,13 @@ export function detectDrift(
     newHash?: string;
   }> = [];
 
-  // Create maps for easier comparison
-  const lockContractMap = new Map(
+  const matchedLockedContracts = new Set<LockFileContract>();
+
+  const lockContractById = new Map(
     lockFile.contracts.map((contract) => [contract.contractId, contract]),
+  );
+  const lockContractByName = new Map(
+    lockFile.contracts.map((contract) => [contract.name, contract]),
   );
   const currentContractMap = new Map(
     contracts.map(({ config, spec, source }) => [
@@ -152,10 +163,13 @@ export function detectDrift(
       },
     ]),
   );
+  const currentContractNames = new Set(
+    contracts.map(({ config }) => config.name || config.contractId),
+  );
 
   // Check for added or modified contracts
   for (const [contractId, current] of currentContractMap) {
-    const locked = lockContractMap.get(contractId);
+    const locked = lockContractById.get(contractId) ?? lockContractByName.get(current.name);
 
     if (!locked) {
       contractChanges.push({
@@ -172,14 +186,20 @@ export function detectDrift(
         oldHash: locked.specHash,
         newHash: current.specHash,
       });
+    } else {
+      matchedLockedContracts.add(locked);
     }
   }
 
   // Check for removed contracts
-  for (const [contractId, locked] of lockContractMap) {
-    if (!currentContractMap.has(contractId)) {
+  for (const locked of lockFile.contracts) {
+    if (
+      !matchedLockedContracts.has(locked) &&
+      !currentContractMap.has(locked.contractId) &&
+      !currentContractNames.has(locked.name)
+    ) {
       contractChanges.push({
-        contractId,
+        contractId: locked.contractId,
         name: locked.name,
         change: "removed",
         oldHash: locked.specHash,
@@ -239,4 +259,66 @@ export function formatDriftReport(drift: ReturnType<typeof detectDrift>): string
   }
 
   return lines.join("\n");
+}
+
+function isLockFile(value: unknown): value is LockFile {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  const candidate = value as Partial<LockFile>;
+  return (
+    candidate.version === "1.0.0" &&
+    typeof candidate.configHash === "string" &&
+    typeof candidate.generatedAt === "string" &&
+    Array.isArray(candidate.contracts) &&
+    candidate.contracts.every(
+      (contract) =>
+        contract &&
+        typeof contract === "object" &&
+        typeof contract.contractId === "string" &&
+        typeof contract.name === "string" &&
+        typeof contract.specHash === "string" &&
+        typeof contract.resolvedAt === "string" &&
+        (contract.source === "registry" || contract.source === "wasm"),
+    )
+  );
+}
+
+function isLegacyLockFile(value: unknown): value is OrbitalLockFile {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+
+  return Object.values(value).every(
+    (entry) =>
+      entry &&
+      typeof entry === "object" &&
+      typeof (entry as { specHash?: unknown }).specHash === "string" &&
+      typeof (entry as { verifiedAt?: unknown }).verifiedAt === "string",
+  );
+}
+
+function upgradeLegacyLockFile(lockFile: OrbitalLockFile): LockFile {
+  const entries = Object.entries(lockFile);
+  const generatedAt =
+    entries.reduce<string | null>((latest, [, entry]) => {
+      if (!latest || entry.verifiedAt > latest) {
+        return entry.verifiedAt;
+      }
+      return latest;
+    }, null) ?? new Date().toISOString();
+
+  return {
+    version: "1.0.0",
+    configHash: "legacy",
+    contracts: entries.map(([name, entry]) => ({
+      contractId: name,
+      name,
+      specHash: entry.specHash,
+      resolvedAt: entry.verifiedAt,
+      source: "registry",
+    })),
+    generatedAt,
+  };
 }

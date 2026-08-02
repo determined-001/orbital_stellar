@@ -81,6 +81,34 @@ describe("lockFile", () => {
       expect(() => loadLockFile(lockPath)).toThrow(LockFileError);
       expect(() => loadLockFile(lockPath)).toThrow(/Invalid lock file format/);
     });
+
+    it("should upgrade legacy object-shaped lock files", () => {
+      const legacyLockFile = {
+        MyContract: {
+          specHash: "legacy-hash-123",
+          verifiedAt: "2023-01-01T00:00:00.000Z",
+        },
+      };
+
+      const lockPath = join(testDir, "orbital.lock.json");
+      writeFileSync(lockPath, JSON.stringify(legacyLockFile), "utf-8");
+
+      const loaded = loadLockFile(lockPath);
+      expect(loaded).toEqual({
+        version: "1.0.0",
+        configHash: "legacy",
+        contracts: [
+          {
+            contractId: "MyContract",
+            name: "MyContract",
+            specHash: "legacy-hash-123",
+            resolvedAt: "2023-01-01T00:00:00.000Z",
+            source: "registry",
+          },
+        ],
+        generatedAt: "2023-01-01T00:00:00.000Z",
+      });
+    });
   });
 
   describe("saveLockFile", () => {
@@ -366,6 +394,32 @@ describe("lockFile", () => {
       expect(drift.contractChanges[0].change).toBe("modified");
       expect(drift.contractChanges[0].oldHash).toBe(generateSpecHash(baseSpec));
       expect(drift.contractChanges[0].newHash).toBe(generateSpecHash(modifiedSpec));
+    });
+
+    it("matches legacy migrated lock entries by configured contract name", () => {
+      const lockPath = join(testDir, "orbital.lock.json");
+      const legacyLockFile = {
+        FriendlyName: {
+          specHash: generateSpecHash(baseSpec),
+          verifiedAt: "2023-01-01T00:00:00.000Z",
+        },
+      };
+      writeFileSync(lockPath, JSON.stringify(legacyLockFile), "utf-8");
+
+      const migrated = loadLockFile(lockPath);
+      expect(migrated).not.toBeNull();
+
+      const drift = detectDrift(migrated!, "legacy", [
+        {
+          config: { contractId: VALID_CONTRACT_ID_1, name: "FriendlyName" },
+          spec: baseSpec,
+          source: "registry" as const,
+        },
+      ]);
+
+      expect(drift.hasChanges).toBe(false);
+      expect(drift.configChanged).toBe(false);
+      expect(drift.contractChanges).toHaveLength(0);
     });
   });
 

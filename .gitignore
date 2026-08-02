@@ -17,6 +17,7 @@ apps/web/content/reference/
 # ── Test & coverage ───────────────────────────────────────────────────────────
 coverage/
 .nyc_output/
+**/.tmp-vitest/
 
 # ── Environment & secrets ─────────────────────────────────────────────────────
 .env
