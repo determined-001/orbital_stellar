@@ -16,6 +16,7 @@
     "format:all": "prettier --write \"packages/**/*.{ts,tsx,json}\"",
     "format:check": "prettier --check \"packages/**/*.{ts,tsx,json}\"",
     "docs:reference": "node scripts/generate-reference-docs.mjs",
+    "docs:generate-open-data": "node scripts/generate-open-data.mjs",
     "docs:check-tsdoc": "node scripts/check-tsdoc-coverage.mjs",
     "prepare": "husky"
   },

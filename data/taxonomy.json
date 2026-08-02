@@ -1,0 +1,595 @@
+{
+  "schemaVersion": "1.0.0",
+  "generatedAt": "2026-07-28T00:46:23.798Z",
+  "recordCount": 43,
+  "records": [
+    {
+      "id": "payment.received",
+      "name": "Payment Received",
+      "type": "classic",
+      "category": "payments",
+      "eventType": "payment.received",
+      "description": "Normalized asset payment received by an account.",
+      "source": "horizon"
+    },
+    {
+      "id": "payment.sent",
+      "name": "Payment Sent",
+      "type": "classic",
+      "category": "payments",
+      "eventType": "payment.sent",
+      "description": "Normalized asset payment sent by an account.",
+      "source": "horizon"
+    },
+    {
+      "id": "payment.self",
+      "name": "Self Payment",
+      "type": "classic",
+      "category": "payments",
+      "eventType": "payment.self",
+      "description": "Normalized payment where source and destination accounts are identical.",
+      "source": "horizon"
+    },
+    {
+      "id": "account.created",
+      "name": "Account Created",
+      "type": "classic",
+      "category": "account",
+      "eventType": "account.created",
+      "description": "Creation of a new Stellar account with starting XLM balance.",
+      "source": "horizon"
+    },
+    {
+      "id": "account.options_changed",
+      "name": "Account Options Changed",
+      "type": "classic",
+      "category": "account",
+      "eventType": "account.options_changed",
+      "description": "Updates to account thresholds, home domain, or multi-signature signers.",
+      "source": "horizon"
+    },
+    {
+      "id": "account.merged",
+      "name": "Account Merged",
+      "type": "classic",
+      "category": "account",
+      "eventType": "account.merged",
+      "description": "Account merged into a destination account, transferring remaining XLM balance.",
+      "source": "horizon"
+    },
+    {
+      "id": "account.bump_sequence",
+      "name": "Bump Sequence",
+      "type": "classic",
+      "category": "account",
+      "eventType": "account.bump_sequence",
+      "description": "Account sequence number advanced forward.",
+      "source": "horizon"
+    },
+    {
+      "id": "trustline.added",
+      "name": "Trustline Added",
+      "type": "classic",
+      "category": "trustline",
+      "eventType": "trustline.added",
+      "description": "New asset trustline established for an account.",
+      "source": "horizon"
+    },
+    {
+      "id": "trustline.removed",
+      "name": "Trustline Removed",
+      "type": "classic",
+      "category": "trustline",
+      "eventType": "trustline.removed",
+      "description": "Existing trustline removed from an account.",
+      "source": "horizon"
+    },
+    {
+      "id": "trustline.updated",
+      "name": "Trustline Updated",
+      "type": "classic",
+      "category": "trustline",
+      "eventType": "trustline.updated",
+      "description": "Trustline limit updated for an asset.",
+      "source": "horizon"
+    },
+    {
+      "id": "trustline.authorized",
+      "name": "Trustline Authorized",
+      "type": "classic",
+      "category": "trustline",
+      "eventType": "trustline.authorized",
+      "description": "Issuer authorization granted for a trustline.",
+      "source": "horizon"
+    },
+    {
+      "id": "trustline.deauthorized",
+      "name": "Trustline Deauthorized",
+      "type": "classic",
+      "category": "trustline",
+      "eventType": "trustline.deauthorized",
+      "description": "Issuer authorization revoked for a trustline.",
+      "source": "horizon"
+    },
+    {
+      "id": "offer.created",
+      "name": "DEX Offer Created",
+      "type": "classic",
+      "category": "dex",
+      "eventType": "offer.created",
+      "description": "New order created on the Stellar decentralized exchange.",
+      "source": "horizon"
+    },
+    {
+      "id": "offer.updated",
+      "name": "DEX Offer Updated",
+      "type": "classic",
+      "category": "dex",
+      "eventType": "offer.updated",
+      "description": "Existing order modified on the Stellar decentralized exchange.",
+      "source": "horizon"
+    },
+    {
+      "id": "offer.deleted",
+      "name": "DEX Offer Deleted",
+      "type": "classic",
+      "category": "dex",
+      "eventType": "offer.deleted",
+      "description": "Order canceled or fully filled on the Stellar decentralized exchange.",
+      "source": "horizon"
+    },
+    {
+      "id": "claimable.created",
+      "name": "Claimable Balance Created",
+      "type": "classic",
+      "category": "claimable",
+      "eventType": "claimable.created",
+      "description": "New claimable balance sponsored and created.",
+      "source": "horizon"
+    },
+    {
+      "id": "claimable.claimed",
+      "name": "Claimable Balance Claimed",
+      "type": "classic",
+      "category": "claimable",
+      "eventType": "claimable.claimed",
+      "description": "Claimable balance claimed by an eligible destination.",
+      "source": "horizon"
+    },
+    {
+      "id": "lp.deposited",
+      "name": "Liquidity Pool Deposited",
+      "type": "classic",
+      "category": "liquidity_pool",
+      "eventType": "lp.deposited",
+      "description": "Reserves deposited into a constant-product liquidity pool in exchange for pool shares.",
+      "source": "horizon"
+    },
+    {
+      "id": "lp.withdrawn",
+      "name": "Liquidity Pool Withdrawn",
+      "type": "classic",
+      "category": "liquidity_pool",
+      "eventType": "lp.withdrawn",
+      "description": "Pool shares redeemed to withdraw underlying liquidity pool reserves.",
+      "source": "horizon"
+    },
+    {
+      "id": "data.set",
+      "name": "Account Data Set",
+      "type": "classic",
+      "category": "data",
+      "eventType": "data.set",
+      "description": "Key-value pair set on account storage.",
+      "source": "horizon"
+    },
+    {
+      "id": "data.cleared",
+      "name": "Account Data Cleared",
+      "type": "classic",
+      "category": "data",
+      "eventType": "data.cleared",
+      "description": "Key-value pair removed from account storage.",
+      "source": "horizon"
+    },
+    {
+      "id": "contract.invoked",
+      "name": "Soroban Contract Invoked",
+      "type": "soroban",
+      "category": "soroban",
+      "eventType": "contract.invoked",
+      "description": "Soroban smart contract function invocation event.",
+      "source": "soroban-rpc"
+    },
+    {
+      "id": "contract.emitted",
+      "name": "Soroban Event Emitted",
+      "type": "soroban",
+      "category": "soroban",
+      "eventType": "contract.emitted",
+      "description": "Soroban smart contract topic-based event emission.",
+      "source": "soroban-rpc"
+    },
+    {
+      "id": "soroban.transfer",
+      "name": "Soroban transfer Event",
+      "type": "soroban",
+      "category": "sep41",
+      "eventType": "contract.emitted",
+      "eventName": "transfer",
+      "contract": "Native Asset Wrapper (XLM SAC)",
+      "contractId": "CAS3J7GYLGXMF6TDJBBYYSE3HQ6BBSMLNUQ34T6TZMYMW2EVH34XOWMA",
+      "description": "Emitted on every successful transfer, per the SEP-41 token interface event convention. The native asset has no mint/burn/clawback/set_authorized functions, so it has no corresponding events either.",
+      "topics": [
+        "from",
+        "to"
+      ],
+      "data": [
+        "amount"
+      ],
+      "source": "soroban-rpc"
+    },
+    {
+      "id": "soroban.approve",
+      "name": "Soroban approve Event",
+      "type": "soroban",
+      "category": "sep41",
+      "eventType": "contract.emitted",
+      "eventName": "approve",
+      "contract": "Native Asset Wrapper (XLM SAC)",
+      "contractId": "CAS3J7GYLGXMF6TDJBBYYSE3HQ6BBSMLNUQ34T6TZMYMW2EVH34XOWMA",
+      "description": "Emitted when an allowance is granted.",
+      "topics": [
+        "from",
+        "spender"
+      ],
+      "data": [
+        "amount",
+        "expiration_ledger"
+      ],
+      "source": "soroban-rpc"
+    },
+    {
+      "id": "soroban.transfer",
+      "name": "Soroban transfer Event",
+      "type": "soroban",
+      "category": "sep41",
+      "eventType": "contract.emitted",
+      "eventName": "transfer",
+      "contract": "USD Coin (USDC)",
+      "contractId": "CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75",
+      "description": "Emitted on every successful transfer, per the SEP-41 token interface event convention.",
+      "topics": [
+        "from",
+        "to"
+      ],
+      "data": [
+        "amount"
+      ],
+      "source": "soroban-rpc"
+    },
+    {
+      "id": "soroban.mint",
+      "name": "Soroban mint Event",
+      "type": "soroban",
+      "category": "sep41",
+      "eventType": "contract.emitted",
+      "eventName": "mint",
+      "contract": "USD Coin (USDC)",
+      "contractId": "CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75",
+      "description": "Emitted when the admin mints new USDC.",
+      "topics": [
+        "admin",
+        "to"
+      ],
+      "data": [
+        "amount"
+      ],
+      "source": "soroban-rpc"
+    },
+    {
+      "id": "soroban.burn",
+      "name": "Soroban burn Event",
+      "type": "soroban",
+      "category": "sep41",
+      "eventType": "contract.emitted",
+      "eventName": "burn",
+      "contract": "USD Coin (USDC)",
+      "contractId": "CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75",
+      "description": "Emitted when USDC is burned by its holder.",
+      "topics": [
+        "from"
+      ],
+      "data": [
+        "amount"
+      ],
+      "source": "soroban-rpc"
+    },
+    {
+      "id": "soroban.clawback",
+      "name": "Soroban clawback Event",
+      "type": "soroban",
+      "category": "sep41",
+      "eventType": "contract.emitted",
+      "eventName": "clawback",
+      "contract": "USD Coin (USDC)",
+      "contractId": "CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75",
+      "description": "Emitted when the admin claws back USDC from a holder.",
+      "topics": [
+        "admin",
+        "from"
+      ],
+      "data": [
+        "amount"
+      ],
+      "source": "soroban-rpc"
+    },
+    {
+      "id": "soroban.set_authorized",
+      "name": "Soroban set_authorized Event",
+      "type": "soroban",
+      "category": "sep41",
+      "eventType": "contract.emitted",
+      "eventName": "set_authorized",
+      "contract": "USD Coin (USDC)",
+      "contractId": "CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75",
+      "description": "Emitted when the admin sets an account's authorization flag.",
+      "topics": [
+        "admin",
+        "id"
+      ],
+      "data": [
+        "authorize"
+      ],
+      "source": "soroban-rpc"
+    },
+    {
+      "id": "soroban.approve",
+      "name": "Soroban approve Event",
+      "type": "soroban",
+      "category": "sep41",
+      "eventType": "contract.emitted",
+      "eventName": "approve",
+      "contract": "USD Coin (USDC)",
+      "contractId": "CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75",
+      "description": "Emitted when an allowance is granted.",
+      "topics": [
+        "from",
+        "spender"
+      ],
+      "data": [
+        "amount",
+        "expiration_ledger"
+      ],
+      "source": "soroban-rpc"
+    },
+    {
+      "id": "soroban.transfer",
+      "name": "Soroban transfer Event",
+      "type": "soroban",
+      "category": "sep41",
+      "eventType": "contract.emitted",
+      "eventName": "transfer",
+      "contract": "Euro Coin (EURC)",
+      "contractId": "CDTKPWPLOURQA2SGTKTUQOWRCBZEORB4BWBOMJ3D3ZTQQSGE5F6JBQLV",
+      "description": "Emitted on every successful transfer, per the SEP-41 token interface event convention.",
+      "topics": [
+        "from",
+        "to"
+      ],
+      "data": [
+        "amount"
+      ],
+      "source": "soroban-rpc"
+    },
+    {
+      "id": "soroban.mint",
+      "name": "Soroban mint Event",
+      "type": "soroban",
+      "category": "sep41",
+      "eventType": "contract.emitted",
+      "eventName": "mint",
+      "contract": "Euro Coin (EURC)",
+      "contractId": "CDTKPWPLOURQA2SGTKTUQOWRCBZEORB4BWBOMJ3D3ZTQQSGE5F6JBQLV",
+      "description": "Emitted when the admin mints new EURC.",
+      "topics": [
+        "admin",
+        "to"
+      ],
+      "data": [
+        "amount"
+      ],
+      "source": "soroban-rpc"
+    },
+    {
+      "id": "soroban.burn",
+      "name": "Soroban burn Event",
+      "type": "soroban",
+      "category": "sep41",
+      "eventType": "contract.emitted",
+      "eventName": "burn",
+      "contract": "Euro Coin (EURC)",
+      "contractId": "CDTKPWPLOURQA2SGTKTUQOWRCBZEORB4BWBOMJ3D3ZTQQSGE5F6JBQLV",
+      "description": "Emitted when EURC is burned by its holder.",
+      "topics": [
+        "from"
+      ],
+      "data": [
+        "amount"
+      ],
+      "source": "soroban-rpc"
+    },
+    {
+      "id": "soroban.clawback",
+      "name": "Soroban clawback Event",
+      "type": "soroban",
+      "category": "sep41",
+      "eventType": "contract.emitted",
+      "eventName": "clawback",
+      "contract": "Euro Coin (EURC)",
+      "contractId": "CDTKPWPLOURQA2SGTKTUQOWRCBZEORB4BWBOMJ3D3ZTQQSGE5F6JBQLV",
+      "description": "Emitted when the admin claws back EURC from a holder.",
+      "topics": [
+        "admin",
+        "from"
+      ],
+      "data": [
+        "amount"
+      ],
+      "source": "soroban-rpc"
+    },
+    {
+      "id": "soroban.set_authorized",
+      "name": "Soroban set_authorized Event",
+      "type": "soroban",
+      "category": "sep41",
+      "eventType": "contract.emitted",
+      "eventName": "set_authorized",
+      "contract": "Euro Coin (EURC)",
+      "contractId": "CDTKPWPLOURQA2SGTKTUQOWRCBZEORB4BWBOMJ3D3ZTQQSGE5F6JBQLV",
+      "description": "Emitted when the admin sets an account's authorization flag.",
+      "topics": [
+        "admin",
+        "id"
+      ],
+      "data": [
+        "authorize"
+      ],
+      "source": "soroban-rpc"
+    },
+    {
+      "id": "soroban.approve",
+      "name": "Soroban approve Event",
+      "type": "soroban",
+      "category": "sep41",
+      "eventType": "contract.emitted",
+      "eventName": "approve",
+      "contract": "Euro Coin (EURC)",
+      "contractId": "CDTKPWPLOURQA2SGTKTUQOWRCBZEORB4BWBOMJ3D3ZTQQSGE5F6JBQLV",
+      "description": "Emitted when an allowance is granted.",
+      "topics": [
+        "from",
+        "spender"
+      ],
+      "data": [
+        "amount",
+        "expiration_ledger"
+      ],
+      "source": "soroban-rpc"
+    },
+    {
+      "id": "soroban.transfer",
+      "name": "Soroban transfer Event",
+      "type": "soroban",
+      "category": "sep41",
+      "eventType": "contract.emitted",
+      "eventName": "transfer",
+      "contract": "Aquarius (AQUA)",
+      "contractId": "CAUIKL3IYGMERDRUN5QQVPKPLZTRNVXV27LFCWQIRNOHSNGB3ZXAEFBX",
+      "description": "Emitted on every successful transfer, per the SEP-41 token interface event convention.",
+      "topics": [
+        "from",
+        "to"
+      ],
+      "data": [
+        "amount"
+      ],
+      "source": "soroban-rpc"
+    },
+    {
+      "id": "soroban.mint",
+      "name": "Soroban mint Event",
+      "type": "soroban",
+      "category": "sep41",
+      "eventType": "contract.emitted",
+      "eventName": "mint",
+      "contract": "Aquarius (AQUA)",
+      "contractId": "CAUIKL3IYGMERDRUN5QQVPKPLZTRNVXV27LFCWQIRNOHSNGB3ZXAEFBX",
+      "description": "Emitted when the admin mints new AQUA.",
+      "topics": [
+        "admin",
+        "to"
+      ],
+      "data": [
+        "amount"
+      ],
+      "source": "soroban-rpc"
+    },
+    {
+      "id": "soroban.burn",
+      "name": "Soroban burn Event",
+      "type": "soroban",
+      "category": "sep41",
+      "eventType": "contract.emitted",
+      "eventName": "burn",
+      "contract": "Aquarius (AQUA)",
+      "contractId": "CAUIKL3IYGMERDRUN5QQVPKPLZTRNVXV27LFCWQIRNOHSNGB3ZXAEFBX",
+      "description": "Emitted when AQUA is burned by its holder.",
+      "topics": [
+        "from"
+      ],
+      "data": [
+        "amount"
+      ],
+      "source": "soroban-rpc"
+    },
+    {
+      "id": "soroban.clawback",
+      "name": "Soroban clawback Event",
+      "type": "soroban",
+      "category": "sep41",
+      "eventType": "contract.emitted",
+      "eventName": "clawback",
+      "contract": "Aquarius (AQUA)",
+      "contractId": "CAUIKL3IYGMERDRUN5QQVPKPLZTRNVXV27LFCWQIRNOHSNGB3ZXAEFBX",
+      "description": "Emitted when the admin claws back AQUA from a holder.",
+      "topics": [
+        "admin",
+        "from"
+      ],
+      "data": [
+        "amount"
+      ],
+      "source": "soroban-rpc"
+    },
+    {
+      "id": "soroban.set_authorized",
+      "name": "Soroban set_authorized Event",
+      "type": "soroban",
+      "category": "sep41",
+      "eventType": "contract.emitted",
+      "eventName": "set_authorized",
+      "contract": "Aquarius (AQUA)",
+      "contractId": "CAUIKL3IYGMERDRUN5QQVPKPLZTRNVXV27LFCWQIRNOHSNGB3ZXAEFBX",
+      "description": "Emitted when the admin sets an account's authorization flag.",
+      "topics": [
+        "admin",
+        "id"
+      ],
+      "data": [
+        "authorize"
+      ],
+      "source": "soroban-rpc"
+    },
+    {
+      "id": "soroban.approve",
+      "name": "Soroban approve Event",
+      "type": "soroban",
+      "category": "sep41",
+      "eventType": "contract.emitted",
+      "eventName": "approve",
+      "contract": "Aquarius (AQUA)",
+      "contractId": "CAUIKL3IYGMERDRUN5QQVPKPLZTRNVXV27LFCWQIRNOHSNGB3ZXAEFBX",
+      "description": "Emitted when an allowance is granted.",
+      "topics": [
+        "from",
+        "spender"
+      ],
+      "data": [
+        "amount",
+        "expiration_ledger"
+      ],
+      "source": "soroban-rpc"
+    }
+  ]
+}

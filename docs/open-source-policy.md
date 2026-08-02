@@ -192,7 +192,7 @@ These are honest uncertainties as of `v0.1.0`. They will be resolved in writing 
 
 | Question | Status |
 |---|---|
-| Will the Soroban ABI Registry **data** (schemas, taxonomy, labels) be a public good or a paid dataset? | The **client**, **schema**, and **taxonomy/label data** are committed as open data under Phase 2 (Wave 2.3). The **hosted read API** is currently planned as a free-tier public good, with a paid tier for high-volume integrators. Final structure TBD by Phase 2 close. |
+| Will the Soroban ABI Registry **data** (schemas, taxonomy, labels) be a public good or a paid dataset? | The **data** (event taxonomy and entity labels) is published as **open data** under Creative Commons Zero (CC0 1.0) on every release, fetchable over plain HTTP (`/data/taxonomy.json`, `/data/labels.json`) with no JS SDK dependency. The **client** and **schema** are MIT. The **hosted read API** is currently planned as a free-tier public good, with a paid tier for high-volume integrators. Final structure TBD by Phase 2 close. |
 | Will the intent compiler ship as runnable-locally OSS at maturity? | Frozen - not scheduled. See [ROADMAP.md's Frozen section](../ROADMAP.md#frozen--out-of-scope-until-the-core-thesis-is-proven). Revisit only if unfrozen per that section's procedure. |
 | Will the reactor-contract certification service be Orbital-operated or community-governed? | Frozen - not scheduled. See [ROADMAP.md's Frozen section](../ROADMAP.md#frozen--out-of-scope-until-the-core-thesis-is-proven). |
 
