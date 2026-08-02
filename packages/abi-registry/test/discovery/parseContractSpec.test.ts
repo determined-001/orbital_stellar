@@ -106,6 +106,8 @@ describe("parseWasmSpec - real WASM fixtures (contracts/demo-emitter, contracts/
       "AlreadyPublished",
       "EmptyPointer",
       "EmptyVersion",
+      "LimitExceedsMax",
+      "StartPastEnd",
     ]);
   });
 
