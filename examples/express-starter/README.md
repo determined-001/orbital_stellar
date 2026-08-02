@@ -111,15 +111,21 @@ it does deliberately:
 Both are covered by tests: a correctly signed delivery is accepted, and a
 payload with one digit changed after signing is rejected.
 
+It also rate-limits per IP (120 requests/minute by default, `rateLimit` and
+`rateLimitWindowMs` to change it), checked *before* any HMAC work — verification
+is the resource an unauthenticated flood would burn, even though nothing gets
+through. The limiter is in-process; behind more than one replica, move it to
+shared storage or each replica enforces its own budget.
+
 ## Tests
 
 ```bash
 pnpm --filter orbital-express-starter test
 ```
 
-Fourteen tests, no containers needed: signature acceptance and rejection
+Sixteen tests, no containers needed: signature acceptance and rejection
 (tampered body, wrong secret, missing headers), cursor persistence and resume,
-configuration refusals, and the SIGTERM ordering — asserting `stop()` completes
+configuration refusals, rate limiting, and the SIGTERM ordering — asserting `stop()` completes
 *before* `process.exit`, since exiting first is what loses the last cursor
 write.
 

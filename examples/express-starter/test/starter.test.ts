@@ -251,3 +251,57 @@ describe("graceful shutdown (#897)", () => {
     exit.mockRestore();
   });
 });
+
+describe("receiver rate limiting (#897)", () => {
+  it("returns 429 once an IP is over budget, before doing HMAC work", async () => {
+    const rejections: string[] = [];
+    const app = createReceiver({
+      secret: SECRET,
+      rateLimit: 2,
+      rateLimitWindowMs: 60_000,
+      onRejected: (reason) => rejections.push(reason),
+    });
+    const server = await listen(app);
+
+    const send = async () => {
+      const { body, timestamp, signature } = signedRequest(paymentPayload());
+      return fetch(`${server.url}/hooks/stellar`, {
+        method: "POST",
+        headers: { [SIGNATURE_HEADER]: signature, [TIMESTAMP_HEADER]: timestamp },
+        body,
+      });
+    };
+
+    expect((await send()).status).toBe(202);
+    expect((await send()).status).toBe(202);
+
+    const limited = await send();
+    expect(limited.status).toBe(429);
+    expect(await limited.json()).toEqual({ error: "rate_limited" });
+    expect(rejections).toContain("rate limit exceeded");
+
+    await server.close();
+  });
+
+  it("lets a caller through again once the window rolls over", async () => {
+    const app = createReceiver({ secret: SECRET, rateLimit: 1, rateLimitWindowMs: 20 });
+    const server = await listen(app);
+
+    const send = async () => {
+      const { body, timestamp, signature } = signedRequest(paymentPayload());
+      return fetch(`${server.url}/hooks/stellar`, {
+        method: "POST",
+        headers: { [SIGNATURE_HEADER]: signature, [TIMESTAMP_HEADER]: timestamp },
+        body,
+      });
+    };
+
+    expect((await send()).status).toBe(202);
+    expect((await send()).status).toBe(429);
+
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect((await send()).status).toBe(202);
+
+    await server.close();
+  });
+});
