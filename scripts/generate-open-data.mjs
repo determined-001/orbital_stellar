@@ -232,6 +232,16 @@ const classicTaxonomy = [
     description: "Soroban smart contract topic-based event emission.",
     source: "soroban-rpc",
   },
+  {
+    id: "anchor.transaction_status_changed",
+    name: "Anchor Transaction Status Changed",
+    type: "anchor",
+    category: "anchor",
+    eventType: "anchor.transaction_status_changed",
+    description:
+      "SEP-24 or SEP-31 anchor transaction moved to a new status; the protocol-specific status is preserved alongside the normalized one.",
+    source: "anchor-sdk",
+  },
 ];
 
 // Enrich taxonomy with well-known contract events from packages/abi-registry/specs/well-known

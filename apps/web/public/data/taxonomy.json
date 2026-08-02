@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
-  "generatedAt": "2026-07-28T00:46:23.798Z",
-  "recordCount": 43,
+  "generatedAt": "2026-08-02T08:51:13.726Z",
+  "recordCount": 44,
   "records": [
     {
       "id": "payment.received",
@@ -209,6 +209,15 @@
       "eventType": "contract.emitted",
       "description": "Soroban smart contract topic-based event emission.",
       "source": "soroban-rpc"
+    },
+    {
+      "id": "anchor.transaction_status_changed",
+      "name": "Anchor Transaction Status Changed",
+      "type": "anchor",
+      "category": "anchor",
+      "eventType": "anchor.transaction_status_changed",
+      "description": "SEP-24 or SEP-31 anchor transaction moved to a new status; the protocol-specific status is preserved alongside the normalized one.",
+      "source": "anchor-sdk"
     },
     {
       "id": "soroban.transfer",

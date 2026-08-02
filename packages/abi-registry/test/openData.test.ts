@@ -47,6 +47,25 @@ describe("Open Data Artifacts (#912)", () => {
     expect(content.records.length).toBe(content.recordCount);
   });
 
+  it("should cover every NormalizedEvent type pulse-core can emit", () => {
+    // The `describeEvent` switch in pulse-core is exhaustive over
+    // `NormalizedEvent` (its default branch assigns to `never`), so its case
+    // labels are the authoritative list of event types. Deriving from it here
+    // means adding an event to pulse-core without adding it to the taxonomy
+    // fails CI instead of silently shipping stale open data.
+    const narrowSource = fs.readFileSync(
+      path.join(rootDir, "packages/pulse-core/src/eventAddressNarrow.ts"),
+      "utf-8",
+    );
+    const emitted = [...narrowSource.matchAll(/case "([a-z]+\.[a-z_]+)":/g)].map((m) => m[1]);
+    expect(emitted.length).toBeGreaterThan(0);
+
+    const taxonomy = JSON.parse(fs.readFileSync(taxonomyPath, "utf-8"));
+    const covered = new Set(taxonomy.records.map((r: { eventType: string }) => r.eventType));
+
+    expect([...new Set(emitted)].filter((t) => !covered.has(t))).toEqual([]);
+  });
+
   it("should verify SHA-256 integrity manifest digests", () => {
     const integrity = JSON.parse(fs.readFileSync(integrityPath, "utf-8"));
     expect(integrity.schemaVersion).toBe("1.0.0");
