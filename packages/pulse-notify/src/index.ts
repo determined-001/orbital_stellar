@@ -358,6 +358,14 @@ export {
 } from "./StellarConnectionStatus.js";
 export { StellarEventBoundary } from "./StellarEventBoundary.js";
 
+/**
+ * A Zod-compatible schema object. Consumers pass the generated schema
+ * (e.g. `SwapExecutedEventSchema`) to validate and narrow event types.
+ */
+export type EventSchema<T> = {
+  safeParse: (data: unknown) => { success: true; data: T } | { success: false };
+};
+
 export type UseContractEventConfig<
   T extends ContractInvokedEvent | ContractEmittedEvent =
     ContractInvokedEvent | ContractEmittedEvent,
@@ -382,6 +390,14 @@ export type UseContractEventConfig<
   onEvent?: (event: NormalizedEvent) => void;
   /** Wait time before pausing active connection when document becomes hidden (ms). Defaults to 30000. */
   hideAfterMs?: number;
+  /**
+   * Optional Zod schema for runtime event data validation. When set, the
+   * hook validates every incoming event's `data` field against the schema
+   * and only surfaces validated events. Events with an explicit `event`
+   * field matching a contract event name are validated; others are passed
+   * through unchecked.
+   */
+  schema?: EventSchema<unknown>;
 };
 
 /** Hook for subscribing to Soroban contract events */
@@ -400,6 +416,7 @@ export function useContractEvent<
     withCredentials,
     onEvent,
     hideAfterMs,
+    schema,
   } = config;
 
   const filterRef = useRef(filter);
@@ -468,6 +485,11 @@ export function useContractEvent<
           }
           // Apply user filter if provided
           if (filterRef.current && !filterRef.current(incoming)) return;
+          // Validate event data against optional schema
+          if (schema && incoming.type === "contract.emitted") {
+            const parsed = schema.safeParse((incoming as ContractEmittedEvent).data);
+            if (!parsed.success) return;
+          }
           // Narrow to requested generic type
           setState((prev) => ({
             ...prev,

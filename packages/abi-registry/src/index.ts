@@ -71,6 +71,13 @@ export { loadCodegenConfig, loadLockFile } from "./config.js";
 export type { CodegenWatchOptions } from "./watch.js";
 export { generateForContract, watchCodegen, writeLockFile } from "./watch.js";
 
+export type { GeneratedContractArtifacts } from "./generate.js";
+export {
+  generateContractArtifacts,
+  generateContractTypes,
+  generateContractHooks,
+} from "./generate.js";
+
 export { verifySchema } from "./verifySchema.js";
 export type {
   SchemaVerdict,
