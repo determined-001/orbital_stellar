@@ -284,7 +284,7 @@ describe("receiver rate limiting (#897)", () => {
   });
 
   it("lets a caller through again once the window rolls over", async () => {
-    const app = createReceiver({ secret: SECRET, rateLimit: 1, rateLimitWindowMs: 20 });
+    const app = createReceiver({ secret: SECRET, rateLimit: 1, rateLimitWindowMs: 250 });
     const server = await listen(app);
 
     const send = async () => {
@@ -299,7 +299,7 @@ describe("receiver rate limiting (#897)", () => {
     expect((await send()).status).toBe(202);
     expect((await send()).status).toBe(429);
 
-    await new Promise((resolve) => setTimeout(resolve, 30));
+    await new Promise((resolve) => setTimeout(resolve, 350));
     expect((await send()).status).toBe(202);
 
     await server.close();

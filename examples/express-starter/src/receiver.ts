@@ -1,4 +1,5 @@
 import express, { type Express, type Request, type Response } from "express";
+import rateLimit from "express-rate-limit";
 import { verifyWebhook } from "@orbital-stellar/pulse-webhooks";
 import type { NormalizedEvent } from "@orbital-stellar/pulse-core";
 
@@ -28,55 +29,29 @@ export type ReceiverOptions = {
   rateLimitWindowMs?: number;
 };
 
-/**
- * Fixed-window per-IP limiter.
- *
- * The verify path does HMAC work on every request, so an unauthenticated
- * flood is a CPU-burn lever even though nothing gets through. In-process and
- * dependency-free on purpose: a reference should show the shape without
- * pulling in a rate-limit library. Behind more than one instance, move this to
- * shared storage - each replica otherwise enforces its own budget.
- */
-class FixedWindowLimiter {
-  private readonly hits = new Map<string, { count: number; resetAt: number }>();
-
-  constructor(
-    private readonly limit: number,
-    private readonly windowMs: number,
-  ) {}
-
-  /** Returns true when the caller is over budget. */
-  exceeded(key: string, now = Date.now()): boolean {
-    const entry = this.hits.get(key);
-
-    if (!entry || now >= entry.resetAt) {
-      this.hits.set(key, { count: 1, resetAt: now + this.windowMs });
-      this.sweep(now);
-      return false;
-    }
-
-    entry.count += 1;
-    return entry.count > this.limit;
-  }
-
-  /** Drops expired buckets so the map cannot grow without bound. */
-  private sweep(now: number): void {
-    if (this.hits.size < 1024) return;
-    for (const [key, entry] of this.hits) {
-      if (now >= entry.resetAt) this.hits.delete(key);
-    }
-  }
-}
-
 export const SIGNATURE_HEADER = "x-orbital-signature";
 export const TIMESTAMP_HEADER = "x-orbital-timestamp";
 
 export function createReceiver(options: ReceiverOptions): Express {
   const app = express();
-  const limiter = new FixedWindowLimiter(
-    options.rateLimit ?? 120,
-    options.rateLimitWindowMs ?? 60_000,
-  );
+  /**
+   * Per-IP limiter on the verify path.
+   *
+   * The route does HMAC work on every request, so an unauthenticated flood is
+   * a CPU-burn lever even though nothing gets through. `express-rate-limit`
+   * keeps its counters in memory by default - behind more than one replica,
+   * give it a shared store or each replica enforces its own budget.
+   */
+  const limiter = rateLimit({
+    windowMs: options.rateLimitWindowMs ?? 60_000,
+    limit: options.rateLimit ?? 120,
+    standardHeaders: "draft-7",
+    legacyHeaders: false,
+    handler: (request: Request, response: Response) => {
+      options.onRejected?.("rate limit exceeded", { ip: request.ip });
+      response.status(429).json({ error: "rate_limited" });
+    },
+  });
 
   app.get("/healthz", (_request: Request, response: Response) => {
     response.json({ ok: true });
@@ -84,15 +59,11 @@ export function createReceiver(options: ReceiverOptions): Express {
 
   app.post(
     "/hooks/stellar",
+    // Before the body parser and before any cryptographic work - that is the
+    // resource being protected.
+    limiter,
     express.text({ type: "*/*", limit: "1mb" }),
     (request: Request, response: Response) => {
-      // Before any cryptographic work - that is the resource being protected.
-      if (limiter.exceeded(request.ip ?? "unknown")) {
-        options.onRejected?.("rate limit exceeded", { ip: request.ip });
-        response.status(429).json({ error: "rate_limited" });
-        return;
-      }
-
       const signature = request.header(SIGNATURE_HEADER);
       const timestamp = request.header(TIMESTAMP_HEADER);
 

@@ -114,8 +114,9 @@ payload with one digit changed after signing is rejected.
 It also rate-limits per IP (120 requests/minute by default, `rateLimit` and
 `rateLimitWindowMs` to change it), checked *before* any HMAC work — verification
 is the resource an unauthenticated flood would burn, even though nothing gets
-through. The limiter is in-process; behind more than one replica, move it to
-shared storage or each replica enforces its own budget.
+through. It uses `express-rate-limit`, whose counters are in-process by default; behind
+more than one replica, give it a shared store or each replica enforces its own
+budget.
 
 ## Tests
 
