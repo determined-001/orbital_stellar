@@ -10,12 +10,8 @@
     {
       "name": "hello",
       "doc": "Return a greeting for the caller.",
-      "params": [
-        { "name": "to", "type": "String", "doc": "Name of the person to greet." }
-      ],
-      "outputs": [
-        { "type": "String", "doc": "The greeting string." }
-      ]
+      "params": [{ "name": "to", "type": "String", "doc": "Name of the person to greet." }],
+      "outputs": [{ "type": "String", "doc": "The greeting string." }]
     }
   ],
   "events": []

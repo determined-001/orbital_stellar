@@ -30,6 +30,10 @@ jobs:
 
       - name: Auto-label semantic-data PRs
         if: github.event_name == 'pull_request'
+        # A PR from a fork gets a read-only GITHUB_TOKEN, so labelling fails
+        # with "Resource not accessible by integration". Submissions come from
+        # forks by definition, and a missing label must not fail the gate.
+        continue-on-error: true
         uses: actions/github-script@v7
         with:
           script: |
@@ -52,8 +56,15 @@ jobs:
         id: validate-labels
         working-directory: packages/abi-registry
         run: |
-          node validate.js 2>&1 | tee /tmp/validate-output.txt || true
-          echo "exit_code=$?" >> $GITHUB_OUTPUT
+          # Capture the validator's own status - piping into tee would report
+          # tee's status instead, which is always 0.
+          if node validate.js > /tmp/validate-output.txt 2>&1; then
+            status=0
+          else
+            status=1
+          fi
+          cat /tmp/validate-output.txt
+          echo "exit_code=$status" >> "$GITHUB_OUTPUT"
 
       - name: Validate example files against schema
         id: validate-examples
@@ -67,9 +78,15 @@ jobs:
               echo "--- Validating: $file ---"
               if node -e "
                 const fs = require('fs');
-                const spec = JSON.parse(fs.readFileSync('schema/spec.schema.json', 'utf8'));
+                // specs/well-known/schema.json is the schema a submitted spec
+                // is judged against - the same one validate.js uses. It is
+                // draft-07, so the default Ajv export is correct here;
+                // schema/spec.schema.json is 2020-12 and a different shape
+                // (no contract_id, types required), which every submission
+                // would fail.
+                const spec = JSON.parse(fs.readFileSync('specs/well-known/schema.json', 'utf8'));
                 const Ajv = require('ajv');
-                const ajv = new Ajv({ allErrors: true });
+                const ajv = new Ajv({ allErrors: true, strict: false });
                 const validate = ajv.compile(spec);
                 const data = JSON.parse(fs.readFileSync('$file', 'utf8'));
                 const valid = validate(data);
@@ -81,11 +98,10 @@ jobs:
                 errors=$((errors + 1))
               fi
             done
-            echo "errors=$errors" >> \$GITHUB_OUTPUT
-            exit \$errors
+            echo "errors=$errors" >> "$GITHUB_OUTPUT"
           else
             echo "No examples directory found; skipping."
-            echo "errors=0" >> \$GITHUB_OUTPUT
+            echo "errors=0" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Dedupe check — detect duplicate contract IDs in labels
@@ -117,8 +133,9 @@ jobs:
             }
             if (hasDupe) process.exit(1);
             console.log('No duplicate contract IDs found across', files.length, 'label files');
-          " 2>&1 | tee /tmp/dedupe-output.txt
-          echo "dedupe_ok=$?" >> \$GITHUB_OUTPUT
+          " > /tmp/dedupe-output.txt 2>&1 && status=0 || status=1
+          cat /tmp/dedupe-output.txt
+          echo "dedupe_ok=$status" >> "$GITHUB_OUTPUT"
 
       - name: Source URL well-formedness check
         id: source-urls
@@ -153,8 +170,9 @@ jobs:
             }
             if (hasError) process.exit(1);
             console.log('All source URLs are well-formed');
-          " 2>&1 | tee /tmp/url-check-output.txt
-          echo "url_check_ok=$?" >> \$GITHUB_OUTPUT
+          " > /tmp/url-check-output.txt 2>&1 && status=0 || status=1
+          cat /tmp/url-check-output.txt
+          echo "url_check_ok=$status" >> "$GITHUB_OUTPUT"
 
       - name: Conflict-of-interest check
         id: coi-check
@@ -192,11 +210,15 @@ jobs:
               process.exit(1);
             }
             console.log('No conflict-of-interest issues detected');
-          " 2>&1 | tee /tmp/coi-output.txt
-          echo "coi_ok=$?" >> \$GITHUB_OUTPUT
+          " > /tmp/coi-output.txt 2>&1 && status=0 || status=1
+          cat /tmp/coi-output.txt
+          echo "coi_ok=$status" >> "$GITHUB_OUTPUT"
 
       - name: Post validation summary comment
-        if: github.event_name == 'pull_request' && always()
+        if: always() && github.event_name == 'pull_request'
+        # Same fork-token limitation as the labelling step: the report is a
+        # convenience, the gate below is what actually blocks a bad submission.
+        continue-on-error: true
         uses: actions/github-script@v7
         with:
           script: |
@@ -256,3 +278,22 @@ jobs:
                 body: body,
               });
             }
+
+      - name: Gate on validation results
+        if: always()
+        run: |
+          fail=0
+          check() {
+            if [ "$2" != "0" ]; then
+              echo "::error::$1 failed"
+              fail=1
+            else
+              echo "$1 passed"
+            fi
+          }
+          check "Schema validation (labels)" "${{ steps.validate-labels.outputs.exit_code }}"
+          check "Schema validation (examples)" "${{ steps.validate-examples.outputs.errors }}"
+          check "Duplicate detection" "${{ steps.dedupe.outputs.dedupe_ok }}"
+          check "Source URL well-formedness" "${{ steps.source-urls.outputs.url_check_ok }}"
+          check "Conflict-of-interest check" "${{ steps.coi-check.outputs.coi_ok }}"
+          exit $fail
