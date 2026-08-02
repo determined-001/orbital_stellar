@@ -429,6 +429,14 @@ export function useContractEvent<
     onEventRef.current = onEvent;
   }, [onEvent]);
 
+  // Held in a ref like `filter`: an inline schema is a new object on every
+  // render, so reading it directly inside the subscription effect would pin
+  // the first one forever (the effect deliberately does not resubscribe on it).
+  const schemaRef = useRef(schema);
+  useEffect(() => {
+    schemaRef.current = schema;
+  }, [schema]);
+
   const tokenProviderRef = useRef(tokenProvider);
   useEffect(() => {
     tokenProviderRef.current = tokenProvider;
@@ -486,8 +494,8 @@ export function useContractEvent<
           // Apply user filter if provided
           if (filterRef.current && !filterRef.current(incoming)) return;
           // Validate event data against optional schema
-          if (schema && incoming.type === "contract.emitted") {
-            const parsed = schema.safeParse((incoming as ContractEmittedEvent).data);
+          if (schemaRef.current && incoming.type === "contract.emitted") {
+            const parsed = schemaRef.current.safeParse((incoming as ContractEmittedEvent).data);
             if (!parsed.success) return;
           }
           // Narrow to requested generic type
