@@ -59,6 +59,18 @@ The longer-form thesis, the multi-year vision, and the SCF grant case live in [`
 
 > The full classic-operation taxonomy is shipped (payments, account create/merge/options/bump-sequence, trustlines + auth, offers, claimables, liquidity pools, manage-data), alongside Soroban contract event subscription (`engine.subscribeContract`), cursor persistence, and the ABI registry client - see [`ROADMAP.md`](ROADMAP.md).
 
+### Browser bundle sizes
+
+`@orbital-stellar/pulse-notify` is the only package that ships to the browser. Each entry point carries an enforced budget - CI fails on a regression and prints the top contributing modules. `react` and `react-dom` are peer dependencies and excluded.
+
+| Entry point | Minified | Minified + gzip | Budget (gzip) |
+|---|---|---|---|
+| `@orbital-stellar/pulse-notify` | 14.57 kB | 4.60 kB | 5 kB |
+| `@orbital-stellar/pulse-notify/devtools` | 2.01 kB | 918 B | 1 kB |
+| `@orbital-stellar/pulse-notify/vitePlugin` | 608 B | 322 B | 450 B |
+
+Budgets live in [`packages/pulse-notify/.size-limit.json`](packages/pulse-notify/.size-limit.json). Reproduce with `pnpm --filter @orbital-stellar/pulse-notify size`, or `size:why` for a per-module breakdown.
+
 ---
 
 ## Quickstart

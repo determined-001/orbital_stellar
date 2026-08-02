@@ -124,7 +124,35 @@ jobs:
       - name: Build pulse-notify
         run: pnpm tsc -p packages/pulse-notify/tsconfig.json
       - name: Check bundle size
+        id: size
         run: pnpm --filter @orbital-stellar/pulse-notify size
+      - name: Explain the budget failure
+        # size-limit prints the size and the delta against the budget; --why
+        # adds the top contributing modules, which is what you actually need to
+        # decide whether a dependency or your own code moved the number.
+        if: failure() && steps.size.outcome == 'failure'
+        run: pnpm --filter @orbital-stellar/pulse-notify run size:why
+
+  chaos-tests:
+    needs: changes
+    if: ${{ needs.changes.outputs.packages == 'true' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # Fixed seed on PRs so a failure here is always reproducible from the
+      # branch alone. nightly-chaos.yml runs the same suite with a random seed.
+      - name: Reconnection chaos suite (fixed seed)
+        env:
+          CHAOS_SEED: "20260802"
+        run: pnpm --filter @orbital-stellar/pulse-core exec vitest run test/chaos
 
   typecheck-web:
     needs: changes
