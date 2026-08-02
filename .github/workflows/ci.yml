@@ -200,14 +200,20 @@ jobs:
       # no manual dependency-order steps here.
       - name: Build apps/web
         env:
-          # Canary invoker secret for the post-build client-bundle assertion.
-          # Must never appear in .next/static (#892).
+          # Canary secrets for the post-build client-bundle assertion. None of
+          # these may appear in .next/static (#892, #926).
           DEMO_EMITTER_SECRET: SDEMOSECRET_CANARY_DO_NOT_SHIP_000000000000000000000000000
+          SOROBAN_INVOKER_SECRET: SINVOKER_CANARY_DO_NOT_SHIP_00000000000000000000000000000
+          UPSTASH_REDIS_REST_TOKEN: UPSTASH_CANARY_DO_NOT_SHIP_000000000000000000000000000
         run: pnpm --filter orbital/web run build
-      - name: Assert DEMO_EMITTER_SECRET stays out of the client bundle
+      - name: Assert no secret reaches the client bundle
         env:
+          # Canary values for every secret the web app can read; the assertion
+          # greps .next/static for each. See SECURITY.md for the inventory.
           DEMO_EMITTER_SECRET: SDEMOSECRET_CANARY_DO_NOT_SHIP_000000000000000000000000000
-        run: node scripts/assert-demo-secret-not-in-bundle.mjs
+          SOROBAN_INVOKER_SECRET: SINVOKER_CANARY_DO_NOT_SHIP_00000000000000000000000000000
+          UPSTASH_REDIS_REST_TOKEN: UPSTASH_CANARY_DO_NOT_SHIP_000000000000000000000000000
+        run: node scripts/assert-no-secrets-in-bundle.mjs
 
   cli-smoke-test:
     needs: changes

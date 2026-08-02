@@ -10,8 +10,16 @@ import {
   Networks,
   rpc as SorobanRpc,
 } from "@stellar/stellar-sdk";
+import { assertRestrictedSecretNetwork, isCiEnvironment } from "@orbital-stellar/pulse-core";
 
 const RPC_URL = process.env.DEMO_EMITTER_RPC_URL ?? "https://soroban-testnet.stellar.org";
+
+/**
+ * The demo invoker is exposed to anonymous visitors through a button, so it is
+ * testnet-only by construction. If this deployment is ever pointed at mainnet,
+ * refuse to sign rather than move real value on a stranger's click.
+ */
+const NETWORK_PASSPHRASE = process.env.DEMO_EMITTER_NETWORK_PASSPHRASE ?? Networks.TESTNET;
 
 export type FireDemoEventResult = { txHash: string; ledger: number; contractId: string };
 
@@ -83,6 +91,13 @@ export async function fireDemoEvent(): Promise<FireDemoEventResult> {
     throw new DemoEmitterNotConfiguredError();
   }
 
+  // Startup assertion (#926): a mainnet-configured demo path never signs.
+  assertRestrictedSecretNetwork({
+    secretName: "DEMO_EMITTER_SECRET",
+    networkPassphrase: NETWORK_PASSPHRASE,
+    context: isCiEnvironment() ? "ci" : "demo",
+  });
+
   const server = new SorobanRpc.Server(RPC_URL);
   const keypair = Keypair.fromSecret(secret);
   const source = await server.getAccount(keypair.publicKey());
@@ -90,7 +105,7 @@ export async function fireDemoEvent(): Promise<FireDemoEventResult> {
 
   const tx = new TransactionBuilder(source, {
     fee: BASE_FEE,
-    networkPassphrase: Networks.TESTNET,
+    networkPassphrase: NETWORK_PASSPHRASE,
   })
     .addOperation(contract.call("ping"))
     .setTimeout(60)

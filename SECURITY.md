@@ -13,6 +13,8 @@
 - [Scope](#scope)
 - [Threat model](#threat-model)
 - [Secret rotation runbook](#secret-rotation-runbook)
+- [Repository secret inventory](#repository-secret-inventory)
+- [Dependency policy](#dependency-policy)
 - [Best practices for consumers](#best-practices-for-consumers)
 - [Disclosure policy](#disclosure-policy)
 
@@ -143,6 +145,43 @@ If you suspect a webhook secret has leaked, rotate immediately. The general proc
 7. **Audit.** If the leak source is unknown, audit deploy logs, environment-variable dumps, and any process where the secret may have appeared in plain text.
 
 For very-high-volume systems, repeat steps 4–6 in stages by region or by webhook URL.
+
+---
+
+## Repository secret inventory
+
+These are the secrets this repository itself handles - distinct from a consumer's webhook secret above. Each is listed with what it can do, where it is readable, and how it is rotated.
+
+| Secret | Scope | Held in | Rotation |
+|---|---|---|---|
+| `DEMO_EMITTER_SECRET` | Signs `ping()` on the deployed `demo-emitter` contract, **testnet only**. Can call one no-arg function that emits an event; cannot move value. | Vercel project env (server runtime) | Generate a new testnet keypair, fund it, update the Vercel env var, redeploy. No coordination needed - the old key simply stops being used. |
+| `SOROBAN_INVOKER_SECRET` | Signs registry publishes and integration-test invocations, **testnet only**. Can write to the registry contract under its own publisher address. | GitHub Actions repository secret | Generate and fund a new testnet keypair, update the repository secret, re-run the seeding workflow. Specs published under the old address stay valid; new ones use the new publisher. |
+| `ORBITAL_REGISTRY_PUBLISHER_SECRET` | Alias used by the registry-loop integration test; same scope and handling as `SOROBAN_INVOKER_SECRET`. | GitHub Actions repository secret | As above. |
+| `NPM_TOKEN` | Publishes the `@orbital-stellar/*` packages. **The highest-value secret here** - a leak allows shipping arbitrary code to every consumer. | GitHub Actions repository secret, used only by `release.yml` | Revoke on npmjs.com immediately, issue a new automation token scoped to the `@orbital-stellar` org, update the repository secret. Then audit published versions for anything unexpected and deprecate as needed. |
+| `UPSTASH_REDIS_REST_TOKEN` | Rate-limit counters for the demo endpoints. Read/write to one Upstash database holding no user data. | Vercel project env (server runtime) | Rotate in the Upstash console, update the Vercel env var, redeploy. |
+
+**Rules that apply to all of them:**
+
+- **No mainnet keys in demo or CI paths.** Both are testnet-only by construction: the demo invoker is reachable by anonymous visitors through a button, and CI secrets are readable by every workflow that runs. `assertRestrictedSecretNetwork` (in `@orbital-stellar/pulse-core`) enforces this at the point of use and refuses to sign when a demo or CI path is configured against mainnet.
+- **No secret in a client bundle.** `scripts/assert-no-secrets-in-bundle.mjs` runs in CI after the web build with canary values for every secret above, and greps `apps/web/.next/static`. A hit fails the build. Adding a secret to `SECRET_ENV_VARS` in that script is what brings it under the gate - keep it in step with this table.
+- **No secret in a log line or an error message.** Use `redactSecret()` if a value must appear in diagnostics; it keeps a four-character prefix for correlating with a rotation record and nothing usable. Errors name the *variable*, never the value.
+- **Server-only imports.** Modules that read a secret start with `import "server-only"`, so a stray client import is a build error rather than a leak.
+
+## Dependency policy
+
+**Allowed licences.** Runtime dependencies must be MIT, ISC, BSD-2-Clause, BSD-3-Clause, Apache-2.0, or CC0. A copyleft licence (GPL, AGPL, LGPL, SSPL) in a runtime dependency is not acceptable - every package here ships as MIT, and a copyleft transitive dependency would compromise that. Dev dependencies are held to the same list where practical; an exception must be recorded in the PR that introduces it.
+
+**Automated audit.** `.github/workflows/security.yml` runs `pnpm audit` on every push and on a schedule. Overrides for advisories are declared in `pnpm-workspace.yaml` (never in `package.json` - a `pnpm.overrides` block there silently disables the workspace file's overrides) with a comment naming the advisory and the reason.
+
+**Response window for a critical advisory:**
+
+| Severity | Response |
+|---|---|
+| Critical | Patch or override within **24 hours**; if no fix exists, document the exposure in the advisory thread and remove the dependency if it is reachable from published code. |
+| High | Within **7 days**. |
+| Moderate / Low | Next regular dependency bump, at most **30 days**. |
+
+Dependabot opens grouped dev-dependency updates; those are reviewed as ordinary PRs. A security-only update is not held back for a green Vercel preview.
 
 ---
 

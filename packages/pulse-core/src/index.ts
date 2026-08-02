@@ -61,6 +61,13 @@ export type { IRegistryStore } from "./IRegistryStore.js";
 export { InMemoryRegistryStore } from "./IRegistryStore.js";
 export { FileRegistryStore } from "./FileRegistryStore.js";
 
+export {
+  assertRestrictedSecretNetwork,
+  isCiEnvironment,
+  redactSecret,
+  MainnetSecretInRestrictedPathError,
+} from "./secretPolicy.js";
+export type { SecretPolicyContext, AssertRestrictedSecretOptions } from "./secretPolicy.js";
 export { isEventType } from "./eventTypeGuard.js";
 export * from "./claimPredicate.js";
 export * from "./raw-horizon.js";
