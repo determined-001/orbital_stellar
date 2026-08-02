@@ -5,6 +5,7 @@ export const Sep12CustomerInfoSchema = z.object({
   status: z.enum(["ACCEPTED", "PROCESSING", "NEEDS_INFO", "REJECTED"]),
   provided_fields: z
     .record(
+      z.string(),
       z.object({
         description: z.string().optional(),
         type: z.string().optional(),
@@ -15,6 +16,7 @@ export const Sep12CustomerInfoSchema = z.object({
     .optional(),
   fields: z
     .record(
+      z.string(),
       z.object({
         type: z.string(),
         description: z.string(),

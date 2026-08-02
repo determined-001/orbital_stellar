@@ -1,9 +1,10 @@
 import { z } from "zod";
 import type { Sep31Status } from "@orbital-stellar/pulse-core";
-import { Sep12Client, Sep12CustomerInfo } from "./sep12.js";
+import { Sep12Client } from "./sep12.js";
 
 export const Sep31InfoSchema = z.object({
   receive: z.record(
+    z.string(),
     z.object({
       quotes_supported: z.boolean().optional(),
       quotes_required: z.boolean().optional(),
@@ -17,6 +18,7 @@ export const Sep31InfoSchema = z.object({
         .object({
           transaction: z
             .record(
+              z.string(),
               z.object({
                 description: z.string(),
                 choices: z.array(z.string()).optional(),
