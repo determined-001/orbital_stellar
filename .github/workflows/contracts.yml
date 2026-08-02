@@ -89,6 +89,16 @@ jobs:
             exit 0
           fi
 
+          # The checked-in manifest documents the shape before the contracts are
+          # actually deployed; deploy_testnet.sh fills in the ids and hashes.
+          # Until then there is nothing to verify, so skip rather than diff
+          # empty hashes against a real build.
+          if jq -e '[.contracts[] | select((.contractId | startswith("<")) or (.wasmHash == ""))] | length > 0' \
+               deployed.testnet.json > /dev/null; then
+            echo "deployed.testnet.json still holds deploy_testnet.sh placeholders. Skipping provenance verification."
+            exit 0
+          fi
+
           REGISTRY_WASM="target/wasm32v1-none/release/orbital_abi_registry.wasm"
           DEMO_WASM="target/wasm32v1-none/release/orbital_demo_emitter.wasm"
 
