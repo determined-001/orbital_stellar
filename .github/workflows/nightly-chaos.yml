@@ -29,6 +29,10 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
 
+      # pulse-core imports @orbital-stellar/abi-registry from its dist output.
+      - name: Build abi-registry
+        run: pnpm tsc -p packages/abi-registry/tsconfig.json
+
       - name: Pick a seed
         id: seed
         run: |

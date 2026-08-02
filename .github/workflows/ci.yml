@@ -147,6 +147,10 @@ jobs:
           node-version: 20
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # pulse-core imports @orbital-stellar/abi-registry, which resolves to its
+      # dist output - the suite cannot load without it built first.
+      - name: Build abi-registry
+        run: pnpm tsc -p packages/abi-registry/tsconfig.json
       # Fixed seed on PRs so a failure here is always reproducible from the
       # branch alone. nightly-chaos.yml runs the same suite with a random seed.
       - name: Reconnection chaos suite (fixed seed)
