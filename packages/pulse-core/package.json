@@ -34,8 +34,10 @@
     "test:coverage": "vitest run --coverage",
     "test:integration": "INTEGRATION_TESTS=true vitest run test/integration",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "bench:throughput": "tsx bench/throughput.ts",
-    "bench:soroban-throughput": "tsx bench/soroban-throughput.ts"
+    "bench": "tsx bench/index.ts",
+    "bench:update": "tsx bench/index.ts --update",
+    "bench:ci": "tsx bench/index.ts",
+    "bench:json": "tsx bench/index.ts --json"
   },
   "dependencies": {
     "@orbital-stellar/abi-registry": "workspace:*",
