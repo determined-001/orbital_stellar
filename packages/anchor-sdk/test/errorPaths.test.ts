@@ -66,6 +66,49 @@ describe("SEP-1 failure paths", () => {
     ).rejects.toThrow(/could not reach/);
   });
 
+  it("rejects an oversized toml on its declared content-length", async () => {
+    const transport = vi.fn(
+      async () =>
+        new Response(`WEB_AUTH_ENDPOINT = "https://a.example.com/auth"`, {
+          status: 200,
+          headers: { "content-length": "5000000" },
+        }),
+    );
+
+    await expect(
+      discoverAnchor("anchor.example.com", { transport, maxBodyBytes: 1000 }),
+    ).rejects.toThrow(/over the 1000-byte limit/);
+  });
+
+  it("stops reading a body that lies about its length", async () => {
+    // content-length is a claim; an endless chunked body must still be cut off
+    // rather than read until the consumer runs out of memory.
+    let chunksServed = 0;
+    const endless = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        chunksServed += 1;
+        controller.enqueue(new TextEncoder().encode("A".repeat(1024)));
+      },
+    });
+    const transport = vi.fn(async () => new Response(endless, { status: 200 }));
+
+    await expect(
+      discoverAnchor("anchor.example.com", { transport, maxBodyBytes: 4096 }),
+    ).rejects.toThrow(/exceeded the 4096-byte limit/);
+
+    // Bounded: it gave up rather than draining an infinite stream.
+    expect(chunksServed).toBeLessThan(16);
+  });
+
+  it("reads a normally sized toml unchanged", async () => {
+    const transport = vi.fn(
+      async () => new Response(`WEB_AUTH_ENDPOINT = "https://a.example.com/auth"`, { status: 200 }),
+    );
+
+    const toml = await discoverAnchor("anchor.example.com", { transport });
+    expect(toml.WEB_AUTH_ENDPOINT).toBe("https://a.example.com/auth");
+  });
+
   it("ignores unquoted, commented and non-string values", () => {
     const toml = parseStellarToml(
       [
