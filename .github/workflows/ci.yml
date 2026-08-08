@@ -181,6 +181,29 @@ jobs:
       - name: Typecheck apps/web
         run: pnpm tsc --noEmit -p apps/web/tsconfig.json
 
+  test-web:
+    needs: changes
+    if: ${{ needs.changes.outputs.web == 'true' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # apps/web imports pulse-core and pulse-webhooks from their built output.
+      - name: Build workspace dependencies
+        run: |
+          pnpm tsc -p packages/abi-registry/tsconfig.json
+          pnpm tsc -p packages/pulse-core/tsconfig.json
+          pnpm tsc -p packages/pulse-webhooks/tsconfig.json
+      - name: Test apps/web
+        run: pnpm --filter orbital/web run test
+
   build-web:
     needs: changes
     if: ${{ needs.changes.outputs.web == 'true' }}
