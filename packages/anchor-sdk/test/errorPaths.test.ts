@@ -3,6 +3,7 @@ import {
   Sep1DiscoveryError,
   Sep10AuthError,
   Sep10Client,
+  type Sep10ClientOptions,
   Sep24Client,
   Sep24Error,
   discoverAnchor,
@@ -22,6 +23,22 @@ function jsonResponse(body: unknown, status = 200): Response {
 function failingTransport(message: string) {
   return vi.fn(async () => {
     throw new Error(message);
+  });
+}
+
+/**
+ * Builds a Sep10Client for the transport-level cases below. These exercise
+ * `challenge()` / `token()` directly and never sign, so the verification
+ * parameters just need to be present and well-formed - `test/sep10.test.ts`
+ * covers what they actually do.
+ */
+function sep10ClientWith(options: Partial<Sep10ClientOptions> = {}): Sep10Client {
+  return new Sep10Client("https://a.example.com/auth", {
+    serverAccountId: "GA7QYNF7SOWQ3GLR2BGMZEHXAVIRZA4KVWLTJJFC7MGXUA74P7UJVSGZ",
+    networkPassphrase: "Test SDF Network ; September 2015",
+    homeDomain: "a.example.com",
+    webAuthDomain: "a.example.com",
+    ...options,
   });
 }
 
@@ -69,28 +86,28 @@ describe("SEP-1 failure paths", () => {
 describe("SEP-10 failure paths", () => {
   it("reports a non-2xx challenge response", async () => {
     const transport = vi.fn(async () => new Response("no", { status: 400 }));
-    const client = new Sep10Client("https://a.example.com/auth", { transport });
+    const client = sep10ClientWith({ transport });
 
     await expect(client.challenge({ account: "GABC" })).rejects.toThrow(/returned 400/);
   });
 
   it("rejects a challenge body with no transaction", async () => {
     const transport = vi.fn(async () => jsonResponse({ nope: true }));
-    const client = new Sep10Client("https://a.example.com/auth", { transport });
+    const client = sep10ClientWith({ transport });
 
     await expect(client.challenge({ account: "GABC" })).rejects.toBeInstanceOf(Sep10AuthError);
   });
 
   it("surfaces the anchor's error message when the token exchange is rejected", async () => {
     const transport = vi.fn(async () => jsonResponse({ error: "invalid signature" }, 401));
-    const client = new Sep10Client("https://a.example.com/auth", { transport });
+    const client = sep10ClientWith({ transport });
 
     await expect(client.token("signed")).rejects.toThrow(/invalid signature/);
   });
 
   it("rejects a token response with no token", async () => {
     const transport = vi.fn(async () => jsonResponse({ jwt: "wrong-field" }));
-    const client = new Sep10Client("https://a.example.com/auth", { transport });
+    const client = sep10ClientWith({ transport });
 
     await expect(client.token("signed")).rejects.toThrow(/did not contain a token/);
   });
@@ -101,7 +118,7 @@ describe("SEP-10 failure paths", () => {
       calls.push(url);
       return jsonResponse({ transaction: "AAAA" });
     });
-    const client = new Sep10Client("https://a.example.com/auth", { transport });
+    const client = sep10ClientWith({ transport });
 
     await client.challenge({ account: "GABC", memo: "12345", clientDomain: "app.example.com" });
 
@@ -110,9 +127,7 @@ describe("SEP-10 failure paths", () => {
   });
 
   it("wraps a transport failure", async () => {
-    const client = new Sep10Client("https://a.example.com/auth", {
-      transport: failingTransport("ECONNRESET"),
-    });
+    const client = sep10ClientWith({ transport: failingTransport("ECONNRESET") });
 
     await expect(client.challenge({ account: "GABC" })).rejects.toThrow(/request to .* failed/);
   });
@@ -199,10 +214,7 @@ describe("request timeouts", () => {
   });
 
   it("aborts a stalled SEP-10 challenge", async () => {
-    const client = new Sep10Client("https://a.example.com/auth", {
-      transport: stallingTransport(),
-      timeoutMs: 5,
-    });
+    const client = sep10ClientWith({ transport: stallingTransport(), timeoutMs: 5 });
     await expect(client.challenge({ account: "GABC" })).rejects.toThrow(/request to .* failed/);
   });
 

@@ -229,6 +229,9 @@ importers:
         specifier: ^4.4.3
         version: 4.4.3
     devDependencies:
+      '@stellar/stellar-sdk':
+        specifier: ^16.1.0
+        version: 16.2.0
       '@types/node':
         specifier: ^26.1.2
         version: 26.1.2

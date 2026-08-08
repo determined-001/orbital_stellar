@@ -43,6 +43,9 @@ export {
 } from "./address.js";
 export { EngineAlreadyStartedError, HorizonStreamError } from "./errors.js";
 export { StrKey } from "@stellar/stellar-sdk";
+// Re-exported so @orbital-stellar/anchor-sdk can validate SEP-10 challenges
+// without taking its own direct dependency on @stellar/stellar-sdk.
+export { WebAuth } from "@stellar/stellar-sdk";
 export { CursorStore } from "./CursorStore.js";
 export type { CursorStoreLike } from "./CursorStore.js";
 import type { CursorStoreLike } from "./CursorStore.js";
