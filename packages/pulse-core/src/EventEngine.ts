@@ -143,6 +143,13 @@ function stableFilterKey(filters: ContractFilter[]): string {
  * The Date is parsed from `event.timestamp` on first access and cached.
  * JSON.stringify output is unaffected because the property is non-enumerable.
  */
+/** Namespaced refcount keys - the three subscription registries key independently. */
+const refKey = {
+  address: (address: string) => `addr:${address}`,
+  contract: (id: string) => `contract:${id}`,
+  config: (filterKey: string) => `config:${filterKey}`,
+};
+
 function withTimestampDate<T extends { timestamp: string }>(event: T): Timestamped<T> {
   let cached: Date | undefined;
   Object.defineProperty(event, "timestampDate", {
@@ -170,6 +177,20 @@ export class EventEngine {
    * `unsubscribeContract(config)` for lookup.
    */
   private contractConfigRegistry: Map<string, Watcher> = new Map();
+  /**
+   * How many outstanding `subscribe*()` calls share each registry entry.
+   *
+   * Subscriptions are memoised by key, so concurrent callers asking for the
+   * same address or contract get the *same* `Watcher` object. Without a count,
+   * the first `unsubscribe()` would call `stop()` on that shared watcher and
+   * silently kill every other caller's event flow - `stop()` removes all
+   * listeners and makes `emit()` a no-op, so the others keep their connection
+   * open and simply never receive anything again.
+   *
+   * Keys are namespaced (`addr:` / `contract:` / `config:`) because the three
+   * registries have independent key spaces that could otherwise collide.
+   */
+  private refCounts: Map<string, number> = new Map();
   private subscriptionNames: Map<string, string> = new Map();
   private stopStream: HorizonStreamStopper | null = null;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -511,9 +532,35 @@ export class EventEngine {
     }
   }
 
+  /** Records one more holder of a shared subscription. */
+  private retain(key: string): void {
+    this.refCounts.set(key, (this.refCounts.get(key) ?? 0) + 1);
+  }
+
+  /**
+   * Drops one holder of a shared subscription.
+   * @returns true when that was the last holder and the watcher should stop.
+   */
+  private release(key: string): boolean {
+    const count = this.refCounts.get(key);
+    // Unknown key means the watcher was already torn down (or stopped directly
+    // via `watcher.stop()`); treat it as the final release.
+    if (count === undefined) return true;
+    if (count <= 1) {
+      this.refCounts.delete(key);
+      return true;
+    }
+    this.refCounts.set(key, count - 1);
+    return false;
+  }
+
   /**
    * Subscribes to events for a given Stellar address.
    * Returns an existing Watcher if one already exists for the address.
+   *
+   * The returned Watcher is shared between callers asking for the same
+   * address. It stays alive until every caller has unsubscribed, so one
+   * caller disconnecting cannot silence the others.
    * @param address - The Stellar address to watch.
    * @param options - Optional subscription options, including a filter predicate.
    * @returns The Watcher instance for the address.
@@ -521,6 +568,7 @@ export class EventEngine {
   subscribe(address: string, options?: SubscribeOptions): Watcher {
     const existingWatcher = this.registry.get(address);
     if (existingWatcher) {
+      this.retain(refKey.address(address));
       if (options?.filter) {
         const name = this.subscriptionNames.get(address);
         if (name !== undefined) {
@@ -539,6 +587,7 @@ export class EventEngine {
     }
 
     const watcher = new Watcher(address);
+    this.retain(refKey.address(address));
     if (options?.name !== undefined) {
       this.subscriptionNames.set(address, options.name);
     }
@@ -554,6 +603,7 @@ export class EventEngine {
       }
       watcher.addStopHandler(() => {
         this.registry.delete(address);
+        this.refCounts.delete(refKey.address(address));
         this.subscriptionNames.delete(address);
         for (const subWatcher of subWatchers) subWatcher.stop();
       });
@@ -566,6 +616,7 @@ export class EventEngine {
     }
     watcher.addStopHandler(() => {
       this.registry.delete(address);
+      this.refCounts.delete(refKey.address(address));
       this.filters.delete(address);
       this.subscriptionNames.delete(address);
     });
@@ -574,19 +625,32 @@ export class EventEngine {
   }
 
   /**
-   * Unsubscribes from events for a given Stellar address and stops its watcher.
+   * Releases one subscription to a given Stellar address.
+   *
+   * The underlying Watcher is shared, so it is only stopped once every caller
+   * that subscribed to this address has unsubscribed. Stopping it while another
+   * caller still holds it would remove their listeners and silently end their
+   * event flow.
    * @param address - The Stellar address to stop watching.
    */
   unsubscribe(address: string): void {
-    this.registry.get(address)?.stop();
+    const watcher = this.registry.get(address);
+    if (!watcher) return;
+    if (this.release(refKey.address(address))) {
+      watcher.stop();
+    }
   }
 
   /**
    * Stops all active watchers without closing the underlying SSE stream.
    * Use this to drain subscriptions while keeping the stream open.
+   *
+   * This is a teardown operation and deliberately ignores reference counts:
+   * it stops every watcher outright, however many holders each has. Each
+   * watcher's stop handler clears its own refcount entry.
    */
   unsubscribeAll(): void {
-    for (const watcher of this.registry.values()) {
+    for (const watcher of [...this.registry.values()]) {
       watcher.stop();
     }
   }
@@ -625,9 +689,13 @@ export class EventEngine {
 
       const key = stableFilterKey(config.filters);
       const existing = this.contractConfigRegistry.get(key);
-      if (existing) return existing;
+      if (existing) {
+        this.retain(refKey.config(key));
+        return existing;
+      }
 
       const watcher = new Watcher(key);
+      this.retain(refKey.config(key));
 
       if (this.networkSources) {
         const subWatchers: Watcher[] = [];
@@ -638,13 +706,17 @@ export class EventEngine {
         }
         watcher.addStopHandler(() => {
           this.contractConfigRegistry.delete(key);
+          this.refCounts.delete(refKey.config(key));
           for (const subWatcher of subWatchers) subWatcher.stop();
         });
         this.contractConfigRegistry.set(key, watcher);
         return watcher;
       }
 
-      watcher.addStopHandler(() => this.contractConfigRegistry.delete(key));
+      watcher.addStopHandler(() => {
+        this.contractConfigRegistry.delete(key);
+        this.refCounts.delete(refKey.config(key));
+      });
       this.contractConfigRegistry.set(key, watcher);
       return watcher;
     }
@@ -653,6 +725,7 @@ export class EventEngine {
     const id = idOrConfig;
     const existing = this.contractRegistry.get(id);
     if (existing) {
+      this.retain(refKey.contract(id));
       if (options?.filter) {
         this.log.warn(
           `[pulse-core] subscribeContract() called for ${this.describeSubscription(id)} which already has an active watcher - filter option ignored.`,
@@ -663,6 +736,7 @@ export class EventEngine {
     }
 
     const watcher = new Watcher(id);
+    this.retain(refKey.contract(id));
     const filters = options?.filters ?? [];
     if (options?.name !== undefined) {
       this.subscriptionNames.set(id, options.name);
@@ -677,6 +751,7 @@ export class EventEngine {
       }
       watcher.addStopHandler(() => {
         this.contractRegistry.delete(id);
+        this.refCounts.delete(refKey.contract(id));
         this.subscriptionNames.delete(id);
         for (const subWatcher of subWatchers) subWatcher.stop();
       });
@@ -689,6 +764,7 @@ export class EventEngine {
     }
     watcher.addStopHandler(() => {
       this.contractRegistry.delete(id);
+      this.refCounts.delete(refKey.contract(id));
       this.subscriptionNames.delete(id);
       this.filters.delete(id);
       if (this.contractRegistry.size === 0 && this.sorobanSubscriber) {
@@ -717,11 +793,16 @@ export class EventEngine {
   unsubscribeContract(idOrConfig: string | ContractSubscriptionConfig): void {
     if (typeof idOrConfig === "object") {
       const key = stableFilterKey(idOrConfig.filters);
+      const watcher = this.contractConfigRegistry.get(key);
+      if (!watcher) return;
       // The watcher's stop handler removes it from contractConfigRegistry.
-      this.contractConfigRegistry.get(key)?.stop();
+      // Only the last holder may stop it - see `refCounts`.
+      if (this.release(refKey.config(key))) watcher.stop();
       return;
     }
-    this.contractRegistry.get(idOrConfig)?.watcher.stop();
+    const entry = this.contractRegistry.get(idOrConfig);
+    if (!entry) return;
+    if (this.release(refKey.contract(idOrConfig))) entry.watcher.stop();
   }
 
   /**
