@@ -279,8 +279,12 @@ jobs:
           node-version: 20
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - name: Build abi-registry
-        run: pnpm tsc -p packages/abi-registry/tsconfig.json
+      # Every package must be built, not just abi-registry: workspace packages
+      # resolve each other through their published `main` (./dist/index.js), so
+      # a cross-package import in a test file - e.g. anchor-sdk's sep10 suite
+      # importing WebAuth from pulse-core - fails to resolve without a dist.
+      - name: Build packages
+        run: pnpm build
       - name: Run coverage (thresholds enforced)
         run: pnpm -r --if-present test:coverage
       - name: Upload coverage reports
