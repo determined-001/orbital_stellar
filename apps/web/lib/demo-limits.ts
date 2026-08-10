@@ -123,6 +123,33 @@ function trustedProxyHops(): number {
  * append semantics, so a directly-reachable deployment cannot tell an
  * nginx-set header from a client-set one.
  */
+/**
+ * Warn once per process when we cannot identify callers at all.
+ *
+ * Collapsing everyone into one bucket is the right direction for abuse, but it
+ * also means `perIpStreams: 1` becomes a global limit: on a non-Vercel deploy
+ * without `TRUSTED_PROXY_HOPS`, the entire internet shares one SSE slot and one
+ * webhook-sample call per 20s, and the demo looks broken to everybody. That is
+ * a deployment mistake worth surfacing rather than absorbing silently.
+ */
+let warnedAboutUnknownIp = false;
+
+function warnUnidentifiedOnce(): void {
+  if (warnedAboutUnknownIp) return;
+  warnedAboutUnknownIp = true;
+  console.warn(
+    "[demo-limits] No x-vercel-forwarded-for and TRUSTED_PROXY_HOPS is unset, so " +
+      "every caller shares one rate-limit bucket. On Vercel this should never happen. " +
+      "Anywhere else, set TRUSTED_PROXY_HOPS to the number of proxies in front of this " +
+      "deployment, or the per-IP demo limits act as global limits.",
+  );
+}
+
+/** Test helper - clears the once-per-process warning latch between cases. */
+export function __resetUnidentifiedWarningForTests(): void {
+  warnedAboutUnknownIp = false;
+}
+
 export function clientIp(req: Request): string {
   const vercel = req.headers.get("x-vercel-forwarded-for")?.trim();
   if (vercel) return vercel;
@@ -145,5 +172,6 @@ export function clientIp(req: Request): string {
   // anonymous traffic is the safe failure direction - handing each unidentified
   // request its own key would silently disable every limit that uses this, which
   // is precisely the bug this function used to have.
+  warnUnidentifiedOnce();
   return "unknown";
 }

@@ -68,7 +68,7 @@ export default function DocNavbar({ sections = docSections }: Props) {
           <div className="flex items-center gap-2 flex-shrink-0">
             <button
               onClick={() => setAiOpen(!aiOpen)}
-              title="AI Assistant"
+              title="Search the docs"
               className={`hidden sm:flex items-center gap-1.5 h-8 px-3 rounded-lg text-xs font-semibold transition-all duration-150 ${
                 aiOpen
                   ? "bg-accent text-bg shadow-[0_0_16px_rgba(232,255,71,0.25)]"
@@ -76,7 +76,7 @@ export default function DocNavbar({ sections = docSections }: Props) {
               }`}
             >
               <SparklesIcon active={aiOpen} />
-              AI
+              Search
             </button>
 
             <button
