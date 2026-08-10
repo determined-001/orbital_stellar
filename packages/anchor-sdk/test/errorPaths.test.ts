@@ -100,6 +100,37 @@ describe("SEP-1 failure paths", () => {
     expect(chunksServed).toBeLessThan(16);
   });
 
+  // A `transport` override is free to return something Response-shaped that has
+  // no readable `body` - undici polyfills and hand-rolled test doubles both do.
+  // `readCapped` then falls back to `response.text()`, and the cap has to hold
+  // on that path too, since the content-length check above is only a claim.
+  function bodylessResponse(text: string): Response {
+    return {
+      ok: true,
+      status: 200,
+      headers: new Headers(),
+      body: null,
+      text: async () => text,
+    } as unknown as Response;
+  }
+
+  it("caps a bodyless response on the text() fallback path", async () => {
+    const transport = vi.fn(async () => bodylessResponse("A".repeat(200)));
+
+    await expect(
+      discoverAnchor("anchor.example.com", { transport, maxBodyBytes: 100 }),
+    ).rejects.toThrow(/exceeded the 100-byte limit/);
+  });
+
+  it("reads a bodyless response that fits under the cap", async () => {
+    const transport = vi.fn(async () =>
+      bodylessResponse(`WEB_AUTH_ENDPOINT = "https://a.example.com/auth"`),
+    );
+
+    const toml = await discoverAnchor("anchor.example.com", { transport, maxBodyBytes: 100 });
+    expect(toml.WEB_AUTH_ENDPOINT).toBe("https://a.example.com/auth");
+  });
+
   it("reads a normally sized toml unchanged", async () => {
     const transport = vi.fn(
       async () => new Response(`WEB_AUTH_ENDPOINT = "https://a.example.com/auth"`, { status: 200 }),
