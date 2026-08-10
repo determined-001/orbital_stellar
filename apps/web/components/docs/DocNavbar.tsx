@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import SearchDialog from "./SearchDialog";
 import AIPanel from "./AIPanel";
 import { docSections, type DocSection } from "@/lib/docroutes";
+import { GITHUB_REPO } from "@/lib/links";
 
 type Props = {
   sections?: DocSection[];
@@ -87,7 +88,7 @@ export default function DocNavbar({ sections = docSections }: Props) {
             </button>
 
             <a
-              href="https://github.com"
+              href={GITHUB_REPO}
               target="_blank"
               rel="noopener noreferrer"
               title="GitHub"

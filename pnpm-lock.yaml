@@ -192,6 +192,49 @@ importers:
         specifier: ^4.1.10
         version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@26.1.2)(@vitest/coverage-v8@4.1.10)(jsdom@30.0.1(@noble/hashes@2.2.0))(vite@7.3.6(@types/node@26.1.2)(jiti@2.7.0)(lightningcss@1.33.0)(tsx@4.23.1)(yaml@2.9.0))
 
+  examples/next-starter:
+    dependencies:
+      '@orbital-stellar/abi-registry':
+        specifier: workspace:*
+        version: link:../../packages/abi-registry
+      '@orbital-stellar/pulse-core':
+        specifier: workspace:*
+        version: link:../../packages/pulse-core
+      '@orbital-stellar/pulse-notify':
+        specifier: workspace:*
+        version: link:../../packages/pulse-notify
+      next:
+        specifier: ^16.2.10
+        version: 16.2.12(@opentelemetry/api@1.9.1)(@types/node@26.1.2)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
+      react:
+        specifier: ^19.2.8
+        version: 19.2.8
+      react-dom:
+        specifier: ^19.2.8
+        version: 19.2.8(react@19.2.8)
+    devDependencies:
+      '@types/node':
+        specifier: ^26.1.2
+        version: 26.1.2
+      '@types/react':
+        specifier: ^19.2.17
+        version: 19.2.17
+      '@types/react-dom':
+        specifier: ^19.2.3
+        version: 19.2.3(@types/react@19.2.17)
+      '@vitest/coverage-v8':
+        specifier: ^4.1.10
+        version: 4.1.10(vitest@4.1.10)
+      typescript:
+        specifier: ^6.0.3
+        version: 6.0.3
+      vite:
+        specifier: 7.3.6
+        version: 7.3.6(@types/node@26.1.2)(jiti@2.7.0)(lightningcss@1.33.0)(tsx@4.23.1)(yaml@2.9.0)
+      vitest:
+        specifier: ^4.1.10
+        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@26.1.2)(@vitest/coverage-v8@4.1.10)(jsdom@30.0.1(@noble/hashes@2.2.0))(vite@7.3.6(@types/node@26.1.2)(jiti@2.7.0)(lightningcss@1.33.0)(tsx@4.23.1)(yaml@2.9.0))
+
   packages/abi-registry:
     dependencies:
       '@stellar/js-xdr':
@@ -6332,7 +6375,7 @@ snapshots:
       esbuild: 0.28.1
       fdir: 6.5.0(picomatch@4.0.5)
       picomatch: 4.0.5
-      postcss: 8.5.25
+      postcss: 8.5.26
       rollup: 4.62.4
       tinyglobby: 0.2.17
     optionalDependencies:

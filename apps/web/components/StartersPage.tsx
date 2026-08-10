@@ -3,60 +3,79 @@
 import { useState } from "react";
 import Nav from "@/components/Nav";
 import Footer from "@/components/Footer";
+import { GITHUB_REPO, exampleTreeUrl } from "@/lib/links";
 
+/**
+ * The starters live in this monorepo under `examples/`, not in repos of their
+ * own. They used to be listed as `determined-001/orbital-<name>` - three repos
+ * that do not exist, so every source link 404'd and every deploy button cloned
+ * nothing. Pointing at `examples/` keeps one repo to maintain and makes the
+ * links true.
+ */
 interface Starter {
-  name: string;
-  repo: string;
+  /** Directory under `examples/`. Also the display name. */
+  dir: string;
   description: string;
   packages: string[];
-  target: "Vercel" | "Railway";
   what: string;
+  /**
+   * Vercel's clone flow can target a subdirectory of a monorepo via
+   * `root-directory`, so the Next.js starter keeps a working one-click.
+   * Railway's `templateUrl` deploy link has no equivalent - it clones the repo
+   * root - so the two Node services link to their README instead of shipping a
+   * button that silently deploys the wrong thing.
+   */
+  deploy: { kind: "vercel" } | { kind: "readme" };
 }
 
 const STARTERS: Starter[] = [
   {
-    name: "orbital-next-starter",
-    repo: "determined-001/orbital-next-starter",
+    dir: "next-starter",
     description:
-      "A production-ready Next.js app with real-time Stellar event subscriptions via React hooks. Subscribe to any address and render live payment/operation updates.",
+      "A Next.js app with real-time Stellar event subscriptions. Subscribe to any address over SSE and render live payment and operation updates.",
     packages: ["@orbital-stellar/pulse-core", "@orbital-stellar/pulse-notify"],
-    target: "Vercel",
     what: "Real-time Stellar event UI with React hooks",
+    deploy: { kind: "vercel" },
   },
   {
-    name: "orbital-express-starter",
-    repo: "determined-001/orbital-express-starter",
+    dir: "express-starter",
     description:
-      "An Express.js server that consumes Stellar events and delivers HMAC-signed webhooks. Includes retry logic, SSRF hardening, and edge-runtime verification.",
+      "An Express server that ingests Stellar events, persists a cursor, and delivers HMAC-signed webhooks, with a receiver that verifies them. The composition from docs/COOKBOOK.md, in code that compiles.",
     packages: ["@orbital-stellar/pulse-core", "@orbital-stellar/pulse-webhooks"],
-    target: "Railway",
     what: "Webhook delivery server with signed payloads",
+    deploy: { kind: "readme" },
   },
   {
-    name: "orbital-anchor-starter",
-    repo: "determined-001/orbital-anchor-starter",
+    dir: "anchor-starter",
     description:
-      "A full anchor service scaffold with event monitoring, signed webhook delivery, and a live React dashboard - everything a Stellar anchor needs out of the box.",
-    packages: [
-      "@orbital-stellar/pulse-core",
-      "@orbital-stellar/pulse-webhooks",
-      "@orbital-stellar/pulse-notify",
-    ],
-    target: "Railway",
-    what: "Full anchor service with dashboard",
+      "Audit-grade, replay-safe event capture for Stellar anchors. Captures payment and trustline events for a set of distribution accounts into an append-only JSON Lines audit log that an auditor can replay byte-identically.",
+    packages: ["@orbital-stellar/pulse-core", "@orbital-stellar/pulse-webhooks"],
+    what: "Replayable append-only anchor audit log",
+    deploy: { kind: "readme" },
   },
 ];
 
-function DeployButton({ target, repo }: { target: "Vercel" | "Railway"; repo: string }) {
-  const encodedRepo = encodeURIComponent(`https://github.com/${repo}`);
-  const href =
-    target === "Vercel"
-      ? `https://vercel.com/new/clone?repository-url=${encodedRepo}&project-name=${repo.split("/")[1]}&repository-name=${repo.split("/")[1]}`
-      : `https://railway.app/new/template?templateUrl=${encodedRepo}`;
+function deployHref(starter: Starter): string {
+  if (starter.deploy.kind === "vercel") {
+    const params = new URLSearchParams({
+      "repository-url": GITHUB_REPO,
+      "root-directory": `examples/${starter.dir}`,
+      "project-name": `orbital-${starter.dir}`,
+      "repository-name": `orbital-${starter.dir}`,
+    });
+    return `https://vercel.com/new/clone?${params.toString()}`;
+  }
+  return `${exampleTreeUrl(starter.dir)}#readme`;
+}
+
+function DeployButton({ starter }: { starter: Starter }) {
+  const target = starter.deploy.kind === "vercel" ? "Vercel" : "Railway";
+  const label =
+    starter.deploy.kind === "vercel" ? "Deploy to Vercel" : "Read the deploy guide";
 
   return (
     <a
-      href={href}
+      href={deployHref(starter)}
       target="_blank"
       rel="noopener noreferrer"
       style={{
@@ -103,7 +122,7 @@ function DeployButton({ target, repo }: { target: "Vercel" | "Railway"; repo: st
           />
         </svg>
       )}
-      Deploy to {target}
+      {label}
     </a>
   );
 }
@@ -124,17 +143,22 @@ function StarterCard({ starter }: { starter: Starter }) {
         transition: "border-color 0.15s",
       }}
     >
-      {/* Repo name */}
-      <p
+      {/* Source path - linked, so the card is a way into the code and not just a label */}
+      <a
+        href={exampleTreeUrl(starter.dir)}
+        target="_blank"
+        rel="noopener noreferrer"
         style={{
           fontFamily: "var(--font-mono)",
           fontSize: "13px",
           color: "var(--accent)",
+          textDecoration: "none",
           marginBottom: "16px",
+          display: "block",
         }}
       >
-        {starter.repo}
-      </p>
+        examples/{starter.dir} →
+      </a>
 
       {/* Description */}
       <p
@@ -217,7 +241,7 @@ function StarterCard({ starter }: { starter: Starter }) {
       </div>
 
       {/* Deploy button */}
-      <DeployButton target={starter.target} repo={starter.repo} />
+      <DeployButton starter={starter} />
     </div>
   );
 }
@@ -292,7 +316,7 @@ export default function StartersPage() {
             }}
           >
             {STARTERS.map((starter) => (
-              <StarterCard key={starter.name} starter={starter} />
+              <StarterCard key={starter.dir} starter={starter} />
             ))}
           </div>
 
