@@ -22,12 +22,15 @@ import type { CursorStoreLike } from "../src/CursorStore.js";
 const TESTNET_PASSPHRASE = "Test SDF Network ; September 2015";
 
 /**
- * Real timers throughout this file, deliberately - not fake ones. Both the
- * cursor read on startup (`resolveUnifiedCursor`) and the cursor write after
- * each page (`persistUnifiedCursor`, fire-and-forget - `EventEngine` doesn't
- * await it) go through the real filesystem for `FileCursorStore`, which fake
- * timers don't advance. A short real delay is enough since each session here
- * only needs to observe a single `getEvents` call.
+ * Real timers throughout this file, deliberately - not fake ones. The cursor
+ * read on startup (`resolveUnifiedCursor`) goes through the real filesystem for
+ * `FileCursorStore`, which fake timers don't advance, and a short real delay is
+ * enough since each session here only needs to observe a single `getEvents`
+ * call.
+ *
+ * The cursor WRITE is no longer a race: `EventEngine.stop()` flushes queued
+ * cursor writes before resolving. This file used to sleep 20ms after `stop()`
+ * and hope, which failed on slower machines and under parallel test load.
  */
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -78,8 +81,9 @@ async function runOnePollCycle(
   });
   engine.start();
   await delay(50);
+  // `stop()` awaits the poller and then flushes pending cursor writes, so the
+  // store is guaranteed settled once this resolves - no trailing sleep.
   await engine.stop();
-  await delay(20);
 }
 
 describe("unified-stream cursor persistence", () => {

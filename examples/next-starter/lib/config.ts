@@ -46,7 +46,14 @@ export function isPlaceholderContractId(id: string): boolean {
   return id.startsWith("<") || id.includes("POPULATED BY") || id.length < 8;
 }
 
-export function loadConfig(env: NodeJS.ProcessEnv = process.env): StarterConfig {
+/**
+ * `Record<string, string | undefined>` rather than `NodeJS.ProcessEnv`: that is
+ * all this function reads, and the narrower type forces every caller - tests
+ * included - to supply unrelated required members like `NODE_ENV`.
+ */
+export function loadConfig(
+  env: Record<string, string | undefined> = process.env,
+): StarterConfig {
   const network: Network = env.NEXT_PUBLIC_STELLAR_NETWORK === "mainnet" ? "mainnet" : "testnet";
 
   const raw = env.STELLAR_ADDRESSES ?? "";

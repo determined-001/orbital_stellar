@@ -238,6 +238,21 @@ export class EventEngine {
   private unifiedController?: AbortController;
   /** Resolves once the unified poller's loop has fully exited after `stop()` aborts it. */
   private unifiedPollPromise?: Promise<{ cursor: string | undefined }>;
+  /**
+   * Tail of the chain of in-flight unified-cursor writes.
+   *
+   * `onCursor` fires from inside the poll loop and cannot await, so writes are
+   * chained onto this promise instead of being dropped. That buys two things
+   * the previous `void this.persistUnifiedCursor(...)` did not: `stop()` can
+   * wait for the last write to land, and two writes can never race such that
+   * an older cursor is the one that survives.
+   *
+   * Null until the first write is queued. That matters: `stop()` must not
+   * introduce an `await` on engines that never ran a unified poller, because
+   * the teardown after it would then be deferred by a microtask and callers
+   * that read engine state straight after `stop()` would see it un-torn-down.
+   */
+  private unifiedCursorWrites: Promise<void> | null = null;
   private unifiedRunning = false;
   private unifiedLastEventAt: string | null = null;
   private unifiedCursorKey = "";
@@ -1131,6 +1146,20 @@ export class EventEngine {
         }
         this.unifiedPollPromise = undefined;
       }
+      // The poller has stopped, but its last cursor write may still be in
+      // flight. Shutting down without it means the next start replays events
+      // that were already delivered. Only awaited when a write was actually
+      // queued, so engines with no unified poller keep stopping synchronously.
+      const pendingCursorWrites = this.flushUnifiedCursorWrites();
+      if (pendingCursorWrites) {
+        try {
+          await pendingCursorWrites;
+        } catch (err) {
+          this.log.warn("[pulse-core] a unified cursor write did not settle before stop.", {
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+      }
       this.unifiedRunning = false;
     }
 
@@ -1181,7 +1210,7 @@ export class EventEngine {
           {
             signal: controller.signal,
             cursor,
-            onCursor: (nextCursor) => void this.persistUnifiedCursor(nextCursor),
+            onCursor: (nextCursor) => this.enqueueUnifiedCursorWrite(nextCursor),
             onRetry: ({ attempt, delayMs, rateLimited }) => {
               const type = rateLimited ? "engine.rate_limited" : "engine.reconnecting";
               this.log.warn(`[pulse-core] unified transport ${type.split(".")[1]}.`, {
@@ -1224,6 +1253,27 @@ export class EventEngine {
       });
       return undefined;
     }
+  }
+
+  /**
+   * Queues a unified-cursor write behind any already in flight.
+   *
+   * Serialising them matters for stores whose writes can complete out of order
+   * (Postgres, Redis, and the filesystem under load): two concurrent `set()`
+   * calls could otherwise leave the OLDER cursor persisted, which on the next
+   * restart replays events that were already delivered.
+   */
+  private enqueueUnifiedCursorWrite(cursor: string): void {
+    const previous = this.unifiedCursorWrites ?? Promise.resolve();
+    this.unifiedCursorWrites = previous.then(() => this.persistUnifiedCursor(cursor));
+  }
+
+  /**
+   * Resolves once every queued cursor write has settled, or immediately (and
+   * synchronously, without yielding) when none were ever queued.
+   */
+  private flushUnifiedCursorWrites(): Promise<void> | null {
+    return this.unifiedCursorWrites;
   }
 
   private async persistUnifiedCursor(cursor: string): Promise<void> {
