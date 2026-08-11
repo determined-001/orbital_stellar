@@ -66,6 +66,11 @@ export default function SearchDialog({ open, onClose }: Props) {
     debounceRef.current = setTimeout(async () => {
       try {
         const res = await fetch(`/api/docs/search?q=${encodeURIComponent(query)}`)
+        if (!res.ok) {
+          setResults([])
+          setSelected(0)
+          return
+        }
         const data: SearchResult[] = await res.json()
         setResults(data)
         setSelected(0)

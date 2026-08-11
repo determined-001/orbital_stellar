@@ -3,6 +3,7 @@ import fs from 'fs'
 import path from 'path'
 import matter from 'gray-matter'
 import { docSections } from '@/lib/docroutes'
+import { checkWebhookCooldown, clientIp } from '@/lib/demo-limits'
 
 export type SearchResult = {
   title: string
@@ -100,6 +101,15 @@ function getCorpus(): IndexedDoc[] {
 const MAX_QUERY_LENGTH = 128
 
 export async function GET(request: NextRequest) {
+  const ip = clientIp(request)
+  const cooldown = checkWebhookCooldown(ip)
+  if (!cooldown.ok) {
+    return NextResponse.json(cooldown.body, {
+      status: 429,
+      headers: { 'Retry-After': String(Math.ceil(cooldown.body.retryAfterMs / 1000)) },
+    })
+  }
+
   const query = request.nextUrl.searchParams.get('q')?.trim().slice(0, MAX_QUERY_LENGTH) ?? ''
 
   if (query.length < 2) {
