@@ -1,6 +1,6 @@
 {
   "name": "@orbital-stellar/anchor-sdk",
-  "version": "0.2.0",
+  "version": "0.1.0",
   "description": "SDK for interacting with Stellar Anchors (SEP-12, SEP-24, SEP-31).",
   "license": "MIT",
   "engines": {
