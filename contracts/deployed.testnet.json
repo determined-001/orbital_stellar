@@ -1,15 +1,15 @@
 {
   "network": "testnet",
-  "deployerPublicKey": "<RUN contracts/deploy/deploy_testnet.sh TO POPULATE>",
-  "deployedAt": "",
+  "deployerPublicKey": "GBBHYIMKT43UAFUG2F4QHSJK25Q2AZSA3RRB6JSHUABDAXMQARGJZYHG",
+  "deployedAt": "2026-08-11T19:13:15Z",
   "contracts": {
     "registry": {
-      "contractId": "<POPULATED BY deploy_testnet.sh>",
-      "wasmHash": ""
+      "contractId": "CCM4U5BGSLAGD2OYHAQUYLXVZNWI4EECJYPVJMOBSYI434FZ5Z2LGIWO",
+      "wasmHash": "47fdc006e3a741009a45e0eeaf4af8fd41f24394335bdfac3dee0730ddeff65c"
     },
     "demoEmitter": {
-      "contractId": "<POPULATED BY deploy_testnet.sh>",
-      "wasmHash": ""
+      "contractId": "CAP6TJP7WVVSAK5BKKAA32J6G7RPT6X6Q7US7SMBGZ3NZ73HSXFNFCRH",
+      "wasmHash": "30b0aedaa8dbca00a16d01d91333703d210dd1ef3c8a21ce270baa12b33c1baf"
     }
   }
 }
