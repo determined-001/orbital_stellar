@@ -13,6 +13,7 @@
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
+    "@opentelemetry/api": "^1.9.1",
     "@orbital-stellar/pulse-core": "workspace:*",
     "@orbital-stellar/pulse-webhooks": "workspace:*",
     "@stellar/stellar-sdk": "^16.1.0",
