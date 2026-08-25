@@ -20,6 +20,25 @@ The site runs on `http://localhost:3000`.
 | `DEMO_EMITTER_SECRET` | for fire-event | Stellar secret | Server-only invoker for `ping()` — never exposed to the client. |
 | `UPSTASH_REDIS_REST_URL` | for fire-event | URL | Shared Upstash Redis REST URL (serverless rate limit). |
 | `UPSTASH_REDIS_REST_TOKEN` | for fire-event | token | Shared Upstash Redis REST token. |
+| `TRUSTED_PROXY_HOPS` | non-Vercel only | positive integer | Number of reverse proxies in front of the app. See [Client identification](#client-identification). |
+
+## Client identification
+
+Every per-IP limit below is keyed on `clientIp()` in `lib/demo-limits.ts`. Forwarding headers are
+client-settable unless something in front of the app overwrites them, so trust is explicit:
+
+1. **On Vercel** — `x-vercel-forwarded-for` is stamped by the edge from the real socket peer on every
+   request and cannot be forged. Nothing to configure.
+2. **Behind your own proxy** — set `TRUSTED_PROXY_HOPS` to the number of proxies that append to
+   `X-Forwarded-For` (usually `1`). The Nth segment from the right is used; the client-controlled prefix
+   is ignored.
+3. **Unset** — `X-Forwarded-For` is ignored entirely and all unidentified callers share a single
+   rate-limit bucket.
+
+Case 3 over-limits anonymous traffic rather than under-limiting it. That is deliberate: `DEMO_EMITTER_SECRET`
+signs real testnet transactions, so a misconfigured deploy must throttle everyone rather than let anyone
+mint unlimited buckets by rotating a header. `x-real-ip` is not consulted — it carries no append semantics,
+so a directly-reachable origin cannot distinguish a proxy-set value from a client-set one.
 
 ## Demo limits
 

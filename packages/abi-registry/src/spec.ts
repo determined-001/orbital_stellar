@@ -360,7 +360,8 @@ function validateFunctionSpec(fn: unknown, path: string, errors: string[]): void
   validateTypeSpec(fn["returns"], `${path}.returns`, errors);
 }
 
-function validateEventSpec(ev: unknown, path: string, errors: string[]): void {
+/** Validates one {@link EventSpec}, appending any problems found to `errors`. Exported for reuse by other schemas built on the same event-shape (e.g. attestation documents). */
+export function validateEventSpec(ev: unknown, path: string, errors: string[]): void {
   if (!isRecord(ev)) {
     errors.push(`${path}: must be an object`);
     return;

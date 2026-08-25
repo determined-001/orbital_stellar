@@ -40,6 +40,7 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@stellar/stellar-sdk": "^16.1.0",
     "@types/node": "^26.1.2",
     "@vitest/coverage-v8": "^4.1.10",
     "vite": "^8.1.5",

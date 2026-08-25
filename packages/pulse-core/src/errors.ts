@@ -55,6 +55,15 @@ export class EngineAlreadyStartedError extends Error {
   }
 }
 
+export class InvalidIngestionModeError extends Error {
+  constructor(value: unknown) {
+    super(
+      `[pulse-core] CoreConfig.ingestion: invalid value ${JSON.stringify(value)}. Must be "unified", "horizon", or "auto".`,
+    );
+    this.name = "InvalidIngestionModeError";
+  }
+}
+
 export class NetworkMismatchError extends Error {
   constructor(expected: string, actual: string) {
     super(

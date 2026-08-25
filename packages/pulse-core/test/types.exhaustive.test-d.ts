@@ -50,6 +50,8 @@ export function assertExhaustive(event: NormalizedEvent): string {
     case "claimable.claimed":
     case "lp.deposited":
     case "lp.withdrawn":
+    case "asset.clawback":
+    case "fee.incurred":
     case "contract.invoked":
     case "contract.emitted":
     case "anchor.transaction_status_changed":
@@ -126,6 +128,8 @@ export function assertExhaustiveNoDefault(event: NormalizedEvent): string {
     case "claimable.claimed":
     case "lp.deposited":
     case "lp.withdrawn":
+    case "asset.clawback":
+    case "fee.incurred":
     case "contract.invoked":
     case "contract.emitted":
     case "anchor.transaction_status_changed":

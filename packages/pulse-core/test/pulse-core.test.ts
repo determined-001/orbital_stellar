@@ -2255,6 +2255,14 @@ describe("pulse-core EventEngine", () => {
             const _raw: RawHorizonAllowTrust | RawHorizonSetTrustLineFlags | undefined = event.raw;
             break;
           }
+          case "asset.clawback": {
+            const _raw = event.raw;
+            break;
+          }
+          case "fee.incurred": {
+            const _raw = event.raw;
+            break;
+          }
           case "contract.emitted": {
             const _raw = event.raw;
             break;

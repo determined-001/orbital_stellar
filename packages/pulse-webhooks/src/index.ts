@@ -9,7 +9,6 @@ import type {
 
 import { timingSafeEqual, randomUUID } from "crypto";
 import { lookup } from "dns/promises";
-import { BlockList, isIP } from "net";
 
 import type { DeadLetterStore as DeadLetterStoreInterface } from "./DeadLetterStore.js";
 import { MemoryDeadLetterStore } from "./MemoryDeadLetterStore.js";
@@ -17,27 +16,27 @@ import { exponentialJittered } from "./backoff.js";
 import type { BackoffStrategy } from "./backoff.js";
 import type { RetryQueue, RetryRecord } from "./RetryQueue.js";
 import { signWebhookPayload } from "./signing.js";
+import {
+  isIpLiteral,
+  isLoopbackHostname,
+  isPrivateIpLiteral,
+  normalizeHostname,
+} from "./private-ip.js";
 import type { Tracer, UrlEntry, VerifyWebhookOptions, WebhookConfig } from "./types.js";
 import { DEFAULT_MAX_AGE_MS, DEFAULT_CLOCK_SKEW_MS } from "./types.js";
 import { NOOP_WEBHOOK_METRICS } from "./metrics.js";
 
-const BLOCKED_WEBHOOK_ADDRESSES = new BlockList();
-BLOCKED_WEBHOOK_ADDRESSES.addSubnet("10.0.0.0", 8, "ipv4");
-BLOCKED_WEBHOOK_ADDRESSES.addSubnet("127.0.0.0", 8, "ipv4");
-BLOCKED_WEBHOOK_ADDRESSES.addSubnet("172.16.0.0", 12, "ipv4");
-BLOCKED_WEBHOOK_ADDRESSES.addSubnet("192.168.0.0", 16, "ipv4");
-BLOCKED_WEBHOOK_ADDRESSES.addSubnet("169.254.0.0", 16, "ipv4");
-BLOCKED_WEBHOOK_ADDRESSES.addAddress("::1", "ipv6");
-BLOCKED_WEBHOOK_ADDRESSES.addSubnet("fc00::", 7, "ipv6");
-BLOCKED_WEBHOOK_ADDRESSES.addSubnet("fe80::", 10, "ipv6");
-BLOCKED_WEBHOOK_ADDRESSES.addSubnet("::ffff:a00:0", 104, "ipv6");
-BLOCKED_WEBHOOK_ADDRESSES.addSubnet("::ffff:7f00:0", 104, "ipv6");
-BLOCKED_WEBHOOK_ADDRESSES.addSubnet("::ffff:ac10:0", 108, "ipv6");
-BLOCKED_WEBHOOK_ADDRESSES.addSubnet("::ffff:c0a8:0", 112, "ipv6");
-BLOCKED_WEBHOOK_ADDRESSES.addSubnet("::ffff:a9fe:0", 112, "ipv6");
-
 const BLOCKED_ADDRESS_ERROR = "Webhook URL points to a blocked private address";
 export { signWebhookPayload } from "./signing.js";
+// Previously unreachable: `UrlValidator`'s own docs said consumers wire it in
+// front of their own fetch, but it was never re-exported here, so nobody could.
+export { UrlValidator } from "./url-validator.js";
+export {
+  isIpLiteral,
+  isLoopbackHostname,
+  isPrivateIpLiteral,
+  normalizeHostname,
+} from "./private-ip.js";
 export { configureDeadLetterStore } from "./DeadLetterStore.js";
 export type {
   DeadLetterEntry,
@@ -523,8 +522,10 @@ export class WebhookDelivery {
       return "Invalid webhook URL";
     }
 
-    const hostname = this.normalizeHostname(parsedUrl.hostname);
-    if (hostname === "localhost") {
+    const hostname = normalizeHostname(parsedUrl.hostname);
+    // `.localhost` too, not just the bare label: RFC 6761 reserves the suffix
+    // and resolvers answer it with a loopback address.
+    if (isLoopbackHostname(hostname)) {
       return BLOCKED_ADDRESS_ERROR;
     }
 
@@ -535,27 +536,21 @@ export class WebhookDelivery {
     return null;
   }
 
-  private normalizeHostname(hostname: string): string {
-    return hostname.replace(/^\[/, "").replace(/\]$/, "").toLowerCase();
-  }
-
+  /**
+   * Shared with `UrlValidator` - see `./private-ip.js` for why these are no
+   * longer two separate lists.
+   *
+   * URL normalisation converts mapped dotted forms such as `::ffff:10.0.0.1`
+   * to their canonical hexadecimal form `::ffff:a00:1`, which
+   * `isPrivateIpLiteral` decodes back before checking.
+   */
   private isBlockedIp(address: string): boolean {
-    const ipVersion = isIP(address);
-    if (ipVersion === 4) {
-      return BLOCKED_WEBHOOK_ADDRESSES.check(address, "ipv4");
-    }
-    if (ipVersion === 6) {
-      // URL normalisation converts mapped dotted forms such as
-      // ::ffff:10.0.0.1 to their canonical hexadecimal form ::ffff:a00:1.
-      return BLOCKED_WEBHOOK_ADDRESSES.check(address, "ipv6");
-    }
-
-    return false;
+    return isPrivateIpLiteral(address);
   }
 
   private async validateResolvedHostname(url: string): Promise<string | null> {
-    const hostname = this.normalizeHostname(new URL(url).hostname);
-    if (isIP(hostname) !== 0) return null;
+    const hostname = normalizeHostname(new URL(url).hostname);
+    if (isIpLiteral(hostname)) return null;
 
     try {
       // Check every A and AAAA answer before each attempt. This prevents a

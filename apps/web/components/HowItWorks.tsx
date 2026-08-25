@@ -11,7 +11,7 @@ const STEPS = [
   },
   {
     num: "03",
-    title: "Orbit Stellar",
+    title: "Orbital",
     description: "Filters by address, normalizes the payload, and routes to subscribers.",
   },
   {
@@ -23,7 +23,7 @@ const STEPS = [
 
 export default function HowItWorks() {
   return (
-    <section style={{ padding: "120px 32px" }}>
+    <section id="how-it-works" style={{ padding: "120px 32px" }}>
       <div style={{ maxWidth: "var(--max-width)", margin: "0 auto" }}>
         <h2
           style={{

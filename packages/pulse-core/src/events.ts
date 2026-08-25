@@ -20,6 +20,8 @@ export type {
   LiquidityPoolDepositEvent,
   LiquidityPoolWithdrawEvent,
   TrustAuthEvent,
+  AssetClawbackEvent,
+  FeeIncurredEvent,
   ContractInvokedEvent,
   ContractEmittedEvent,
   ContractEvent,

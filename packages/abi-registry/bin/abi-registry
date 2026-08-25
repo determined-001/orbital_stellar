@@ -1,0 +1,71 @@
+#!/usr/bin/env node
+
+import yargs from "yargs";
+import { hideBin } from "yargs/helpers";
+
+async function main() {
+  await yargs(hideBin(process.argv))
+    .scriptName("abi-registry")
+    .command(
+      "verify <contractId>",
+      "Verifies a submitted schema against a deployed contract's on-chain spec",
+      (yargs) =>
+        yargs
+          .positional("contractId", {
+            type: "string",
+            demandOption: true,
+            describe: "Soroban contract ID (C...)",
+          })
+          .option("schema", {
+            type: "string",
+            demandOption: true,
+            describe:
+              "Path to the submitted schema JSON (canonical ContractSpec or well-known format)",
+          })
+          .option("rpc-url", {
+            type: "string",
+            default: "https://soroban-testnet.stellar.org",
+            describe: "Soroban RPC endpoint",
+          })
+          .option("network", {
+            type: "string",
+            choices: ["mainnet", "testnet", "futurenet"],
+            default: "testnet",
+            describe: "Network contractId is deployed on",
+          })
+          .option("json", {
+            type: "boolean",
+            default: false,
+            describe: "Print the verdict as JSON instead of human-readable text",
+          })
+          .option("allow-unverifiable", {
+            type: "boolean",
+            default: false,
+            describe: "Exit 0 instead of 2 when the contract has no embedded spec",
+          }),
+      async (argv) => {
+        const { runVerify } = await import("../dist/cli/verify.js");
+
+        const result = await runVerify({
+          contractId: argv.contractId,
+          schemaPath: argv.schema,
+          rpcUrl: argv.rpcUrl,
+          network: argv.network,
+          json: argv.json,
+          allowUnverifiable: argv.allowUnverifiable,
+        });
+
+        if (result.stdout) console.log(result.stdout);
+        if (result.stderr) console.error(result.stderr);
+        process.exitCode = result.exitCode;
+      },
+    )
+    .demandCommand(1, "Please provide a command (verify)")
+    .strict()
+    .help().argv;
+}
+
+main().catch((error) => {
+  console.error("Error:", error);
+  process.exit(3);
+});

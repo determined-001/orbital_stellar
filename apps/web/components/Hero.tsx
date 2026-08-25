@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { motion } from "framer-motion";
 
+import { GITHUB_REPO } from "@/lib/links";
+
 const ease = [0.22, 1, 0.36, 1] as const;
 
 const fadeUp = (delay: number) => ({
@@ -85,7 +87,7 @@ export default function Hero() {
         style={{ display: "flex", gap: "12px", flexWrap: "wrap", justifyContent: "center" }}
       >
         <Link
-          href="#"
+          href="/docs"
           style={{
             background: "var(--accent)",
             color: "#000",
@@ -100,7 +102,9 @@ export default function Hero() {
           Read the docs
         </Link>
         <Link
-          href="#"
+          href={GITHUB_REPO}
+          target="_blank"
+          rel="noopener noreferrer"
           style={{
             background: "transparent",
             color: "#fff",

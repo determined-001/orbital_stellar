@@ -37,18 +37,39 @@ export async function POST(req: Request) {
     });
   }
 
+  // Nothing this endpoint accepts is large. Reading an unbounded body - and
+  // then HMAC-ing over an unbounded caller-supplied secret - is free CPU for
+  // anyone who asks, on a route that exists only to show what a payload looks
+  // like. Both are capped well above any legitimate input.
+  const MAX_BODY_BYTES = 4_096;
+  const MAX_SECRET_LENGTH = 256;
+  const MAX_ADDRESS_LENGTH = 56;
+
   let body: Body = {};
   try {
     if (req.headers.get("content-type")?.includes("application/json")) {
-      body = (await req.json()) as Body;
+      const raw = await req.text();
+      if (Buffer.byteLength(raw, "utf8") > MAX_BODY_BYTES) {
+        return Response.json(
+          {
+            error: "payload_too_large",
+            message: `Request body is capped at ${MAX_BODY_BYTES} bytes.`,
+          },
+          { status: 413 },
+        );
+      }
+      body = raw ? (JSON.parse(raw) as Body) : {};
     }
   } catch {
-    /* allow empty body */
+    /* allow empty or malformed body */
   }
 
-  const secret = body.secret?.trim() || `whsec_demo_${randomBytes(16).toString("hex")}`;
-  const generatedSecret = !body.secret?.trim();
-  const address = body.address?.trim() || "GABCDEFGHIJKLMNOPQRSTUVWXYZ234567ABCDEFGHIJKLMNOPQRSTUV";
+  const callerSecret = body.secret?.trim().slice(0, MAX_SECRET_LENGTH);
+  const secret = callerSecret || `whsec_demo_${randomBytes(16).toString("hex")}`;
+  const generatedSecret = !callerSecret;
+  const address =
+    body.address?.trim().slice(0, MAX_ADDRESS_LENGTH) ||
+    "GABCDEFGHIJKLMNOPQRSTUVWXYZ234567ABCDEFGHIJKLMNOPQRSTUV";
 
   const event = generateSamplePayment(address);
   const payload = JSON.stringify(event);

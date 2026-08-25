@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
-  "generatedAt": "2026-08-02T08:51:13.726Z",
-  "recordCount": 44,
+  "generatedAt": "2026-08-10T00:48:39.648Z",
+  "recordCount": 46,
   "records": [
     {
       "id": "payment.received",
@@ -191,6 +191,24 @@
       "eventType": "data.cleared",
       "description": "Key-value pair removed from account storage.",
       "source": "horizon"
+    },
+    {
+      "id": "asset.clawback",
+      "name": "Asset Clawback",
+      "type": "classic",
+      "category": "assets",
+      "eventType": "asset.clawback",
+      "description": "Issuer clawed back a clawback-enabled asset from an account.",
+      "source": "soroban-rpc"
+    },
+    {
+      "id": "fee.incurred",
+      "name": "Fee Incurred",
+      "type": "classic",
+      "category": "fees",
+      "eventType": "fee.incurred",
+      "description": "Network fee charged for a classic transaction, emitted as a discrete event by CAP-67. No Horizon-derived equivalent exists.",
+      "source": "soroban-rpc"
     },
     {
       "id": "contract.invoked",
