@@ -9,8 +9,6 @@ import {
   discoverAnchor,
   parseStellarToml,
   Sep1DiscoveryError,
-  Sep10Client,
-  Sep10AuthError,
 } from "../src/index.js";
 
 const ANCHOR = "https://anchor.example.com/sep24";
@@ -71,46 +69,8 @@ describe("SEP-1 discovery", () => {
   });
 });
 
-describe("SEP-10 authentication", () => {
-  it("runs challenge -> sign -> token and returns the JWT", async () => {
-    const { transport, calls } = transportReturning(
-      jsonResponse({ transaction: "AAAA-challenge", network_passphrase: "Test SDF Network" }),
-      jsonResponse({ token: "jwt-token" }),
-    );
-    const client = new Sep10Client("https://anchor.example.com/auth", { transport });
-
-    const sign = vi.fn((challenge: { transaction: string }) => `${challenge.transaction}-signed`);
-    const token = await client.authenticate({ account: "GABC", sign });
-
-    expect(token).toBe("jwt-token");
-    expect(sign).toHaveBeenCalledOnce();
-    expect(calls[0]!.url).toContain("account=GABC");
-    expect(JSON.parse(String(calls[1]!.init?.body))).toEqual({
-      transaction: "AAAA-challenge-signed",
-    });
-  });
-
-  it("never asks for key material - signing is delegated", async () => {
-    const { transport } = transportReturning(
-      jsonResponse({ transaction: "AAAA" }),
-      jsonResponse({ token: "jwt" }),
-    );
-    const client = new Sep10Client("https://anchor.example.com/auth", { transport });
-
-    // The signer is the only thing that touches the secret; the SDK sees XDR.
-    const signed = await client.authenticate({ account: "GABC", sign: () => "signed-by-hsm" });
-    expect(signed).toBe("jwt");
-  });
-
-  it("rejects an empty signature instead of posting it", async () => {
-    const { transport } = transportReturning(jsonResponse({ transaction: "AAAA" }));
-    const client = new Sep10Client("https://anchor.example.com/auth", { transport });
-
-    await expect(client.authenticate({ account: "GABC", sign: () => "" })).rejects.toBeInstanceOf(
-      Sep10AuthError,
-    );
-  });
-});
+// SEP-10 coverage lives in test/sep10.test.ts - it needs a real challenge
+// transaction, which needs a server keypair to build.
 
 describe("SEP-24 client", () => {
   it("reads /info", async () => {

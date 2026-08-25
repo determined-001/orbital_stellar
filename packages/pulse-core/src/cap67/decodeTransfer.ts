@@ -7,17 +7,10 @@
  * transaction carried a memo - an `SCMap` with `amount` and `to_muxed_id`
  * entries. This module decodes either form into a single typed struct.
  */
-import { Address, scValToNative, xdr } from "@stellar/stellar-sdk";
-import {
-  isAccountAddress,
-  isContractAddress,
-  isMuxedAddress,
-  toAccountAddress,
-  toContractAddress,
-  toMuxedAddress,
-} from "../address.js";
+import { scValToNative, xdr } from "@stellar/stellar-sdk";
 import type { StellarAddress } from "../address.js";
 import type { RawSorobanEvent } from "../raw-soroban.js";
+import { decodeAddressTopic, decodeI128, decodeTopicScVal } from "./scval.js";
 
 const TRANSFER_TOPIC_SYMBOL = "transfer";
 const AMOUNT_MAP_KEY = "amount";
@@ -48,48 +41,12 @@ export class Cap67TransferDecodeError extends Error {
   }
 }
 
-function decodeTopicScVal(topic: string, index: number): xdr.ScVal {
-  try {
-    return xdr.ScVal.fromXDR(topic, "base64");
-  } catch (cause) {
-    throw new Cap67TransferDecodeError(`malformed topic[${index}] XDR: ${String(cause)}`);
-  }
-}
-
-function decodeAddressTopic(scVal: xdr.ScVal, index: number): StellarAddress {
-  let address: string;
-  try {
-    address = Address.fromScVal(scVal).toString();
-  } catch (cause) {
-    throw new Cap67TransferDecodeError(`topic[${index}] is not a valid address: ${String(cause)}`);
-  }
-  if (isAccountAddress(address)) return toAccountAddress(address);
-  if (isMuxedAddress(address)) return toMuxedAddress(address);
-  if (isContractAddress(address)) return toContractAddress(address);
-  throw new Cap67TransferDecodeError(
-    `topic[${index}] address "${address}" has an unrecognized form`,
-  );
-}
-
-function decodeI128(scVal: xdr.ScVal, context: string): bigint {
-  if (scVal.switch() !== xdr.ScValType.scvI128()) {
-    throw new Cap67TransferDecodeError(
-      `expected ${context} to be an i128, got ${scVal.switch().name}`,
-    );
-  }
-  const native = scValToNative(scVal);
-  if (typeof native !== "bigint") {
-    throw new Cap67TransferDecodeError(
-      `expected ${context} to decode to a bigint, got ${typeof native}`,
-    );
-  }
-  return native;
-}
+const makeError = (reason: string) => new Cap67TransferDecodeError(reason);
 
 function decodeTransferValue(scVal: xdr.ScVal): { amount: bigint; memo?: string } {
   switch (scVal.switch()) {
     case xdr.ScValType.scvI128():
-      return { amount: decodeI128(scVal, "transfer value") };
+      return { amount: decodeI128(scVal, "transfer value", makeError) };
 
     case xdr.ScValType.scvMap(): {
       const map = scVal.map();
@@ -109,7 +66,7 @@ function decodeTransferValue(scVal: xdr.ScVal): { amount: bigint; memo?: string 
         }
 
         if (key === AMOUNT_MAP_KEY) {
-          amount = decodeI128(entry.val(), `"${AMOUNT_MAP_KEY}" map entry`);
+          amount = decodeI128(entry.val(), `"${AMOUNT_MAP_KEY}" map entry`, makeError);
         } else if (key === MEMO_MAP_KEY) {
           let memoVal: unknown;
           try {
@@ -167,7 +124,7 @@ export function decodeUnifiedTransfer(
     string,
   ];
 
-  const symbolScVal = decodeTopicScVal(symbolTopic, 0);
+  const symbolScVal = decodeTopicScVal(symbolTopic, 0, makeError);
   let symbol: unknown;
   try {
     symbol = scValToNative(symbolScVal);
@@ -180,10 +137,10 @@ export function decodeUnifiedTransfer(
     );
   }
 
-  const from = decodeAddressTopic(decodeTopicScVal(fromTopic, 1), 1);
-  const to = decodeAddressTopic(decodeTopicScVal(toTopic, 2), 2);
+  const from = decodeAddressTopic(decodeTopicScVal(fromTopic, 1, makeError), 1, makeError);
+  const to = decodeAddressTopic(decodeTopicScVal(toTopic, 2, makeError), 2, makeError);
 
-  const assetScVal = decodeTopicScVal(assetTopic, 3);
+  const assetScVal = decodeTopicScVal(assetTopic, 3, makeError);
   let asset: unknown;
   try {
     asset = scValToNative(assetScVal);

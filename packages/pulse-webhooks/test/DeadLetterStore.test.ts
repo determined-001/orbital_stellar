@@ -1,7 +1,20 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { Watcher } from "@orbital-stellar/pulse-core";
 import { MemoryDeadLetterStore, WebhookDelivery, configureDeadLetterStore } from "../src/index.js";
+
+/**
+ * `WebhookDelivery` resolves the target hostname before every attempt as part
+ * of its SSRF guard. Without this mock these tests performed a real DNS lookup
+ * of `example.com` on each try, inside `vi.useFakeTimers()` - so the lookup ran
+ * on real time that fake timers could not advance, and `vi.waitFor` gave up
+ * before the dead-letter write landed. That is why two of them failed under
+ * parallel test load and passed when run alone.
+ *
+ * `pulse-webhooks.test.ts` already mocks this; the two files simply diverged.
+ */
+const dnsLookupMock = vi.hoisted(() => vi.fn());
+vi.mock("dns/promises", () => ({ lookup: dnsLookupMock }));
 
 const deliveryEvent = {
   type: "payment.received",
@@ -16,6 +29,11 @@ const deliveryEvent = {
 const hookUrl = "https://example.com/webhooks";
 
 describe("DeadLetterStore", () => {
+  beforeEach(() => {
+    dnsLookupMock.mockReset();
+    dnsLookupMock.mockResolvedValue([{ address: "93.184.216.34", family: 4 }]);
+  });
+
   afterEach(() => {
     vi.useRealTimers();
     vi.unstubAllGlobals();

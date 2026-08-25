@@ -1,0 +1,52 @@
+{
+  "id": "payment-sent-sep41-transfer",
+  "version": "1.0.0",
+  "name": "payment.sent",
+  "title": "Payment sent",
+  "description": "A SEP-41 token transfer, viewed from the sender's side. Scoped to the interface rather than to individual tokens because the `transfer` event is defined by SEP-41 itself, so every conforming token emits the same shape. `trailingTopics` is \"allowed\" because CAP-67 appends an `asset` topic when the token is a Stellar Asset Contract, which a pure contract token does not have. Mirrors the `payment.sent` name @orbital-stellar/pulse-core already uses for the sender's view of a Horizon payment - the same event from the recipient's side is a separate entry for `payment.received`.",
+  "match": {
+    "topics": [
+      { "kind": "symbol", "symbol": "transfer" },
+      { "kind": "any", "type": "address", "doc": "Sender." },
+      { "kind": "any", "type": "address", "doc": "Recipient." }
+    ],
+    "trailingTopics": "allowed",
+    "dataShape": "scalar"
+  },
+  "parameters": {
+    "from": {
+      "from": "topic",
+      "index": 1,
+      "type": "address",
+      "doc": "Account or contract the tokens left."
+    },
+    "to": {
+      "from": "topic",
+      "index": 2,
+      "type": "address",
+      "doc": "Account or contract the tokens arrived at."
+    },
+    "amount": {
+      "from": "data",
+      "type": "i128",
+      "doc": "Amount in the token's base units. SEP-41 puts the amount in the data payload as a bare i128, so there is no `path`."
+    },
+    "direction": {
+      "from": "constant",
+      "value": "out",
+      "doc": "Fixed: this entry is the sender's view of the transfer."
+    }
+  },
+  "scope": {
+    "kind": "interface",
+    "interface": "SEP-41"
+  },
+  "provenance": {
+    "submittedBy": "@ezedike-evan",
+    "submittedAt": "2026-07-29T00:00:00Z",
+    "sources": [
+      "https://github.com/stellar/stellar-protocol/blob/master/ecosystem/sep-0041.md",
+      "https://github.com/stellar/stellar-protocol/blob/master/core/cap-0067.md"
+    ]
+  }
+}

@@ -50,7 +50,7 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v6
+      - uses: pnpm/action-setup@v6.0.10
       - uses: actions/setup-node@v7
         with:
           node-version: 20
@@ -73,7 +73,7 @@ jobs:
       fail-fast: false
     steps:
       - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v6
+      - uses: pnpm/action-setup@v6.0.10
       - uses: actions/setup-node@v7
         with:
           node-version: ${{ matrix.node-version }}
@@ -111,7 +111,7 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v6
+      - uses: pnpm/action-setup@v6.0.10
       - uses: actions/setup-node@v7
         with:
           node-version: 20
@@ -141,7 +141,7 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v6
+      - uses: pnpm/action-setup@v6.0.10
       - uses: actions/setup-node@v7
         with:
           node-version: 20
@@ -166,7 +166,7 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v6
+      - uses: pnpm/action-setup@v6.0.10
       - uses: actions/setup-node@v7
         with:
           node-version: 20
@@ -181,6 +181,29 @@ jobs:
       - name: Typecheck apps/web
         run: pnpm tsc --noEmit -p apps/web/tsconfig.json
 
+  test-web:
+    needs: changes
+    if: ${{ needs.changes.outputs.web == 'true' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6.0.10
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # apps/web imports pulse-core and pulse-webhooks from their built output.
+      - name: Build workspace dependencies
+        run: |
+          pnpm tsc -p packages/abi-registry/tsconfig.json
+          pnpm tsc -p packages/pulse-core/tsconfig.json
+          pnpm tsc -p packages/pulse-webhooks/tsconfig.json
+      - name: Test apps/web
+        run: pnpm --filter orbital/web run test
+
   build-web:
     needs: changes
     if: ${{ needs.changes.outputs.web == 'true' }}
@@ -189,7 +212,7 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v6
+      - uses: pnpm/action-setup@v6.0.10
       - uses: actions/setup-node@v7
         with:
           node-version: 20
@@ -223,7 +246,7 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v6
+      - uses: pnpm/action-setup@v6.0.10
       - uses: actions/setup-node@v7
         with:
           node-version: 20
@@ -273,19 +296,23 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v6
+      - uses: pnpm/action-setup@v6.0.10
       - uses: actions/setup-node@v7
         with:
           node-version: 20
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - name: Build abi-registry
-        run: pnpm tsc -p packages/abi-registry/tsconfig.json
+      # Every package must be built, not just abi-registry: workspace packages
+      # resolve each other through their published `main` (./dist/index.js), so
+      # a cross-package import in a test file - e.g. anchor-sdk's sep10 suite
+      # importing WebAuth from pulse-core - fails to resolve without a dist.
+      - name: Build packages
+        run: pnpm build
       - name: Run coverage (thresholds enforced)
         run: pnpm -r --if-present test:coverage
       - name: Upload coverage reports
         if: always()
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
           name: coverage-reports
           path: |

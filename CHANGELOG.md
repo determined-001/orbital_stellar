@@ -44,6 +44,45 @@ Per-package changelogs live in each package directory.
 
 ### Security
 
+- **`@orbital-stellar/anchor-sdk` 0.1.0 does not validate SEP-10 challenges
+  before signing them.** `Sep10Client.authenticate()` passed the anchor's
+  challenge XDR straight to the caller-supplied `sign` callback with no checks:
+  no verification of the anchor's signature, no source-account or `sequence == 0`
+  check, no `<home_domain> auth` Manage Data check, no time bounds. The
+  `network_passphrase` in the response was parsed and then ignored, and
+  `SIGNING_KEY` — the one value that can attribute a challenge to an anchor —
+  was read from `stellar.toml` and never used.
+
+  A hostile or compromised anchor, or an on-path attacker against a plain-`http`
+  `WEB_AUTH_ENDPOINT`, could return an ordinary transaction (a payment, or a
+  `set_options` adding a signer) and have it blind-signed by the consumer's
+  wallet, hardware device, or KMS.
+
+  Fixed in **0.2.0**. `Sep10Client` now verifies every challenge with
+  `WebAuth.readChallengeTx` before `sign` is invoked, rejects a
+  `network_passphrase` that disagrees with the configured network, and refuses a
+  non-`https` endpoint at construction.
+
+  This is a **breaking change to a surface that was itself the vulnerability**,
+  taken under the security exception in [`STABILITY.md`](./STABILITY.md).
+  A GitHub Security Advisory is to be published per [`SECURITY.md`](./SECURITY.md).
+
+  **Migration.** `Sep10Client` now requires the anchor's identity. The smallest
+  change is to build it from the anchor's own `stellar.toml`:
+
+  ```ts
+  // before - no way to tell whose challenge you were signing
+  const client = new Sep10Client(toml.WEB_AUTH_ENDPOINT);
+
+  // after - SIGNING_KEY and NETWORK_PASSPHRASE come from the toml you already fetch
+  const toml = await discoverAnchor("anchor.example");
+  const client = Sep10Client.fromToml(toml, "anchor.example");
+  ```
+
+  Or pass them explicitly: `new Sep10Client(endpoint, { serverAccountId,
+  networkPassphrase, homeDomain, webAuthDomain })`. Anchors that publish no
+  `SIGNING_KEY` are now refused rather than trusted.
+
 ---
 
 ## [0.1.0] - 2026-05-28

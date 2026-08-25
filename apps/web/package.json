@@ -8,19 +8,21 @@
     "prebuild": "pnpm --filter \"@orbital-stellar/pulse-core...\" --filter \"@orbital-stellar/pulse-webhooks...\" run build && pnpm -w run docs:reference && pnpm -w run docs:generate-open-data",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
     "@orbital-stellar/pulse-core": "workspace:*",
     "@orbital-stellar/pulse-webhooks": "workspace:*",
     "@stellar/stellar-sdk": "^16.1.0",
     "@upstash/ratelimit": "^2.0.8",
-    "@upstash/redis": "^1.38.0",
-    "framer-motion": "^12.42.2",
+    "@upstash/redis": "^1.38.2",
+    "framer-motion": "^12.43.0",
     "geist": "^1.7.2",
     "gray-matter": "^4.0.3",
-    "marked": "^18.0.6",
-    "next": "^16.2.10",
+    "marked": "^18.0.9",
+    "next": "~16.3.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "react-markdown": "^10.0.0",
@@ -34,9 +36,12 @@
     "@types/node": "^26.1.2",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
+    "@vitest/coverage-v8": "^4.1.10",
     "autoprefixer": "^10.5.4",
     "postcss": "^8.5.25",
     "tailwindcss": "^4.3.3",
-    "typescript": "^6.0.3"
+    "typescript": "^6.0.3",
+    "vite": "^8.1.5",
+    "vitest": "^4.1.10"
   }
 }

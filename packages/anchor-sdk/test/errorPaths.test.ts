@@ -3,6 +3,7 @@ import {
   Sep1DiscoveryError,
   Sep10AuthError,
   Sep10Client,
+  type Sep10ClientOptions,
   Sep24Client,
   Sep24Error,
   discoverAnchor,
@@ -22,6 +23,22 @@ function jsonResponse(body: unknown, status = 200): Response {
 function failingTransport(message: string) {
   return vi.fn(async () => {
     throw new Error(message);
+  });
+}
+
+/**
+ * Builds a Sep10Client for the transport-level cases below. These exercise
+ * `challenge()` / `token()` directly and never sign, so the verification
+ * parameters just need to be present and well-formed - `test/sep10.test.ts`
+ * covers what they actually do.
+ */
+function sep10ClientWith(options: Partial<Sep10ClientOptions> = {}): Sep10Client {
+  return new Sep10Client("https://a.example.com/auth", {
+    serverAccountId: "GA7QYNF7SOWQ3GLR2BGMZEHXAVIRZA4KVWLTJJFC7MGXUA74P7UJVSGZ",
+    networkPassphrase: "Test SDF Network ; September 2015",
+    homeDomain: "a.example.com",
+    webAuthDomain: "a.example.com",
+    ...options,
   });
 }
 
@@ -49,6 +66,80 @@ describe("SEP-1 failure paths", () => {
     ).rejects.toThrow(/could not reach/);
   });
 
+  it("rejects an oversized toml on its declared content-length", async () => {
+    const transport = vi.fn(
+      async () =>
+        new Response(`WEB_AUTH_ENDPOINT = "https://a.example.com/auth"`, {
+          status: 200,
+          headers: { "content-length": "5000000" },
+        }),
+    );
+
+    await expect(
+      discoverAnchor("anchor.example.com", { transport, maxBodyBytes: 1000 }),
+    ).rejects.toThrow(/over the 1000-byte limit/);
+  });
+
+  it("stops reading a body that lies about its length", async () => {
+    // content-length is a claim; an endless chunked body must still be cut off
+    // rather than read until the consumer runs out of memory.
+    let chunksServed = 0;
+    const endless = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        chunksServed += 1;
+        controller.enqueue(new TextEncoder().encode("A".repeat(1024)));
+      },
+    });
+    const transport = vi.fn(async () => new Response(endless, { status: 200 }));
+
+    await expect(
+      discoverAnchor("anchor.example.com", { transport, maxBodyBytes: 4096 }),
+    ).rejects.toThrow(/exceeded the 4096-byte limit/);
+
+    // Bounded: it gave up rather than draining an infinite stream.
+    expect(chunksServed).toBeLessThan(16);
+  });
+
+  // A `transport` override is free to return something Response-shaped that has
+  // no readable `body` - undici polyfills and hand-rolled test doubles both do.
+  // `readCapped` then falls back to `response.text()`, and the cap has to hold
+  // on that path too, since the content-length check above is only a claim.
+  function bodylessResponse(text: string): Response {
+    return {
+      ok: true,
+      status: 200,
+      headers: new Headers(),
+      body: null,
+      text: async () => text,
+    } as unknown as Response;
+  }
+
+  it("caps a bodyless response on the text() fallback path", async () => {
+    const transport = vi.fn(async () => bodylessResponse("A".repeat(200)));
+
+    await expect(
+      discoverAnchor("anchor.example.com", { transport, maxBodyBytes: 100 }),
+    ).rejects.toThrow(/exceeded the 100-byte limit/);
+  });
+
+  it("reads a bodyless response that fits under the cap", async () => {
+    const transport = vi.fn(async () =>
+      bodylessResponse(`WEB_AUTH_ENDPOINT = "https://a.example.com/auth"`),
+    );
+
+    const toml = await discoverAnchor("anchor.example.com", { transport, maxBodyBytes: 100 });
+    expect(toml.WEB_AUTH_ENDPOINT).toBe("https://a.example.com/auth");
+  });
+
+  it("reads a normally sized toml unchanged", async () => {
+    const transport = vi.fn(
+      async () => new Response(`WEB_AUTH_ENDPOINT = "https://a.example.com/auth"`, { status: 200 }),
+    );
+
+    const toml = await discoverAnchor("anchor.example.com", { transport });
+    expect(toml.WEB_AUTH_ENDPOINT).toBe("https://a.example.com/auth");
+  });
+
   it("ignores unquoted, commented and non-string values", () => {
     const toml = parseStellarToml(
       [
@@ -69,28 +160,28 @@ describe("SEP-1 failure paths", () => {
 describe("SEP-10 failure paths", () => {
   it("reports a non-2xx challenge response", async () => {
     const transport = vi.fn(async () => new Response("no", { status: 400 }));
-    const client = new Sep10Client("https://a.example.com/auth", { transport });
+    const client = sep10ClientWith({ transport });
 
     await expect(client.challenge({ account: "GABC" })).rejects.toThrow(/returned 400/);
   });
 
   it("rejects a challenge body with no transaction", async () => {
     const transport = vi.fn(async () => jsonResponse({ nope: true }));
-    const client = new Sep10Client("https://a.example.com/auth", { transport });
+    const client = sep10ClientWith({ transport });
 
     await expect(client.challenge({ account: "GABC" })).rejects.toBeInstanceOf(Sep10AuthError);
   });
 
   it("surfaces the anchor's error message when the token exchange is rejected", async () => {
     const transport = vi.fn(async () => jsonResponse({ error: "invalid signature" }, 401));
-    const client = new Sep10Client("https://a.example.com/auth", { transport });
+    const client = sep10ClientWith({ transport });
 
     await expect(client.token("signed")).rejects.toThrow(/invalid signature/);
   });
 
   it("rejects a token response with no token", async () => {
     const transport = vi.fn(async () => jsonResponse({ jwt: "wrong-field" }));
-    const client = new Sep10Client("https://a.example.com/auth", { transport });
+    const client = sep10ClientWith({ transport });
 
     await expect(client.token("signed")).rejects.toThrow(/did not contain a token/);
   });
@@ -101,7 +192,7 @@ describe("SEP-10 failure paths", () => {
       calls.push(url);
       return jsonResponse({ transaction: "AAAA" });
     });
-    const client = new Sep10Client("https://a.example.com/auth", { transport });
+    const client = sep10ClientWith({ transport });
 
     await client.challenge({ account: "GABC", memo: "12345", clientDomain: "app.example.com" });
 
@@ -110,9 +201,7 @@ describe("SEP-10 failure paths", () => {
   });
 
   it("wraps a transport failure", async () => {
-    const client = new Sep10Client("https://a.example.com/auth", {
-      transport: failingTransport("ECONNRESET"),
-    });
+    const client = sep10ClientWith({ transport: failingTransport("ECONNRESET") });
 
     await expect(client.challenge({ account: "GABC" })).rejects.toThrow(/request to .* failed/);
   });
@@ -199,10 +288,7 @@ describe("request timeouts", () => {
   });
 
   it("aborts a stalled SEP-10 challenge", async () => {
-    const client = new Sep10Client("https://a.example.com/auth", {
-      transport: stallingTransport(),
-      timeoutMs: 5,
-    });
+    const client = sep10ClientWith({ transport: stallingTransport(), timeoutMs: 5 });
     await expect(client.challenge({ account: "GABC" })).rejects.toThrow(/request to .* failed/);
   });
 

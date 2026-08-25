@@ -40,7 +40,17 @@ export async function loadConfig(configPath?: string): Promise<{
       // For TypeScript configs, we need to use dynamic import
       // Convert to file URL for proper module loading
       const fileUrl = pathToFileURL(resolvedPath).href;
-      const module = await import(fileUrl);
+      // The specifier is a user's absolute path, known only at runtime, so a
+      // bundler must not try to follow it.
+      //
+      // NOTE: this alone does not silence the "whole project was traced"
+      // warning in apps/web. The remaining cause is structural - this CLI-only
+      // module is reachable from the package's main entry, so anything that
+      // imports abi-registry (apps/web, via pulse-core) drags its filesystem
+      // operations into the serverless bundle. The real fix is to move config
+      // loading behind its own subpath export and drop it from index.ts, which
+      // is a public-API change and deliberately not made here.
+      const module = await import(/* turbopackIgnore: true */ /* webpackIgnore: true */ fileUrl);
       config = module.default || module;
     } else {
       // For JSON configs
@@ -97,7 +107,9 @@ function resolveConfigPath(configPath?: string): string {
   ];
 
   for (const path of possiblePaths) {
-    const fullPath = resolve(path);
+    // Resolved against the CLI's working directory, which a bundler cannot
+    // know - see the note on the dynamic import above.
+    const fullPath = resolve(/* turbopackIgnore: true */ path);
     if (existsSync(fullPath)) {
       return fullPath;
     }

@@ -2,11 +2,12 @@ import type { StellarAmount } from "./amount.js";
 import type { AccountAddress, MuxedAddress, ContractAddress } from "./address.js";
 import type { ClaimPredicate } from "./claimPredicate.js";
 
-export { SorobanRpcClient } from "./SorobanRpcClient.js";
+export { SorobanRpcClient, CAP_67_EVENT_TOPICS } from "./SorobanRpcClient.js";
 export type {
   JsonRpcFailure,
   JsonRpcResponse,
   JsonRpcSuccess,
+  PollUnifiedEventsOptions,
   SorobanEventFilter,
   SorobanEventXdrFormat,
   SorobanGetEventsParams,
@@ -41,8 +42,15 @@ export {
   toMuxedAddress,
   toContractAddress,
 } from "./address.js";
-export { EngineAlreadyStartedError, HorizonStreamError } from "./errors.js";
+export {
+  EngineAlreadyStartedError,
+  HorizonStreamError,
+  InvalidIngestionModeError,
+} from "./errors.js";
 export { StrKey } from "@stellar/stellar-sdk";
+// Re-exported so @orbital-stellar/anchor-sdk can validate SEP-10 challenges
+// without taking its own direct dependency on @stellar/stellar-sdk.
+export { WebAuth } from "@stellar/stellar-sdk";
 export { CursorStore } from "./CursorStore.js";
 export type { CursorStoreLike } from "./CursorStore.js";
 import type { CursorStoreLike } from "./CursorStore.js";
@@ -69,6 +77,8 @@ export {
 } from "./secretPolicy.js";
 export type { SecretPolicyContext, AssertRestrictedSecretOptions } from "./secretPolicy.js";
 export { isEventType } from "./eventTypeGuard.js";
+export { deriveDedupeKey, DedupeWindow, InvalidDedupeWindowCapacityError } from "./dedupe.js";
+export type { DedupeEventRef } from "./dedupe.js";
 export * from "./claimPredicate.js";
 export * from "./raw-horizon.js";
 export * from "./raw-soroban.js";
@@ -109,9 +119,13 @@ export type EngineStatus = {
   lastEventAt: string | null;
   reconnectAttempt: number;
   pausedSources?: ("horizon" | "soroban")[];
+  /** The configured value of `CoreConfig.ingestion` (default `"horizon"`). Routing/auto-resolution behavior itself is a separate concern - see `CoreConfig.ingestion`'s doc. */
+  ingestion: IngestionMode;
   sources: {
     horizon: SourceStatus;
     soroban: SourceStatus;
+    /** The CAP-67 unified event poller (see `SorobanConfig.unifiedEvents`). */
+    unified: SourceStatus;
   };
   /**
    * Present only when the engine was constructed with an array of network
@@ -119,7 +133,9 @@ export type EngineStatus = {
    * breakdown of `sources`. `sources` above is an aggregate across all
    * configured networks for consumers that don't need the per-network detail.
    */
-  networks?: Partial<Record<Network, { horizon: SourceStatus; soroban: SourceStatus }>>;
+  networks?: Partial<
+    Record<Network, { horizon: SourceStatus; soroban: SourceStatus; unified: SourceStatus }>
+  >;
 };
 
 /** Passphrase strings for each supported Stellar network. */
@@ -134,6 +150,20 @@ export type PaymentEventType = "payment.received" | "payment.sent" | "payment.se
 export type AccountOptionsEventType = "account.options_changed";
 export type LiquidityPoolEventType = "lp.deposited" | "lp.withdrawn";
 export type TrustAuthEventType = "trustline.authorized" | "trustline.deauthorized";
+/**
+ * Event type for a CAP-67 unified-stream `clawback` event. Has no
+ * Horizon-derived equivalent in this package's current taxonomy, unlike
+ * `mint`/`burn`, which map onto the existing `payment.received`/`payment.sent`
+ * shape.
+ */
+export type AssetClawbackEventType = "asset.clawback";
+/**
+ * Event type for a CAP-67 unified-stream `fee` event. New in CAP-67 - no
+ * Horizon-derived equivalent exists in this package's current taxonomy
+ * (fees were previously only derivable implicitly from transaction
+ * metadata, not modeled as a discrete event).
+ */
+export type FeeIncurredEventType = "fee.incurred";
 /** Event type for account creation. */
 export type AccountEventType = "account.created";
 export type ClaimableCreatedEventType = "claimable.created";
@@ -204,6 +234,12 @@ export type PaymentEvent = {
   asset: string;
   /** ISO 8601 timestamp of the payment. */
   timestamp: string;
+  /**
+   * The originating transaction's memo, when present. Only ever set by the
+   * CAP-67 unified transport today (from a transfer event's map-based data
+   * form) - Horizon-sourced payments don't populate this.
+   */
+  memo?: string;
   /** Lazy, cached `Date` derived from `event.timestamp`. Non-enumerable; does not appear in JSON.stringify output. */
   readonly timestampDate: Date;
   /** The original raw record from the Horizon API. */
@@ -336,7 +372,7 @@ export type TrustAuthEvent = {
   timestamp: string;
   /** Lazy, cached `Date` derived from `event.timestamp`. Non-enumerable; does not appear in JSON.stringify output. */
   readonly timestampDate: Date;
-  /** The original Horizon operation type ("allow_trust" or "set_trust_line_flags"). */
+  /** The originating operation type: "allow_trust" or "set_trust_line_flags" from Horizon, or "set_authorized" from the CAP-67 unified stream. */
   operation: string;
   raw?: RawHorizonAllowTrust | RawHorizonSetTrustLineFlags;
 };
@@ -541,6 +577,49 @@ export type AnchorFlowEvent = {
 };
 
 /**
+ * A normalized CAP-67 unified-stream clawback event. Unlike `mint`/`burn`
+ * (which normalize onto the existing `payment.received`/`payment.sent`
+ * shape for parity with Horizon), clawback has no Horizon-derived
+ * equivalent in this package, so it gets its own taxonomy entry.
+ */
+export type AssetClawbackEvent = {
+  /** The type of clawback event. */
+  type: AssetClawbackEventType;
+  /** The account or muxed account the asset was clawed back from. */
+  from: AccountAddress | MuxedAddress;
+  /** The asset clawed back (e.g. "USDC:GISSUER"). */
+  asset: string;
+  /** The clawed-back amount. */
+  amount: StellarAmount;
+  /** ISO 8601 timestamp of the clawback. */
+  timestamp: string;
+  /** Lazy, cached `Date` derived from `event.timestamp`. Non-enumerable; does not appear in JSON.stringify output. */
+  readonly timestampDate: Date;
+  /** The original raw record from the unified Soroban event stream. */
+  raw?: RawSorobanEvent;
+};
+
+/**
+ * A normalized CAP-67 unified-stream `fee` event: a classic transaction's
+ * network fee, now emitted as a discrete event. New in CAP-67 - no
+ * Horizon-derived equivalent exists in this package's current taxonomy.
+ */
+export type FeeIncurredEvent = {
+  /** The type of fee event. */
+  type: FeeIncurredEventType;
+  /** The account or muxed account that paid the fee. Contract payers are rejected during normalization. */
+  from: AccountAddress | MuxedAddress;
+  /** The fee amount (always native XLM). */
+  amount: StellarAmount;
+  /** ISO 8601 timestamp of the fee event. */
+  timestamp: string;
+  /** Lazy, cached `Date` derived from `event.timestamp`. Non-enumerable; does not appear in JSON.stringify output. */
+  readonly timestampDate: Date;
+  /** The original raw record from the unified Soroban event stream. */
+  raw?: RawSorobanEvent;
+};
+
+/**
  * A union of all normalized events supported by pulse-core.
  *
  * This is the broad catch-all type. For precise type narrowing and better
@@ -574,6 +653,8 @@ export type NormalizedEvent = (
   | LiquidityPoolDepositEvent
   | LiquidityPoolWithdrawEvent
   | TrustAuthEvent
+  | AssetClawbackEvent
+  | FeeIncurredEvent
   | ContractEvent
   | AnchorTransactionEvent
   | AnchorFlowEvent
@@ -604,7 +685,7 @@ export type WatcherNotification = {
   /** The cursor position at the time of failure (for "engine.reconnecting" events). */
   cursor?: string;
   /** The source that triggered this notification. */
-  source?: "horizon" | "soroban";
+  source?: "horizon" | "soroban" | "unified";
   /** ISO 8601 timestamp of when this notification was emitted. */
   emittedAt: string;
   /** The cursor value that was expired or lost, if applicable. */
@@ -667,6 +748,15 @@ export type SorobanConfig = {
    * Must be an integer from 1 through 10,000. Defaults to 100.
    */
   pageLimit?: number;
+  /**
+   * Opt into the CAP-67 unified event poller (`SorobanRpcClient.pollUnifiedEvents`) -
+   * a first-class transport, started/stopped alongside Horizon SSE and the
+   * contract-filter `SorobanSubscriber`, that polls the same RPC endpoint for
+   * classic-asset `transfer`/`mint`/`burn`/`clawback` events. Off by default.
+   * Decoding, normalizing, and dispatching those events to watchers is not
+   * yet wired - only the transport's start/stop/status/reconnect lifecycle is.
+   */
+  unifiedEvents?: boolean;
 };
 
 /**
@@ -715,7 +805,72 @@ export type CoreConfig = {
   abiRegistry?: AbiRegistryClientLike | false;
   /** Soroban RPC configuration. Ignored when `network` is an array - set `soroban` per source instead. */
   soroban?: SorobanConfig;
+  /**
+   * Which event transport to prefer: `"horizon"` (default) preserves
+   * pre-Wave-1.6 behavior exactly - zero change until a consumer opts in.
+   * `"unified"` prefers the CAP-67 unified stream where one exists.
+   * `"auto"` picks between the two based on what the configured Soroban RPC
+   * supports. Throws {@link InvalidIngestionModeError} for any other value.
+   *
+   * This is config surface only - selecting a mode here doesn't yet change
+   * which transport actually delivers which events; that routing behavior
+   * is separate, forthcoming work.
+   */
+  ingestion?: IngestionMode;
 };
+
+/** Valid values for {@link CoreConfig.ingestion}. */
+export type IngestionMode = "unified" | "horizon" | "auto";
+
+/**
+ * The event families this package's `NormalizedEvent` taxonomy is grouped
+ * into for transport-routing purposes (see {@link resolveFamilyTransport}).
+ * Every family corresponds to one or more Horizon operation types; `payment`
+ * and `trustlineAuth` are the only ones with a CAP-67 unified equivalent
+ * today (transfer/mint/burn/clawback, and set_authorized, respectively) -
+ * every other family has no unified equivalent per the CAP-67 mapping design
+ * doc (`docs/design/cap67-mapping.md`) and stays Horizon-only regardless of
+ * ingestion mode.
+ */
+export type EventFamily =
+  | "payment"
+  | "trustlineAuth"
+  | "trustlineLimit"
+  | "accountCreated"
+  | "accountOptions"
+  | "accountMerge"
+  | "offer"
+  | "bumpSequence"
+  | "manageData"
+  | "claimableBalance"
+  | "liquidityPool";
+
+/** Event families with a CAP-67 unified-stream equivalent per the mapping design doc. */
+const UNIFIED_EQUIVALENT_FAMILIES: ReadonlySet<EventFamily> = new Set<EventFamily>([
+  "payment",
+  "trustlineAuth",
+]);
+
+/**
+ * Decides which transport should serve a given event family under a given
+ * effective mode (`"unified"` or `"horizon"` - resolving what mode is
+ * actually in effect, e.g. for an `"auto"`-style setting, is left to the
+ * caller). Pure and total: safe to call for every family without touching
+ * any engine state.
+ *
+ * This is the routing *decision* only. A family resolving to `"unified"`
+ * here reflects the CAP-67 mapping design doc's target architecture; whether
+ * an `EventEngine` actually stops delivering that family via Horizon and
+ * starts delivering it via the unified stream additionally depends on a
+ * working decoder/normalizer existing for it.
+ */
+export function resolveFamilyTransport(
+  family: EventFamily,
+  effectiveMode: "unified" | "horizon",
+): "unified" | "horizon" {
+  if (effectiveMode === "horizon") return "horizon";
+  return UNIFIED_EQUIVALENT_FAMILIES.has(family) ? "unified" : "horizon";
+}
 
 // Error class for invalid network validation
 export class UnknownNetworkError extends Error {

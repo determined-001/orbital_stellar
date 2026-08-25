@@ -47,6 +47,7 @@ flowchart LR
   subgraph Stellar["Stellar network"]
     Horizon["Horizon REST + SSE"]
     RPC["Stellar RPC<br/>Soroban events"]
+    Unified["Stellar RPC getEvents<br/>CAP-67 unified stream<br/>🛠️ Wave 1.6"]
   end
 
   subgraph Subscribe["Subscription plane<br/>@orbital-stellar/pulse-core"]
@@ -67,6 +68,7 @@ flowchart LR
 
   Horizon --> Engine
   RPC --> Engine
+  Unified -.->|"see §4.1"| Engine
   Engine --> Cursor
   Engine --> Normalize --> Watcher
   Watcher --> Sign --> YourEndpoint["Your HTTPS endpoint"]
@@ -212,6 +214,74 @@ The full taxonomy is documented in
 [`packages/pulse-core/README.md`](../packages/pulse-core/README.md#event-taxonomy)
 and the per-event TypeScript shapes live in
 [`packages/pulse-core/src/index.ts`](../packages/pulse-core/src/index.ts).
+
+---
+
+## 4.1 Unified event ingestion (CAP-67) 🛠️
+
+Protocol 23's CAP-67 lets classic asset movements (transfer, mint, burn,
+clawback, `set_authorized`) emit Soroban-format events in a single stream,
+fetched the same way contract events already are - `SorobanRpcClient.getEvents()`.
+This is a third transport alongside Horizon SSE and the Soroban contract-event
+subscriber, tracked as Wave 1.6 in [`ROADMAP.md`](../ROADMAP.md) and designed
+in [`docs/design/cap67-mapping.md`](./design/cap67-mapping.md) (see also
+[`docs/CAP-67-Event-Mapping.md`](./CAP-67-Event-Mapping.md) for the taxonomy
+rationale). As of this writing the pieces below exist as independent,
+tested building blocks; wiring them into `EventEngine`'s live delivery path -
+so a family routed to "unified" actually stops arriving via Horizon and
+starts arriving via the unified stream instead - is still forthcoming.
+
+**Ingestion mode.** `CoreConfig.ingestion?: "unified" | "horizon" | "auto"`
+(default `"horizon"`) selects a transport preference. `"horizon"` is the
+default specifically so that existing consumers see zero behavior change
+until they opt in. `"auto"` is meant to prefer `"unified"` once the
+configured Soroban RPC is confirmed CAP-67-capable, falling back to
+`"horizon"` otherwise. The flag is validated at construction (an unknown
+value throws) and reported back via `engine.status().ingestion`.
+
+**Routing decision.** Not every event family has a CAP-67 equivalent - per
+the mapping design doc, only classic payments (transfer/mint/burn) and
+trustline authorization (`set_authorized`) do. Everything else (account
+options, account creation, account merges, trustline limit changes, offers,
+bump-sequence, `manage_data`, claimable balances, liquidity pools) has no
+unified-stream equivalent and stays Horizon-only under every mode.
+`resolveFamilyTransport(family, effectiveMode)` is the pure function
+encoding this:
+
+| Event family | Under `"horizon"` mode | Under `"unified"` mode |
+|---|---|---|
+| `payment` (transfer/mint/burn) | Horizon | Unified |
+| `trustlineAuth` (`set_authorized`) | Horizon | Unified |
+| `trustlineLimit`, `accountCreated`, `accountOptions`, `accountMerge`, `offer`, `bumpSequence`, `manageData`, `claimableBalance`, `liquidityPool` | Horizon | Horizon |
+
+`"auto"` mode is designed to resolve to one of the two columns above (never
+a third behavior) based on the CAP-67-capability probe described above -
+that probe isn't implemented yet, so `"auto"` currently behaves like
+`"horizon"` in practice.
+
+**Dedupe window.** During a routing transition - a mode switch, or `"auto"`
+falling back and recovering - both transports can briefly observe the same
+on-chain movement, which would otherwise reach a `Watcher` twice.
+`deriveDedupeKey({ txHash, index })` derives one key per movement regardless
+of which transport observed it (a Horizon operation and a CAP-67 event both
+carry a transaction hash; `index` is the operation's position in the tx, or
+the unified event's ordinal). `DedupeWindow` holds a bounded set of
+recently-seen keys ahead of `Watcher` fan-out - `seenBefore(key)` returns
+`true` for a duplicate, and the oldest key is evicted once the window is at
+capacity, so memory never grows unbounded no matter how long the engine runs.
+
+```mermaid
+flowchart LR
+  HorizonOp["Horizon operation"] --> Route
+  UnifiedEvt["CAP-67 unified event"] --> Route
+  Route{"resolveFamilyTransport<br/>(family, mode)"} --> Normalize["normalize()"]
+  Normalize --> Dedupe{"DedupeWindow<br/>.seenBefore(txHash:index)"}
+  Dedupe -->|first time| Watcher["Watcher fan-out"]
+  Dedupe -->|duplicate| Drop(["dropped"])
+```
+
+A COOKBOOK recipe for migrating an existing Horizon-only deployment onto
+unified ingestion, once live routing lands, is planned but not yet written.
 
 ---
 
@@ -489,6 +559,8 @@ orbital_stellar/
 - [`CHANGELOG.md`](../CHANGELOG.md) - Per-release notes
 - [`docs/semantic-layer.md`](./semantic-layer.md) - Semantic taxonomy, labels, precedence, honesty rule
 - [`docs/proposal.md`](./proposal.md) - SCF grant proposal
+- [`docs/design/cap67-mapping.md`](./design/cap67-mapping.md) - CAP-67 → `NormalizedEvent` mapping design doc (§4.1)
+- [`docs/CAP-67-Event-Mapping.md`](./CAP-67-Event-Mapping.md) - CAP-67 event taxonomy rationale (§4.1)
 - Per-package READMEs:
   [`pulse-core`](../packages/pulse-core/README.md),
   [`pulse-webhooks`](../packages/pulse-webhooks/README.md),

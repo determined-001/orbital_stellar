@@ -12,8 +12,8 @@ verify.
 
 ```bash
 # Clone and install
-git clone https://github.com/determined-001/orbital-anchor-starter.git
-cd orbital-anchor-starter
+git clone https://github.com/determined-001/orbital_stellar.git
+cd orbital_stellar/examples/anchor-starter
 pnpm install
 pnpm build
 

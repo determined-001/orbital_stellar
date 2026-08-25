@@ -2,7 +2,13 @@ export { AbiRegistryClient } from "./AbiRegistryClient.js";
 export { scvalToJs, jsToScval } from "./scval.js";
 export { RegistryPublisher } from "./RegistryPublisher.js";
 
-export type { AbiRegistryClientConfig, XdrContractSpec } from "./types.js";
+export type {
+  AbiRegistryClientConfig,
+  XdrContractSpec,
+  AttestationDocument,
+  AttestationValidationResult,
+} from "./types.js";
+export { validateAttestationDocument } from "./types.js";
 
 export type {
   ContractSpec,
@@ -115,3 +121,34 @@ export type {
   ResolvedLabel,
   EntityType,
 } from "./LabelResolver.js";
+
+export {
+  validateTaxonomyEntry,
+  findTaxonomyConflicts,
+  TAXONOMY_NAMESPACE_ROOTS,
+  RESERVED_TAXONOMY_NAMESPACE_ROOTS,
+  TAXONOMY_NAME_RE,
+} from "./taxonomy.js";
+export type {
+  TaxonomyEntry,
+  TaxonomyMatch,
+  TaxonomyScope,
+  TaxonomyProvenance,
+  TaxonomyConflict,
+  TaxonomyNamespaceRoot,
+  TaxonomyNetwork,
+  TopicMatcher,
+  ParameterMapping,
+} from "./taxonomy.js";
+
+export {
+  signAttestation,
+  verifyAttestation,
+  canonicalizeAttestation,
+  AttestationSigningError,
+} from "./attestation.js";
+export type {
+  AttestationEnvelope,
+  AttestationVerdict,
+  VerifyAttestationOptions,
+} from "./attestation.js";

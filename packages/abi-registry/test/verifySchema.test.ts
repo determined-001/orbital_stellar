@@ -519,6 +519,29 @@ describe("verifySchema", () => {
       }
     });
 
+    it("returns unverifiable for the SDK's SAC deserialization failure", async () => {
+      // What a live mainnet USDC lookup actually throws: SACs use
+      // ContractExecutable::StellarAsset, so there is no ContractCode entry and
+      // the SDK fails inside XDR deserialization instead of saying "not found".
+      installMockServer(
+        vi
+          .fn()
+          .mockRejectedValue(
+            new TypeError("Cannot destructure property 'length' of 'value' as it is undefined."),
+          ),
+      );
+
+      const verdict = await verifySchema(CONTRACT_ID, getDemoEmitterSpec(), {
+        rpcUrl: "https://mainnet.sorobanrpc.com",
+        network: "mainnet",
+      });
+
+      expect(verdict.status).toBe("unverifiable");
+      if (verdict.status === "unverifiable") {
+        expect(verdict.reason).toContain("embedded");
+      }
+    });
+
     it("includes helpful reason message", async () => {
       const emptyWasm = Buffer.from([0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00]);
       installMockServer(vi.fn().mockResolvedValue(emptyWasm));

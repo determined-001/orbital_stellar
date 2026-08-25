@@ -2,6 +2,8 @@
 
 import Link from "next/link";
 
+import { GET_STARTED_HREF, NAV_LINKS } from "@/lib/links";
+
 export default function Nav() {
   return (
     <nav
@@ -37,15 +39,16 @@ export default function Nav() {
             letterSpacing: "-0.01em",
           }}
         >
-          Orbit Stellar
+          Orbital
         </span>
 
         {/* Center links - hidden on mobile */}
         <div className="hidden md:flex" style={{ gap: "32px", alignItems: "center" }}>
-          {["Docs", "SDKs", "Changelog", "GitHub"].map((label) => (
+          {NAV_LINKS.map(({ label, href, external }) => (
             <Link
               key={label}
-              href="#"
+              href={href}
+              {...(external ? { target: "_blank", rel: "noopener noreferrer" } : {})}
               style={{
                 fontSize: "14px",
                 color: "var(--muted2)",
@@ -63,7 +66,7 @@ export default function Nav() {
 
         {/* CTA */}
         <Link
-          href="#"
+          href={GET_STARTED_HREF}
           style={{
             background: "var(--accent)",
             color: "#000",

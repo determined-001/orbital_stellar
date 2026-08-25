@@ -214,6 +214,28 @@ const classicTaxonomy = [
     description: "Key-value pair removed from account storage.",
     source: "horizon",
   },
+  // CAP-67 unified-stream events. These arrive on the Stellar RPC unified
+  // event stream rather than Horizon, so they carry `source: "soroban-rpc"`
+  // even though the underlying movements are classic.
+  {
+    id: "asset.clawback",
+    name: "Asset Clawback",
+    type: "classic",
+    category: "assets",
+    eventType: "asset.clawback",
+    description: "Issuer clawed back a clawback-enabled asset from an account.",
+    source: "soroban-rpc",
+  },
+  {
+    id: "fee.incurred",
+    name: "Fee Incurred",
+    type: "classic",
+    category: "fees",
+    eventType: "fee.incurred",
+    description:
+      "Network fee charged for a classic transaction, emitted as a discrete event by CAP-67. No Horizon-derived equivalent exists.",
+    source: "soroban-rpc",
+  },
   {
     id: "contract.invoked",
     name: "Soroban Contract Invoked",

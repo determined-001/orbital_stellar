@@ -1,18 +1,28 @@
 'use client'
 
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
+import Link from 'next/link'
+import type { SearchResult } from '@/app/api/docs/search/route'
 
-type Message = {
-  id: string
-  role: 'user' | 'assistant'
-  content: string
-}
+/**
+ * Docs search sidebar.
+ *
+ * This was an "AI Assistant" that greeted visitors with "Ask me anything about
+ * the SDK, webhooks, or real-time events", waited a hardcoded 1200ms to
+ * simulate thinking, and returned a canned template string. There was no model
+ * behind it and no "coming soon" label, so a developer evaluating the SDK asked
+ * a real question and got a confident non-answer.
+ *
+ * It now answers from the docs corpus over `GET /api/docs/search`, the same
+ * endpoint `SearchDialog` uses. Every line it shows is a real section with a
+ * real link. When nothing matches it says so rather than inventing prose.
+ */
 
 const SUGGESTED = [
-  'How do I register a webhook?',
-  'What events does pulse-core emit?',
-  'How to verify webhook signatures?',
-  'Getting started with pulse-notify',
+  'register a webhook',
+  'verify webhook signatures',
+  'real-time events',
+  'cursor persistence',
 ]
 
 type Props = {
@@ -21,11 +31,12 @@ type Props = {
 }
 
 export default function AIPanel({ open, onClose }: Props) {
-  const [messages, setMessages] = useState<Message[]>([])
-  const [input, setInput] = useState('')
-  const [thinking, setThinking] = useState(false)
-  const bottomRef = useRef<HTMLDivElement>(null)
+  const [query, setQuery] = useState('')
+  const [results, setResults] = useState<SearchResult[]>([])
+  const [loading, setLoading] = useState(false)
+  const [searched, setSearched] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
     if (open) {
@@ -33,27 +44,34 @@ export default function AIPanel({ open, onClose }: Props) {
     }
   }, [open])
 
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages, thinking])
-
-  const sendMessage = async (text: string) => {
-    if (!text.trim() || thinking) return
-    const userMsg: Message = { id: Date.now().toString(), role: 'user', content: text }
-    setMessages((m) => [...m, userMsg])
-    setInput('')
-    setThinking(true)
-
-    // Placeholder: replace with real AI API call
-    await new Promise((r) => setTimeout(r, 1200))
-    const reply: Message = {
-      id: (Date.now() + 1).toString(),
-      role: 'assistant',
-      content: `I can help with that! Check out the relevant documentation section for more details. If you have a specific question about **${text.toLowerCase()}**, feel free to ask and I'll point you to the right place.`,
+  const runSearch = useCallback(async (text: string) => {
+    const trimmed = text.trim()
+    if (trimmed.length < 2) {
+      setResults([])
+      setSearched(false)
+      return
     }
-    setMessages((m) => [...m, reply])
-    setThinking(false)
-  }
+
+    setLoading(true)
+    try {
+      const res = await fetch(`/api/docs/search?q=${encodeURIComponent(trimmed)}`)
+      setResults(res.ok ? ((await res.json()) as SearchResult[]) : [])
+    } catch {
+      setResults([])
+    } finally {
+      setLoading(false)
+      setSearched(true)
+    }
+  }, [])
+
+  // Debounced, matching SearchDialog - one request per pause, not per keystroke.
+  useEffect(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    debounceRef.current = setTimeout(() => void runSearch(query), 200)
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current)
+    }
+  }, [query, runSearch])
 
   return (
     <>
@@ -75,120 +93,90 @@ export default function AIPanel({ open, onClose }: Props) {
         <div className="flex items-center justify-between px-4 py-3.5 border-b border-white/[0.08] flex-shrink-0">
           <div className="flex items-center gap-2">
             <div className="w-5 h-5 rounded bg-accent/20 flex items-center justify-center">
-              <SparklesIcon />
+              <SearchIcon />
             </div>
-            <span className="text-sm font-semibold text-white">AI Assistant</span>
+            <span className="text-sm font-semibold text-white">Search the docs</span>
           </div>
-          <div className="flex items-center gap-2">
-            {messages.length > 0 && (
-              <button
-                onClick={() => setMessages([])}
-                className="text-xs text-white/30 hover:text-white/60 transition-colors"
-              >
-                Clear
-              </button>
-            )}
-            <button
-              onClick={onClose}
-              className="p-1.5 rounded-md text-white/40 hover:text-white/70 hover:bg-white/[0.06] transition-colors"
-            >
-              <XIcon />
-            </button>
-          </div>
-        </div>
-
-        {/* Messages */}
-        <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
-          {messages.length === 0 ? (
-            <div className="space-y-4">
-              <div className="flex items-start gap-2.5">
-                <div className="w-6 h-6 rounded-full bg-accent/20 flex items-center justify-center flex-shrink-0 mt-0.5">
-                  <SparklesIcon />
-                </div>
-                <div className="bg-white/[0.05] rounded-xl rounded-tl-sm px-3 py-2.5 text-sm text-white/80 leading-relaxed">
-                  Hi! I&apos;m your Orbital Stellar docs assistant. Ask me anything about the SDK, webhooks, or real-time events.
-                </div>
-              </div>
-
-              {/* Suggested questions */}
-              <div className="space-y-1.5 pt-1">
-                <p className="text-xs text-white/25 mb-2">Suggested questions</p>
-                {SUGGESTED.map((q) => (
-                  <button
-                    key={q}
-                    onClick={() => sendMessage(q)}
-                    className="w-full text-left text-xs px-3 py-2 rounded-lg border border-white/[0.08] text-white/50 hover:text-white/80 hover:border-white/20 hover:bg-white/[0.04] transition-all duration-100"
-                  >
-                    {q}
-                  </button>
-                ))}
-              </div>
-            </div>
-          ) : (
-            messages.map((msg) => (
-              <div key={msg.id} className={`flex items-start gap-2.5 ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}>
-                <div className={`w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5 text-xs font-semibold ${
-                  msg.role === 'user'
-                    ? 'bg-accent/20 text-accent'
-                    : 'bg-white/10 text-white/50'
-                }`}>
-                  {msg.role === 'user' ? 'U' : <SparklesIcon />}
-                </div>
-                <div className={`max-w-[220px] rounded-xl px-3 py-2.5 text-sm leading-relaxed ${
-                  msg.role === 'user'
-                    ? 'bg-accent/10 text-accent rounded-tr-sm'
-                    : 'bg-white/[0.05] text-white/80 rounded-tl-sm'
-                }`}>
-                  {msg.content}
-                </div>
-              </div>
-            ))
-          )}
-
-          {/* Thinking indicator */}
-          {thinking && (
-            <div className="flex items-start gap-2.5">
-              <div className="w-6 h-6 rounded-full bg-white/10 flex items-center justify-center flex-shrink-0 mt-0.5">
-                <SparklesIcon />
-              </div>
-              <div className="bg-white/[0.05] rounded-xl rounded-tl-sm px-4 py-3 flex items-center gap-1.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-white/40 animate-bounce [animation-delay:0ms]" />
-                <span className="w-1.5 h-1.5 rounded-full bg-white/40 animate-bounce [animation-delay:150ms]" />
-                <span className="w-1.5 h-1.5 rounded-full bg-white/40 animate-bounce [animation-delay:300ms]" />
-              </div>
-            </div>
-          )}
-          <div ref={bottomRef} />
+          <button
+            onClick={onClose}
+            className="p-1.5 rounded-md text-white/40 hover:text-white/70 hover:bg-white/[0.06] transition-colors"
+          >
+            <XIcon />
+          </button>
         </div>
 
         {/* Input */}
-        <div className="flex-shrink-0 px-3 py-3 border-t border-white/[0.08]">
+        <div className="flex-shrink-0 px-3 py-3 border-b border-white/[0.08]">
           <form
             onSubmit={(e) => {
               e.preventDefault()
-              sendMessage(input)
+              void runSearch(query)
             }}
             className="flex items-center gap-2 bg-white/[0.04] border border-white/[0.08] rounded-xl px-3 py-2.5 focus-within:border-white/20 transition-colors"
           >
             <input
               ref={inputRef}
               type="text"
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              placeholder="Ask a question..."
-              disabled={thinking}
-              className="flex-1 bg-transparent text-sm text-white placeholder-white/25 outline-none disabled:opacity-50"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search guides and API reference..."
+              className="flex-1 bg-transparent text-sm text-white placeholder-white/25 outline-none"
             />
-            <button
-              type="submit"
-              disabled={!input.trim() || thinking}
-              className="flex-shrink-0 w-7 h-7 rounded-lg bg-accent flex items-center justify-center text-bg transition-opacity disabled:opacity-30"
-            >
-              <SendIcon />
-            </button>
           </form>
-          <p className="text-[10px] text-white/15 text-center mt-2">
-            AI can make mistakes. Verify important info.
+        </div>
+
+        {/* Results */}
+        <div className="flex-1 overflow-y-auto px-3 py-3 space-y-1.5">
+          {query.trim().length < 2 ? (
+            <>
+              <p className="text-xs text-white/25 px-1 mb-2">Try searching for</p>
+              {SUGGESTED.map((q) => (
+                <button
+                  key={q}
+                  onClick={() => setQuery(q)}
+                  className="w-full text-left text-xs px-3 py-2 rounded-lg border border-white/[0.08] text-white/50 hover:text-white/80 hover:border-white/20 hover:bg-white/[0.04] transition-all duration-100"
+                >
+                  {q}
+                </button>
+              ))}
+            </>
+          ) : loading ? (
+            <p className="text-xs text-white/30 px-1">Searching…</p>
+          ) : results.length === 0 ? (
+            searched && (
+              <p className="text-xs text-white/40 px-1 leading-relaxed">
+                No docs match “{query.trim()}”. Try a different term, or{' '}
+                <Link href="/reference" className="text-accent hover:underline">
+                  browse the API reference
+                </Link>
+                .
+              </p>
+            )
+          ) : (
+            results.map((result) => (
+              <Link
+                key={result.href}
+                href={result.href}
+                onClick={onClose}
+                className="block px-3 py-2.5 rounded-lg border border-white/[0.06] hover:border-white/20 hover:bg-white/[0.04] transition-all duration-100"
+              >
+                <p className="text-[10px] uppercase tracking-wider text-white/25 mb-0.5">
+                  {result.section}
+                </p>
+                <p className="text-sm text-white/85 font-medium">{result.title}</p>
+                {result.snippet && (
+                  <p className="text-xs text-white/40 mt-1 leading-relaxed line-clamp-3">
+                    {result.snippet}
+                  </p>
+                )}
+              </Link>
+            ))
+          )}
+        </div>
+
+        <div className="flex-shrink-0 px-3 py-2 border-t border-white/[0.08]">
+          <p className="text-[10px] text-white/15 text-center">
+            Results come from this site&apos;s documentation.
           </p>
         </div>
       </aside>
@@ -196,10 +184,10 @@ export default function AIPanel({ open, onClose }: Props) {
   )
 }
 
-function SparklesIcon() {
+function SearchIcon() {
   return (
-    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-accent">
-      <path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z" />
+    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-accent">
+      <circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" />
     </svg>
   )
 }
@@ -208,14 +196,6 @@ function XIcon() {
   return (
     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-    </svg>
-  )
-}
-
-function SendIcon() {
-  return (
-    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M22 2L11 13" /><path d="M22 2L15 22l-4-9-9-4 20-7z" />
     </svg>
   )
 }

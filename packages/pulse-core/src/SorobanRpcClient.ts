@@ -4,8 +4,24 @@ import {
   type SorobanRpcErrorCode,
   type SorobanRpcErrorOptions,
 } from "./errors.js";
+import { fullJitterBackoffMs } from "./backoff.js";
 
 const DEFAULT_TIMEOUT_MS = 10_000;
+
+/** CAP-67 (SEP-41) standard event topic names for Stellar asset contracts. */
+export const CAP_67_EVENT_TOPICS = ["transfer", "mint", "burn", "clawback"] as const;
+
+/**
+ * Pre-built Soroban event filters matching any CAP-67 topic as the first topic
+ * segment. The base64 values are pre-computed XDR ScVal symbols so that no
+ * runtime dependency on `@stellar/stellar-sdk` is required at module load.
+ */
+const CAP_67_TOPIC_FILTERS: SorobanEventFilter[] = [
+  { type: "contract", topics: [["AAAADwAAAAh0cmFuc2Zlcg=="]] },
+  { type: "contract", topics: [["AAAADwAAAARtaW50"]] },
+  { type: "contract", topics: [["AAAADwAAAARidXJu"]] },
+  { type: "contract", topics: [["AAAADwAAAAhjbGF3YmFjaw=="]] },
+];
 
 export type SorobanNetworkInfo = {
   friendbotUrl?: string;
@@ -52,6 +68,35 @@ export interface SorobanRpcClientOptions {
    * @default "json"
    */
   xdrFormat?: "base64" | "json";
+}
+
+/** Options for {@link SorobanRpcClient.pollUnifiedEvents}. */
+export interface PollUnifiedEventsOptions {
+  signal?: AbortSignal;
+  cursor?: string;
+  pageLimit?: number;
+  maxRetries?: number;
+  initialBackoffMs?: number;
+  maxBackoffMs?: number;
+  /**
+   * Called just before each retry backoff sleep, after a retryable
+   * `getEvents` failure. Lets a caller (e.g. `EventEngine`) surface
+   * reconnect/rate-limit lifecycle notifications without duplicating this
+   * loop's retry bookkeeping.
+   */
+  onRetry?: (info: { attempt: number; delayMs: number; rateLimited: boolean }) => void;
+  /**
+   * Called once a poll succeeds after one or more retries, before the
+   * internal attempt counter resets. Not called on the very first successful
+   * poll of a session (there was nothing to recover from).
+   */
+  onRecovered?: (info: { attempt: number }) => void;
+  /**
+   * Called after each successful page with an advanced cursor, so a caller
+   * can persist progress incrementally instead of only learning the final
+   * cursor once the whole loop returns (e.g. on `stop()`).
+   */
+  onCursor?: (cursor: string) => void;
 }
 
 /** Per-call options for {@link SorobanRpcClient.getEvents}. */
@@ -194,6 +239,21 @@ function isAbortSignal(value: unknown): value is AbortSignal {
   return (
     typeof value === "object" && value !== null && "aborted" in value && "addEventListener" in value
   );
+}
+
+function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(signal.reason ?? createAbortError("Aborted"));
+      return;
+    }
+    const timer = setTimeout(resolve, ms);
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(signal?.reason ?? createAbortError("Aborted"));
+    };
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
 }
 
 /**
@@ -475,5 +535,76 @@ export class SorobanRpcClient {
     const result = await this.requestResult<SorobanNetworkInfo>("getNetwork", undefined, options);
     SorobanRpcClient.setCachedNetwork(result);
     return result;
+  }
+
+  async pollUnifiedEvents(
+    onEvents: (events: SorobanRpcEvent[]) => void,
+    options?: PollUnifiedEventsOptions,
+  ): Promise<{ cursor: string | undefined }> {
+    const signal = options?.signal;
+    let cursor = options?.cursor;
+    const pageLimit = options?.pageLimit ?? 100;
+    const maxRetries = options?.maxRetries ?? Infinity;
+    const initialBackoffMs = options?.initialBackoffMs ?? 1_000;
+    const maxBackoffMs = options?.maxBackoffMs ?? 30_000;
+
+    let attempt = 0;
+
+    while (!signal?.aborted) {
+      try {
+        const params: SorobanGetEventsParams = {
+          filters: CAP_67_TOPIC_FILTERS,
+          limit: pageLimit,
+        };
+        if (cursor !== undefined) {
+          params.cursor = cursor;
+        }
+
+        const result = await this.getEvents(params);
+
+        if (attempt > 0) {
+          options?.onRecovered?.({ attempt });
+        }
+        attempt = 0;
+
+        if (result.events.length > 0) {
+          onEvents(result.events);
+        }
+
+        if (result.cursor !== undefined) {
+          cursor = result.cursor;
+          options?.onCursor?.(cursor);
+        }
+
+        if (result.events.length < pageLimit) {
+          await sleep(2_000, signal);
+        }
+      } catch (err) {
+        if (err instanceof SorobanRpcError && err.retryable) {
+          attempt++;
+          if (attempt > maxRetries) throw err;
+
+          const delayMs =
+            err.code === "rate_limit" && err.retryAfterMs !== undefined
+              ? err.retryAfterMs
+              : fullJitterBackoffMs(attempt, initialBackoffMs, maxBackoffMs);
+
+          this.logger?.debug?.("[SorobanRpcClient] unified stream backoff", {
+            attempt,
+            delayMs,
+            code: err.code,
+          });
+          options?.onRetry?.({ attempt, delayMs, rateLimited: err.code === "rate_limit" });
+
+          await sleep(delayMs, signal);
+        } else if (isAbortError(err)) {
+          return { cursor };
+        } else {
+          throw err;
+        }
+      }
+    }
+
+    return { cursor };
   }
 }

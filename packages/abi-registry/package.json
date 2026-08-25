@@ -18,6 +18,7 @@
     "LICENSE"
   ],
   "bin": {
+    "abi-registry": "./bin/abi-registry",
     "abi-registry-generate": "./bin/abi-registry-generate",
     "orbital-codegen": "./bin/orbital-codegen"
   },
@@ -39,7 +40,8 @@
   },
   "dependencies": {
     "@stellar/js-xdr": "4.0.0",
-    "@stellar/stellar-sdk": "^16.1.0"
+    "@stellar/stellar-sdk": "^16.1.0",
+    "yargs": "^18.0.0"
   },
   "devDependencies": {
     "@types/node": "^26.1.2",
