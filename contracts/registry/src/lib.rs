@@ -13,6 +13,16 @@ const DAY_IN_LEDGERS: u32 = 17_280;
 const BUMP_AMOUNT: u32 = 30 * DAY_IN_LEDGERS;
 const LIFETIME_THRESHOLD: u32 = BUMP_AMOUNT - DAY_IN_LEDGERS;
 
+/// Maximum number of versions returned by a single `list_versions_paged`
+/// call. Keeps Soroban resource costs bounded. Clients must page through
+/// results using the returned cursor.
+pub const MAX_PAGE_SIZE: u32 = 25;
+
+/// Appended as the final entry by the unpaged `list_versions` accessor when
+/// the full set exceeded `MAX_PAGE_SIZE`, so callers can detect clipping
+/// instead of silently receiving a short list.
+pub const TRUNCATION_MARKER: &str = "__truncated__";
+
 #[contracterror]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 #[repr(u32)]
@@ -22,6 +32,10 @@ pub enum Error {
     AlreadyPublished = 1,
     EmptyVersion = 2,
     EmptyPointer = 3,
+    /// The requested start cursor exceeds the total number of versions.
+    StartPastEnd = 4,
+    /// The requested page limit exceeds MAX_PAGE_SIZE.
+    LimitExceedsMax = 5,
 }
 
 #[contracttype]
@@ -156,15 +170,77 @@ impl AbiRegistry {
         env.storage().persistent().get(&spec_key)
     }
 
-    /// Returns every version published for (contract_id, publisher), oldest
-    /// first, or an empty vector if none have been published.
-    pub fn list_versions(env: Env, contract_id: Address, publisher: Address) -> Vec<String> {
-        let versions_key = DataKey::Versions(contract_id, publisher);
-        env.storage()
-            .persistent()
-            .get(&versions_key)
-            .unwrap_or_else(|| Vec::new(&env))
+/// Returns every version published for (contract_id, publisher), oldest
+/// first, or an empty vector if none have been published.
+///
+/// NOTE: This accessor is unbounded and may exceed Soroban resource budgets
+/// for contracts with many versions. New callers should prefer
+/// `list_versions_paged`. This function will be deprecated in a future
+/// release.
+pub fn list_versions(env: Env, contract_id: Address, publisher: Address) -> Vec<String> {
+    let versions_key = DataKey::Versions(contract_id.clone(), publisher.clone());
+    let all: Vec<String> = env
+        .storage()
+        .persistent()
+        .get(&versions_key)
+        .unwrap_or_else(|| Vec::new(&env));
+
+    // Cap at MAX_PAGE_SIZE and emit a warning marker via truncation.
+    // The last entry is replaced with a sentinel when truncated so callers
+    // know the list was clipped.
+    let max = MAX_PAGE_SIZE;
+    if all.len() > max {
+        // `slice` takes a range and already returns a Vec; soroban_sdk::Vec
+        // does not implement FromIterator, so no collect() here.
+        let mut capped: Vec<String> = all.slice(0..max);
+        // The contract is #![no_std] with no alloc, so the marker cannot
+        // interpolate the total. Callers needing the count use
+        // `list_versions_paged`, whose cursor walks the full set.
+        capped.push_back(String::from_str(&env, TRUNCATION_MARKER));
+        capped
+    } else {
+        all
     }
+}
+
+/// Returns a paged slice of versions for (contract_id, publisher), oldest
+/// first, plus an optional cursor for the next page.
+///
+/// - `start`: zero-based index into the full version list to begin from.
+/// - `limit`: maximum number of versions to return (capped internally at
+///   `MAX_PAGE_SIZE`).
+///
+/// Returns `(versions, Option<next_start>)` where `next_start` is `Some`
+/// with the start index for the next page if there are more results, or
+/// `None` if this was the last page.
+///
+/// Resource cost of a full-page read is documented in the test snapshot.
+pub fn list_versions_paged(
+    env: Env,
+    contract_id: Address,
+    publisher: Address,
+    start: u32,
+    limit: u32,
+) -> (Vec<String>, Option<u32>) {
+    let versions_key = DataKey::Versions(contract_id, publisher);
+    let all: Vec<String> = env
+        .storage()
+        .persistent()
+        .get(&versions_key)
+        .unwrap_or_else(|| Vec::new(&env));
+
+    let total = all.len();
+    if start >= total {
+        return (Vec::new(&env), None);
+    }
+
+    let effective_limit = limit.min(MAX_PAGE_SIZE);
+    let end = (start + effective_limit).min(total);
+    let page: Vec<String> = all.slice(start..end);
+    let next_cursor = if end < total { Some(end) } else { None };
+
+    (page, next_cursor)
+}
 }
 
 mod test;

@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 import { createHash } from "node:crypto";
 import { generateContractTypes } from "./generate.js";
 import type { ContractSpec } from "./spec.js";
-import type { OrbitalCodegenConfig, OrbitalLockFile } from "./config.js";
+import type { OrbitalCodegenConfig, OrbitalLockFile, CodegenContract } from "./config.js";
 
 export type CodegenWatchOptions = {
   pollIntervalMs?: number;
@@ -17,7 +17,7 @@ async function resolveContractSpec(
 ): Promise<{ spec: ContractSpec; hash: string } | null> {
   const specPath = resolve(config.outDir, `${contractId}.spec.json`);
   if (!existsSync(specPath)) {
-    const contract = config.contracts.find((c) => c.contractId === contractId);
+    const contract = config.contracts.find((c: CodegenContract) => c.contractId === contractId);
     if (contract?.name) {
       const namedPath = resolve(config.outDir, `${contract.name}.spec.json`);
       if (existsSync(namedPath)) {

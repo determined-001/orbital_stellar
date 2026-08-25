@@ -1,0 +1,18 @@
+{
+  "version": "1.0.0",
+  "name": "Hello World",
+  "description": "A minimal Soroban contract that greets the caller. Demonstrates the canonical ABI spec shape for simple contracts.",
+  "contract_id": "CCJFTTLFI4R5X4P4GPNR3WZN5DY5RY3B5Q6Z4QZJQZJQZJQZJQZJQZJQ",
+  "network": "mainnet",
+  "source": "https://github.com/example/hello-world-soroban",
+  "tags": ["example", "tutorial"],
+  "functions": [
+    {
+      "name": "hello",
+      "doc": "Return a greeting for the caller.",
+      "params": [{ "name": "to", "type": "String", "doc": "Name of the person to greet." }],
+      "outputs": [{ "type": "String", "doc": "The greeting string." }]
+    }
+  ],
+  "events": []
+}

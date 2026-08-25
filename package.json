@@ -16,7 +16,9 @@
     "format:all": "prettier --write \"packages/**/*.{ts,tsx,json}\"",
     "format:check": "prettier --check \"packages/**/*.{ts,tsx,json}\"",
     "docs:reference": "node scripts/generate-reference-docs.mjs",
+    "docs:generate-open-data": "node scripts/generate-open-data.mjs",
     "docs:check-tsdoc": "node scripts/check-tsdoc-coverage.mjs",
+    "generate:horizon-types": "node scripts/generate-horizon-types.mjs",
     "prepare": "husky"
   },
   "lint-staged": {
@@ -24,12 +26,13 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "eslint": "^10.6.0",
+    "eslint": "^10.8.0",
     "eslint-config-prettier": "^10.1.8",
     "husky": "^9.1.7",
-    "lint-staged": "^17.0.8",
-    "prettier": "^3.9.4",
+    "lint-staged": "^17.2.0",
+    "openapi-typescript": "^7.13.0",
+    "prettier": "^3.9.6",
     "typescript": "^6.0.3",
-    "typescript-eslint": "^8.62.1"
+    "typescript-eslint": "^8.65.0"
   }
 }

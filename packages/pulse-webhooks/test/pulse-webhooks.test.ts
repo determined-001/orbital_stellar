@@ -340,6 +340,50 @@ describe("pulse-webhooks WebhookDelivery", () => {
     expect(failedHandler).toHaveBeenCalledTimes(1);
   });
 
+  /**
+   * Regression: these all passed `validateUrl` and were fetched.
+   *
+   * The delivery guard was a `net.BlockList` that had drifted from
+   * `UrlValidator`'s range list, omitting `0.0.0.0/8`, the IPv6 unspecified
+   * address, CGNAT and `192.0.0.0/24`. Because each of these is an IP literal,
+   * `validateResolvedHostname` returned early and never re-checked them, so
+   * `http://0.0.0.0:8080/` reached a service bound to loopback on Linux.
+   *
+   * `.localhost` is here for the same reason: only the bare `localhost` label
+   * was matched, though RFC 6761 reserves the whole suffix for loopback.
+   */
+  it.each([
+    "http://0.0.0.0:8080/hook", // routes to loopback on Linux
+    "http://0.0.0.1/hook", // rest of 0.0.0.0/8
+    "https://[::]/hook", // IPv6 unspecified
+    "https://[::ffff:0.0.0.0]/hook", // mapped form of the same
+    "http://100.64.0.1/hook", // CGNAT
+    "http://192.0.0.1/hook", // IETF protocol assignments
+    "http://224.0.0.1/hook", // multicast
+    "http://sub.localhost/hook", // RFC 6761 reserved suffix
+  ])("blocks previously-bypassable destination %s", async (url) => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200 });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const watcher = new Watcher("GABC");
+    const failedHandler = vi.fn();
+    watcher.on("webhook.failed", failedHandler);
+
+    new WebhookDelivery(watcher, { url, secret: "top-secret" });
+    watcher.emit("*", deliveryEvent);
+    await flushAsyncWork();
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(failedHandler).toHaveBeenCalledWith(
+      expect.objectContaining({
+        raw: expect.objectContaining({
+          url,
+          error: "Webhook URL points to a blocked private address",
+        }),
+      }),
+    );
+  });
+
   it.each([
     "https://[fc00::1]/hook",
     "https://[fdff:ffff::1]/hook",

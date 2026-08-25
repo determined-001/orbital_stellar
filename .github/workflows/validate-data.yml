@@ -1,0 +1,299 @@
+name: Validate semantic data
+
+on:
+  pull_request:
+    paths:
+      - 'data/**'
+      - 'packages/abi-registry/schemas/**'
+      - 'packages/abi-registry/schema/**'
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@v6.0.10
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Auto-label semantic-data PRs
+        if: github.event_name == 'pull_request'
+        # A PR from a fork gets a read-only GITHUB_TOKEN, so labelling fails
+        # with "Resource not accessible by integration". Submissions come from
+        # forks by definition, and a missing label must not fail the gate.
+        continue-on-error: true
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const { data: labels } = await github.rest.issues.listLabelsOnIssue({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+            const hasLabel = labels.some(l => l.name === 'area:semantic-data');
+            if (!hasLabel) {
+              await github.rest.issues.addLabels({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                labels: ['area:semantic-data'],
+              });
+            }
+
+      - name: Validate label files against schema
+        id: validate-labels
+        working-directory: packages/abi-registry
+        run: |
+          # Capture the validator's own status - piping into tee would report
+          # tee's status instead, which is always 0.
+          if node validate.js > /tmp/validate-output.txt 2>&1; then
+            status=0
+          else
+            status=1
+          fi
+          cat /tmp/validate-output.txt
+          echo "exit_code=$status" >> "$GITHUB_OUTPUT"
+
+      - name: Validate example files against schema
+        id: validate-examples
+        working-directory: packages/abi-registry
+        run: |
+          EXAMPLES_DIR="schemas/examples"
+          if [ -d "$EXAMPLES_DIR" ]; then
+            errors=0
+            for file in "$EXAMPLES_DIR"/*.json; do
+              [ -f "$file" ] || continue
+              echo "--- Validating: $file ---"
+              if node -e "
+                const fs = require('fs');
+                // specs/well-known/schema.json is the schema a submitted spec
+                // is judged against - the same one validate.js uses. It is
+                // draft-07, so the default Ajv export is correct here;
+                // schema/spec.schema.json is 2020-12 and a different shape
+                // (no contract_id, types required), which every submission
+                // would fail.
+                const spec = JSON.parse(fs.readFileSync('specs/well-known/schema.json', 'utf8'));
+                const Ajv = require('ajv');
+                const ajv = new Ajv({ allErrors: true, strict: false });
+                const validate = ajv.compile(spec);
+                const data = JSON.parse(fs.readFileSync('$file', 'utf8'));
+                const valid = validate(data);
+                if (valid) { console.log('PASS'); }
+                else { console.error('FAIL:', validate.errors); process.exit(1); }
+              "; then
+                echo "PASS"
+              else
+                errors=$((errors + 1))
+              fi
+            done
+            echo "errors=$errors" >> "$GITHUB_OUTPUT"
+          else
+            echo "No examples directory found; skipping."
+            echo "errors=0" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Dedupe check — detect duplicate contract IDs in labels
+        id: dedupe
+        working-directory: packages/abi-registry
+        run: |
+          node -e "
+            const fs = require('fs');
+            const path = require('path');
+            const LABELS_DIR = '../../data/labels';
+            const LABEL_SKIP = new Set(['index.json']);
+
+            let files;
+            try {
+              files = fs.readdirSync(LABELS_DIR).filter(f => f.endsWith('.json') && !LABEL_SKIP.has(f));
+            } catch { console.log('No labels dir'); process.exit(0); }
+
+            const seen = new Map();
+            let hasDupe = false;
+            for (const file of files) {
+              const data = JSON.parse(fs.readFileSync(path.join(LABELS_DIR, file), 'utf8'));
+              if (data.contractId) {
+                if (seen.has(data.contractId)) {
+                  console.error('DUPLICATE contractId', data.contractId, 'in', file, '(also in', seen.get(data.contractId) + ')');
+                  hasDupe = true;
+                }
+                seen.set(data.contractId, file);
+              }
+            }
+            if (hasDupe) process.exit(1);
+            console.log('No duplicate contract IDs found across', files.length, 'label files');
+          " > /tmp/dedupe-output.txt 2>&1 && status=0 || status=1
+          cat /tmp/dedupe-output.txt
+          echo "dedupe_ok=$status" >> "$GITHUB_OUTPUT"
+
+      - name: Source URL well-formedness check
+        id: source-urls
+        run: |
+          node -e "
+            const fs = require('fs');
+            const path = require('path');
+            const LABELS_DIR = 'data/labels';
+            const LABEL_SKIP = new Set(['index.json']);
+            let hasError = false;
+
+            let files;
+            try {
+              files = fs.readdirSync(LABELS_DIR).filter(f => f.endsWith('.json') && !LABEL_SKIP.has(f));
+            } catch { console.log('No labels dir'); process.exit(0); }
+
+            for (const file of files) {
+              const data = JSON.parse(fs.readFileSync(path.join(LABELS_DIR, file), 'utf8'));
+              if (!data.sources || !Array.isArray(data.sources)) continue;
+              for (const url of data.sources) {
+                try {
+                  const parsed = new URL(url);
+                  if (!['http:', 'https:'].includes(parsed.protocol)) {
+                    console.error('INVALID_PROTOCOL in', file + ':', url, '(only http/https allowed)');
+                    hasError = true;
+                  }
+                } catch {
+                  console.error('MALFORMED_URL in', file + ':', url);
+                  hasError = true;
+                }
+              }
+            }
+            if (hasError) process.exit(1);
+            console.log('All source URLs are well-formed');
+          " > /tmp/url-check-output.txt 2>&1 && status=0 || status=1
+          cat /tmp/url-check-output.txt
+          echo "url_check_ok=$status" >> "$GITHUB_OUTPUT"
+
+      - name: Conflict-of-interest check
+        id: coi-check
+        run: |
+          node -e "
+            const fs = require('fs');
+            const path = require('path');
+            const LABELS_DIR = 'data/labels';
+            const LABEL_SKIP = new Set(['index.json']);
+            let hasCoi = false;
+
+            let files;
+            try {
+              files = fs.readdirSync(LABELS_DIR).filter(f => f.endsWith('.json') && !LABEL_SKIP.has(f));
+            } catch { console.log('No labels dir'); process.exit(0); }
+
+            for (const file of files) {
+              const data = JSON.parse(fs.readFileSync(path.join(LABELS_DIR, file), 'utf8'));
+              if (data.submittedBy && data.label) {
+                const submitter = data.submittedBy.toLowerCase().trim();
+                const labelLower = data.label.toLowerCase();
+                // Check if the submitter username appears inside the label text
+                // (e.g. submittedBy 'circle-team' vs label 'Circle (USDC Issuer)')
+                const nameParts = submitter.split(/[\\s_-]+/);
+                for (const part of nameParts) {
+                  if (part.length > 2 && labelLower.includes(part)) {
+                    console.warn('POTENTIAL_COI in', file + ': submittedBy \"' + data.submittedBy + '\" may match label \"' + data.label + '\"');
+                    hasCoi = true;
+                  }
+                }
+              }
+            }
+            if (hasCoi) {
+              console.log('Conflict-of-interest flags raised — review flagged submissions manually');
+              process.exit(1);
+            }
+            console.log('No conflict-of-interest issues detected');
+          " > /tmp/coi-output.txt 2>&1 && status=0 || status=1
+          cat /tmp/coi-output.txt
+          echo "coi_ok=$status" >> "$GITHUB_OUTPUT"
+
+      - name: Post validation summary comment
+        if: always() && github.event_name == 'pull_request'
+        # Same fork-token limitation as the labelling step: the report is a
+        # convenience, the gate below is what actually blocks a bad submission.
+        continue-on-error: true
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const fs = require('fs');
+
+            const labelResult = '${{ steps.validate-labels.outputs.exit_code }}';
+            const exampleResult = '${{ steps.validate-examples.outputs.errors }}';
+            const dedupeResult = '${{ steps.dedupe.outputs.dedupe_ok }}';
+            const urlResult = '${{ steps.source-urls.outputs.url_check_ok }}';
+            const coiResult = '${{ steps.coi-check.outputs.coi_ok }}';
+
+            let body = '## Semantic data validation report\\n\\n';
+            let allPassed = true;
+
+            const checks = [
+              { name: 'Schema validation (labels)', pass: labelResult === '0' },
+              { name: 'Schema validation (examples)', pass: exampleResult === '0' },
+              { name: 'Duplicate detection', pass: dedupeResult === '0' },
+              { name: 'Source URL well-formedness', pass: urlResult === '0' },
+              { name: 'Conflict-of-interest check', pass: coiResult === '0' },
+            ];
+
+            for (const check of checks) {
+              body += '- [' + (check.pass ? '✅' : '❌') + '] ' + check.name + '\\n';
+              if (!check.pass) allPassed = false;
+            }
+
+            if (allPassed) {
+              body += '\\n**All checks passed.** The submission is ready for review.';
+            } else {
+              body += '\\n**One or more checks failed.** Please review the workflow logs for details and fix the issues.';
+            }
+
+            // Find or create the validation comment
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+
+            const validationComment = comments.find(c =>
+              c.user.type === 'Bot' && c.body.includes('Semantic data validation report')
+            );
+
+            if (validationComment) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: validationComment.id,
+                body: body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: body,
+              });
+            }
+
+      - name: Gate on validation results
+        if: always()
+        run: |
+          fail=0
+          check() {
+            if [ "$2" != "0" ]; then
+              echo "::error::$1 failed"
+              fail=1
+            else
+              echo "$1 passed"
+            fi
+          }
+          check "Schema validation (labels)" "${{ steps.validate-labels.outputs.exit_code }}"
+          check "Schema validation (examples)" "${{ steps.validate-examples.outputs.errors }}"
+          check "Duplicate detection" "${{ steps.dedupe.outputs.dedupe_ok }}"
+          check "Source URL well-formedness" "${{ steps.source-urls.outputs.url_check_ok }}"
+          check "Conflict-of-interest check" "${{ steps.coi-check.outputs.coi_ok }}"
+          exit $fail

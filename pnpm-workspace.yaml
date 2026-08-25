@@ -5,14 +5,34 @@ packages:
 allowBuilds:
   esbuild: false
 # pnpm v10 reads dependency overrides from here, NOT from package.json.
-# axios <1.16.0 has the Proxy-Authorization credential-leak advisories (GHSA-j5f8-grm9-p9fc et al.).
+# Adding a `pnpm.overrides` block to the root package.json silently disables
+# EVERY override below - keep them in this file only.
+#
+# axios <1.18.0 has the Proxy-Authorization credential-leak advisories
+# (GHSA-j5f8-grm9-p9fc et al.) plus the inherited-proxy, prototype-pollution and
+# form-serializer advisories; reached via @stellar/stellar-sdk.
 # postcss <8.5.10 has the </style> XSS advisory (GHSA-qx2v-qp2m-jg93) - next pins 8.4.31.
-# js-yaml 3.x <3.15.0 has the merge-key DoS advisory (GHSA-h67p-54hq-rp68) via gray-matter;
-# scoped to @3 so a future js-yaml 4.x consumer is never downgraded.
+# js-yaml has the merge-key DoS advisory (GHSA-h67p-54hq-rp68) and the quadratic
+# !!omap CPU advisory on both major lines, so each is pinned to its own fixed
+# version rather than collapsing them: 3.x <3.15.1 arrives via gray-matter, and
+# 4.x <4.3.1 via openapi-typescript > @redocly/openapi-core. Keeping the ranges
+# major-scoped means neither consumer is dragged across a major boundary.
+# sharp <0.35.0 inherits the libvips advisories; reached via next's image optimizer.
+# nanoid <3.3.17 loops indefinitely on a non-integer size (GHSA-mwcw-c2x4-8c55);
+# reached via next > postcss.
+# fast-uri <3.1.5 has the host-confusion advisories (literal and backslash
+# variants); reached via ajv in abi-registry. Held on 3.x - ajv expects that line.
+# path-to-regexp 0.x has the backtracking-ReDoS advisory (GHSA-9wv6-86v2-598j);
+# scoped to @0 so express 5 - which requires 8.x - is not dragged back to a
+# version whose router API it cannot use.
 overrides:
-  path-to-regexp: 0.1.13
+  "path-to-regexp@0": 0.1.13
   vite: 7.3.6
-  axios: 1.17.0
+  axios: ^1.18.0
   postcss: ^8.5.16
-  "js-yaml@3": ^3.15.0
+  "js-yaml@3": ^3.15.1
+  "js-yaml@4": ^4.3.1
+  fast-uri: ^3.1.5
+  nanoid: ^3.3.17
+  sharp: ^0.35.0
   undici: ^7.28.0

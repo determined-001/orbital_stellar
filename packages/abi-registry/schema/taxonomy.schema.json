@@ -1,0 +1,302 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://orbital-stellar.io/schema/taxonomy.schema.json",
+  "title": "TaxonomyEntry",
+  "description": "A community-submittable semantic taxonomy entry: 'raw events matching this topic pattern, emitted by contracts in this scope, mean this'. Maps a contract's raw Soroban event topics onto a human-readable, dot-namespaced taxonomy name (swap.executed, payment.sent, loan.liquidated) with an explicit parameter projection and traceable provenance. This schema is the normative artifact a submission is validated against in review; @orbital-stellar/abi-registry's validateTaxonomyEntry() is the equivalent runtime check for consumers who do not want a JSON Schema validator.",
+  "type": "object",
+  "required": ["id", "version", "name", "match", "scope", "provenance"],
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Stable lowercase kebab-case slug, unique across the published set. Referenced by other entries' `supersedes` and by review tooling, so it must not change once published - rename by superseding, not by editing.",
+      "pattern": "^[a-z0-9][a-z0-9-]*$",
+      "maxLength": 100
+    },
+    "version": {
+      "type": "string",
+      "description": "Semantic version of this entry. Bump it whenever `match` or `parameters` change, since consumers key decoding behaviour off them.",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$"
+    },
+    "name": {
+      "$ref": "#/$defs/TaxonomyName"
+    },
+    "title": {
+      "type": "string",
+      "description": "Short human-readable label for UIs, e.g. \"Swap executed\".",
+      "maxLength": 100
+    },
+    "description": {
+      "type": "string",
+      "description": "What the event means, in prose, for reviewers and consumers.",
+      "maxLength": 1000
+    },
+    "match": {
+      "$ref": "#/$defs/TaxonomyMatch"
+    },
+    "parameters": {
+      "type": "object",
+      "description": "The taxonomy parameters this entry projects out of the raw event, keyed by lowercase snake_case parameter name. Two entries sharing a taxonomy name should project the same parameter names - that consistency is the whole point of a shared taxonomy.",
+      "propertyNames": {
+        "pattern": "^[a-z][a-z0-9_]*$"
+      },
+      "additionalProperties": { "$ref": "#/$defs/ParameterMapping" }
+    },
+    "scope": {
+      "$ref": "#/$defs/TaxonomyScope"
+    },
+    "provenance": {
+      "$ref": "#/$defs/TaxonomyProvenance"
+    },
+    "supersedes": {
+      "type": "array",
+      "description": "IDs of entries this one replaces. Declaring a supersession is what makes an otherwise-conflicting overlap legal: without it, two entries whose patterns and scopes coincide are a collision (see the collision policy on TaxonomyName).",
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z0-9][a-z0-9-]*$"
+      }
+    },
+    "deprecated": {
+      "type": "boolean",
+      "description": "Set once an entry is retired but kept published so historical events can still be decoded.",
+      "default": false
+    }
+  },
+  "$defs": {
+    "TaxonomyName": {
+      "type": "string",
+      "description": "Dot-namespaced taxonomy name. NAMING RULES. Shape: two or three dot-separated segments, `<root>.<action>` or `<root>.<subject>.<action>` - one segment carries no information, four is a sign the concept belongs under a different root. Casing: lowercase ASCII snake_case within a segment, starting with a letter; no uppercase, no hyphens, no leading digits. Namespace root: the first segment must come from the closed list in this pattern - account, asset, bridge, claimable, contract, data, governance, loan, lp, nft, offer, oracle, payment, stake, swap, trustline, vault. The list is closed deliberately: an open-ended root would let two submissions describe one concept under different names (swap.executed vs dex.swapped), which is exactly what a shared taxonomy exists to prevent, so adding a root is a reviewed schema change rather than a per-submission decision. Several roots (account, asset, claimable, contract, data, lp, offer, payment, trustline) already carry meaning in @orbital-stellar/pulse-core's NormalizedEvent taxonomy - a contract-event mapping that means the same thing must reuse the established name rather than mint a parallel one. RESERVED: `engine` and `event` are permanently unavailable, as they are pulse-core's own library diagnostics (engine.reconnecting, event.decode_failed) which describe the indexer rather than the chain. Action segment: use a past-tense verb (executed, liquidated, deposited) - a taxonomy name names something that happened. Tense is a review convention, not machine-checkable. COLLISION POLICY: a taxonomy name is not unique across entries - payment.sent legitimately has one entry per token implementation. Uniqueness is a property of (match pattern, scope): two entries whose patterns match identically within scopes that can cover the same contract are a collision, reported as `ambiguous-mapping` when the names differ and `duplicate-mapping` when they agree, unless one lists the other in `supersedes`. Scopes of different kinds are not compared automatically - deciding whether a specific contract ID is also covered by a wasmHash or SEP-interface scope requires on-chain state, so that overlap is a reviewer's judgment call. `findTaxonomyConflicts()` in @orbital-stellar/abi-registry implements the machine-checkable half.",
+      "pattern": "^(account|asset|bridge|claimable|contract|data|governance|loan|lp|nft|offer|oracle|payment|stake|swap|trustline|vault)\\.[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)?$"
+    },
+    "PrimitiveType": {
+      "type": "string",
+      "description": "An atomic Soroban scalar type. Same set as ContractSpec's PrimitiveType in spec.schema.json.",
+      "enum": [
+        "bool",
+        "u32",
+        "i32",
+        "u64",
+        "i64",
+        "u128",
+        "i128",
+        "u256",
+        "i256",
+        "bytes",
+        "string",
+        "symbol",
+        "address",
+        "void",
+        "error"
+      ]
+    },
+    "Network": {
+      "type": "string",
+      "description": "Network a scope is restricted to.",
+      "enum": ["mainnet", "testnet", "futurenet"]
+    },
+    "TopicMatcher": {
+      "description": "One positional slot in a raw event's topic vector. Matchers decide whether an entry applies to an event; they never extract values. Extraction is ParameterMapping's job, keyed by topic index - keeping the two separate means a pattern can be tightened without silently re-binding a parameter.",
+      "oneOf": [
+        {
+          "type": "object",
+          "description": "The topic must be exactly this symbol. Conventionally slot 0, which carries the event name.",
+          "required": ["kind", "symbol"],
+          "additionalProperties": false,
+          "properties": {
+            "kind": { "const": "symbol" },
+            "symbol": {
+              "type": "string",
+              "description": "Exact Soroban symbol value, e.g. \"transfer\".",
+              "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$",
+              "maxLength": 32
+            }
+          }
+        },
+        {
+          "type": "object",
+          "description": "Any single topic, optionally constrained to one Soroban scalar type.",
+          "required": ["kind"],
+          "additionalProperties": false,
+          "properties": {
+            "kind": { "const": "any" },
+            "type": { "$ref": "#/$defs/PrimitiveType" },
+            "doc": { "type": "string", "maxLength": 200 }
+          }
+        }
+      ]
+    },
+    "TaxonomyMatch": {
+      "type": "object",
+      "description": "The raw-event pattern this entry applies to.",
+      "required": ["topics"],
+      "additionalProperties": false,
+      "properties": {
+        "topics": {
+          "type": "array",
+          "description": "Topic matchers, positional from slot 0.",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/TopicMatcher" }
+        },
+        "trailingTopics": {
+          "type": "string",
+          "description": "Whether topics beyond the listed matchers are tolerated. Defaults to \"forbidden\" - a stricter pattern is the safer default for a mapping consumers will trust. \"allowed\" is the right choice for SEP-41 events on Stellar Asset Contracts, where CAP-67 appends an `asset` topic that a contract-token event does not have.",
+          "enum": ["forbidden", "allowed"],
+          "default": "forbidden"
+        },
+        "dataShape": {
+          "type": "string",
+          "description": "Optional constraint on the data payload's shape. \"scalar\" covers a single value (SEP-41's i128 amount), \"map\" covers CAP-67-style keyed data. Omit to leave unconstrained.",
+          "enum": ["void", "scalar", "map", "vec"]
+        }
+      }
+    },
+    "ParameterMapping": {
+      "description": "Where one taxonomy parameter's value comes from in the raw event.",
+      "oneOf": [
+        {
+          "type": "object",
+          "description": "A topic slot, by index into the raw topic vector.",
+          "required": ["from", "index", "type"],
+          "additionalProperties": false,
+          "properties": {
+            "from": { "const": "topic" },
+            "index": {
+              "type": "integer",
+              "description": "Zero-based index into the raw topic vector.",
+              "minimum": 0
+            },
+            "type": { "$ref": "#/$defs/PrimitiveType" },
+            "doc": { "type": "string", "maxLength": 200 }
+          }
+        },
+        {
+          "type": "object",
+          "description": "The data payload. Use `path` to select a key for map-shaped data (dotted for nesting); omit it to take the whole data value, as SEP-41's bare i128 amount requires.",
+          "required": ["from", "type"],
+          "additionalProperties": false,
+          "properties": {
+            "from": { "const": "data" },
+            "path": { "type": "string", "minLength": 1, "maxLength": 200 },
+            "type": { "$ref": "#/$defs/PrimitiveType" },
+            "doc": { "type": "string", "maxLength": 200 }
+          }
+        },
+        {
+          "type": "object",
+          "description": "A fixed value the raw event does not carry. This is how one raw event maps onto a taxonomy name more specific than the event itself - e.g. direction: \"out\" distinguishing the sender's view of a transfer.",
+          "required": ["from", "value"],
+          "additionalProperties": false,
+          "properties": {
+            "from": { "const": "constant" },
+            "value": { "type": ["string", "number", "boolean"] },
+            "doc": { "type": "string", "maxLength": 200 }
+          }
+        }
+      ]
+    },
+    "TaxonomyScope": {
+      "description": "Which deployed contracts this entry applies to. `contract` is narrowest and always safe. `wasmHash` covers every deployment of one reviewed build, the honest scope for a protocol that deploys the same code many times. `interface` is broadest - it applies to anything implementing the named SEP - and must only be used for events the SEP itself defines, never for a protocol's own extensions.",
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["kind", "contractIds"],
+          "additionalProperties": false,
+          "properties": {
+            "kind": { "const": "contract" },
+            "contractIds": {
+              "type": "array",
+              "description": "Specific deployed contract addresses this entry applies to.",
+              "minItems": 1,
+              "items": {
+                "type": "string",
+                "pattern": "^C[A-Z2-7]{55}$"
+              }
+            },
+            "networks": {
+              "type": "array",
+              "minItems": 1,
+              "items": { "$ref": "#/$defs/Network" }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["kind", "wasmHashes"],
+          "additionalProperties": false,
+          "properties": {
+            "kind": { "const": "wasmHash" },
+            "wasmHashes": {
+              "type": "array",
+              "description": "Hex-encoded SHA-256 hashes of the reviewed WASM builds this entry applies to.",
+              "minItems": 1,
+              "items": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              }
+            },
+            "networks": {
+              "type": "array",
+              "minItems": 1,
+              "items": { "$ref": "#/$defs/Network" }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["kind", "interface"],
+          "additionalProperties": false,
+          "properties": {
+            "kind": { "const": "interface" },
+            "interface": {
+              "type": "string",
+              "description": "SEP interface identifier, e.g. \"SEP-41\". Only events the SEP itself defines may be scoped this way.",
+              "pattern": "^SEP-\\d{1,4}$"
+            },
+            "networks": {
+              "type": "array",
+              "minItems": 1,
+              "items": { "$ref": "#/$defs/Network" }
+            }
+          }
+        }
+      ]
+    },
+    "TaxonomyProvenance": {
+      "type": "object",
+      "description": "Who submitted this entry, when, and on what basis. The taxonomy is published as open data, so a claim with no traceable source is not reviewable.",
+      "required": ["submittedBy", "submittedAt", "sources"],
+      "additionalProperties": false,
+      "properties": {
+        "submittedBy": {
+          "type": "string",
+          "description": "GitHub handle (@octocat) or Stellar account address (G…) of the submitter.",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "submittedAt": {
+          "type": "string",
+          "description": "ISO 8601 timestamp of submission.",
+          "format": "date-time"
+        },
+        "sources": {
+          "type": "array",
+          "description": "At least one URL backing the claim: protocol docs, the contract's source, an audit, or an explorer link to a real emitted event.",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "pattern": "^https?://\\S+$"
+          }
+        },
+        "reviewedBy": {
+          "type": "array",
+          "description": "Handles of the maintainers who accepted the entry.",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "reviewedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    }
+  }
+}

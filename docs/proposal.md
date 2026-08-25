@@ -60,7 +60,7 @@ The cost: every Stellar team - anchors, payment apps, DEX frontends, wallet team
 
 ## Solution
 
-Orbital ships the primitives once, openly, with a multi-year commitment to keep the SDK surface stable and grow it in lockstep with the network (Soroban events, x402, future SEPs).
+Orbital ships the primitives once, openly, with a multi-year commitment to keep the SDK surface stable and grow it in lockstep with the network (Soroban events, the decoding standard, future SEPs).
 
 ### Architecture
 
@@ -194,7 +194,7 @@ The SDKs remain MIT and free indefinitely. Maintenance funding comes from:
 
 1. **Orbital Cloud** - a separate closed-source managed runtime built on these SDKs, billed in USDC-on-Stellar (dogfooding the SDKs). Out of scope for this grant; mentioned only to explain why the OSS is sustainable without recurring grant ask.
 2. **Drips network donations** - Orbital is registered for Stellar Wave Program issue rewards, with `Stellar Wave`–tagged issues pricing in 100/150/200-point complexity tiers.
-3. **Future SCF Adopt/Audit grants** - for specific Phase 2/3 deliverables (first SEP submission, x402 reference implementation, security audit).
+3. **Future SCF Adopt/Audit grants** - for specific Phase 2/3 deliverables (SEP draft, `orbital codegen`, `@orbital-stellar/anchor-sdk`, security audit).
 
 The grant funds the milestone, not the team's salary in perpetuity.
 
@@ -212,9 +212,10 @@ Phase 1 will be delivered by the same founder with the same commit transparency.
 
 Reproduced from [`ROADMAP.md`](../ROADMAP.md) for context only - these are not Phase 1 deliverables and not part of this funding ask:
 
-- **Phase 2 (2027)** - `@orbital-stellar/hooks` data hook library, `@orbital-stellar/payments` transaction primitives, `@orbital-stellar/auth` passkey embedded wallets, `@orbital-stellar/analytics`, **first SEP submission** formalizing the event normalization format.
-- **Phase 3 (2028+)** - `@orbital-stellar/x402` payment-gated middleware, `@orbital-stellar/agent-sdk` for autonomous AI agent payments on Stellar, `@orbital-stellar/anchor-sdk` for SEP-24/SEP-31, intent compiler, shadow-fork simulator.
-- **Phase 4 (long-term)** - identity layer, reactor-contract library, 10+ SEPs.
+- **Phase 2 - The Decoding Standard (2026 H2)** - a SEP draft for a standardized Soroban event schema and registry verification spec; `orbital codegen` (CLI that emits TypeScript types, event guards, and hooks from the registry schema); a semantic layer (human-readable event taxonomy + entity labels, published as open data); a hosted registry read API.
+- **Phase 3 - Anchor Events (2027 H1)** - `@orbital-stellar/anchor-sdk` normalizing SEP-24 and SEP-31 lifecycle events into the standard taxonomy.
+
+Everything previously slated for the old Phase 2–4 wish list - `@orbital-stellar/payments`, `@orbital-stellar/auth`, an identity layer, `@orbital-stellar/x402`, `@orbital-stellar/agent-sdk`, an intent compiler, a shadow-fork simulator, reactor contracts, `@orbital-stellar/analytics`, and "10+ SEPs" as a target - is now frozen per [ROADMAP.md's Frozen section](../ROADMAP.md#frozen--out-of-scope-until-the-core-thesis-is-proven); none of it is part of this or any near-term funding ask.
 
 Each future phase will be a separate proposal if grant support is sought.
 

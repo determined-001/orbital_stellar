@@ -106,6 +106,28 @@ pnpm --filter orbital/web dev
 
 ---
 
+## Regenerating Horizon API types
+
+The raw Horizon response types in `packages/pulse-core/src/_raw-horizon.gen.ts` are
+auto-generated from the [Stellar Horizon OpenAPI description](https://github.com/stellar/stellar-docs/tree/main/openapi/horizon).
+The source URL and revision are pinned in the script header.
+
+**To regenerate:**
+
+```bash
+pnpm generate:horizon-types
+```
+
+This fetches the latest bundled OpenAPI YAML and runs `openapi-typescript` to produce
+the updated type definitions. CI will fail if the committed output is stale, so run
+this command whenever Horizon's API changes (or when CI tells you to).
+
+The generated file (`_raw-horizon.gen.ts`) is marked DO NOT EDIT. All edits to raw
+Horizon types must go through `raw-horizon.ts`, which re-exports the generated types
+and maintains backward-compatible hand-written interfaces.
+
+---
+
 ## Testing
 
 All packages use [Vitest](https://vitest.dev). Tests live in `packages/<name>/test/`.

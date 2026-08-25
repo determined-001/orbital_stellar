@@ -427,6 +427,31 @@ function collectDiffs(
 }
 
 /**
+ * Failure shapes from `fetchContractWasm` that mean "this contract has no WASM
+ * to fetch", not "the RPC call went wrong":
+ *
+ * - `not found` - no such contract, or no `ContractCode` entry for it.
+ * - `Cannot destructure property 'length'` - a Stellar Asset Contract. SACs
+ *   (USDC/EURC/AQUA/the native XLM wrapper - exactly the bundled well-known
+ *   specs) use `ContractExecutable::StellarAsset`, so there is no code entry,
+ *   and the SDK throws from deep inside XDR deserialization rather than raising
+ *   a typed "not a WASM contract" error. {@link discoverContractSpec} documents
+ *   the same SDK behaviour and treats any WASM-fetch failure as "nothing to
+ *   discover" for this reason.
+ *
+ * Anything else - connection refused, HTTP 5xx, timeouts - propagates, so a
+ * broken RPC endpoint is never silently reported as `unverifiable`.
+ */
+const NO_WASM_ERROR_PATTERNS: readonly RegExp[] = [
+  /not found/i,
+  /Cannot destructure property 'length'/i,
+];
+
+function isNoWasmFailure(error: Error): boolean {
+  return NO_WASM_ERROR_PATTERNS.some((pattern) => pattern.test(error.message));
+}
+
+/**
  * Verifies a submitted schema against the on-chain contract spec.
  *
  * Fetches the contract's embedded spec (if available), normalizes it to the
@@ -466,12 +491,9 @@ export async function verifySchema(
   try {
     wasm = await fetchContractWasm(options.rpcUrl, contractId);
   } catch (error) {
-    // Distinguish between genuine RPC errors and "contract not found" scenarios
-    // If the error message suggests the contract doesn't exist, treat as unverifiable
-    if (
-      error instanceof Error &&
-      (error.message.includes("contract not found") || error.message.includes("not found"))
-    ) {
+    // Distinguish between genuine RPC errors and "there is no WASM to fetch"
+    // scenarios, which are unverifiable rather than failures.
+    if (error instanceof Error && isNoWasmFailure(error)) {
       return {
         status: "unverifiable",
         reason: "Contract has no embedded contractspec (pre-SEP-48 or non-WASM contract)",

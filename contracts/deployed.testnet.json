@@ -1,0 +1,15 @@
+{
+  "network": "testnet",
+  "deployerPublicKey": "GBBHYIMKT43UAFUG2F4QHSJK25Q2AZSA3RRB6JSHUABDAXMQARGJZYHG",
+  "deployedAt": "2026-08-11T19:31:21Z",
+  "contracts": {
+    "registry": {
+      "contractId": "CDSCV5WBIK74OXFQLJMBMJHBWYBNEFGQGEG2YBKVKJSIWKP676AJF2QA",
+      "wasmHash": "939be5ae7d6b6c421f30dad75c56e613c5136897aadf54dfec2a7ae441cec334"
+    },
+    "demoEmitter": {
+      "contractId": "CBWXJ3AJZ7Y57XZWZV75VZRRSCZ5DT5VLPKKSC6FYG4YI4ELO5AXBBVP",
+      "wasmHash": "e16bedfd9616c5653bcefcafa5b055f0befabd7891a8d8350a14f78fba578757"
+    }
+  }
+}

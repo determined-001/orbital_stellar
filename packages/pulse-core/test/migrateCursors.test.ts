@@ -70,4 +70,23 @@ describe("migrateCursors", () => {
     expect(result).toEqual({ migrated: 1 });
     expect(await target.get("stream-a")).toBe("cursor-1");
   });
+
+  it("migrates a unified-stream-keyed cursor (issue 6.14) with no special-casing needed", async () => {
+    // CursorStore treats every cursor as an opaque string regardless of
+    // source - migrateCursors needs no changes to carry the unified
+    // transport's `unified:${network}` key alongside Horizon's and
+    // Soroban's, exactly like any other stream key.
+    const source = new InMemoryCursorStore();
+    await source.set("horizon:testnet", "43989323223040-1");
+    await source.set("soroban:testnet", "0015933813272113152-0000000001");
+    await source.set("unified:testnet", "0015933813272113152-0000000000");
+
+    const target = new InMemoryCursorStore();
+    const result = await migrateCursors(source, target);
+
+    expect(result).toEqual({ migrated: 3 });
+    expect(await target.get("unified:testnet")).toBe("0015933813272113152-0000000000");
+    expect(await target.get("horizon:testnet")).toBe("43989323223040-1");
+    expect(await target.get("soroban:testnet")).toBe("0015933813272113152-0000000001");
+  });
 });

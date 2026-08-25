@@ -1,0 +1,21 @@
+{
+  "schemaVersion": "1.0.0",
+  "generatedAt": "2026-08-10T00:48:39.648Z",
+  "files": {
+    "taxonomy.json": {
+      "sha256": "2a382292be359e00a3d34f140e8a8d6c445108d2bacc20db481a3780da9608ff",
+      "bytes": 18409,
+      "recordCount": 46
+    },
+    "labels.json": {
+      "sha256": "2955050fc590210f90111f33d51c8d7ee689063da6bf8744d11dbc79e9c226c4",
+      "bytes": 2624,
+      "recordCount": 5
+    },
+    "LICENSE": {
+      "sha256": "2b713ff3270d79b29ad8d7c41981bdfb46b6f2fe3759ae467a84c75a69fce794",
+      "bytes": 6585,
+      "license": "CC0-1.0"
+    }
+  }
+}

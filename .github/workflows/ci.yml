@@ -50,7 +50,7 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v6
+      - uses: pnpm/action-setup@v6.0.10
       - uses: actions/setup-node@v7
         with:
           node-version: 20
@@ -73,7 +73,7 @@ jobs:
       fail-fast: false
     steps:
       - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v6
+      - uses: pnpm/action-setup@v6.0.10
       - uses: actions/setup-node@v7
         with:
           node-version: ${{ matrix.node-version }}
@@ -89,8 +89,17 @@ jobs:
         run: pnpm tsc --noEmit -p packages/pulse-webhooks/tsconfig.json
       - name: Typecheck pulse-notify
         run: pnpm tsc --noEmit -p packages/pulse-notify/tsconfig.json
+      - name: Typecheck anchor-sdk
+        run: pnpm tsc --noEmit -p packages/anchor-sdk/tsconfig.json
       - name: Validate ABI specs
         run: pnpm --filter @orbital-stellar/abi-registry validate
+      - name: Generate Horizon types & check drift
+        run: |
+          node scripts/generate-horizon-types.mjs
+          git diff --exit-code packages/pulse-core/src/_raw-horizon.gen.ts || {
+            echo "ERROR: Generated Horizon types are stale. Run 'pnpm generate:horizon-types' and commit the changes."
+            exit 1
+          }
       - name: Test packages
         run: pnpm -r --if-present test
 
@@ -102,7 +111,7 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v6
+      - uses: pnpm/action-setup@v6.0.10
       - uses: actions/setup-node@v7
         with:
           node-version: 20
@@ -115,7 +124,39 @@ jobs:
       - name: Build pulse-notify
         run: pnpm tsc -p packages/pulse-notify/tsconfig.json
       - name: Check bundle size
+        id: size
         run: pnpm --filter @orbital-stellar/pulse-notify size
+      - name: Explain the budget failure
+        # size-limit prints the size and the delta against the budget; --why
+        # adds the top contributing modules, which is what you actually need to
+        # decide whether a dependency or your own code moved the number.
+        if: failure() && steps.size.outcome == 'failure'
+        run: pnpm --filter @orbital-stellar/pulse-notify run size:why
+
+  chaos-tests:
+    needs: changes
+    if: ${{ needs.changes.outputs.packages == 'true' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6.0.10
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # pulse-core imports @orbital-stellar/abi-registry, which resolves to its
+      # dist output - the suite cannot load without it built first.
+      - name: Build abi-registry
+        run: pnpm tsc -p packages/abi-registry/tsconfig.json
+      # Fixed seed on PRs so a failure here is always reproducible from the
+      # branch alone. nightly-chaos.yml runs the same suite with a random seed.
+      - name: Reconnection chaos suite (fixed seed)
+        env:
+          CHAOS_SEED: "20260802"
+        run: pnpm --filter @orbital-stellar/pulse-core exec vitest run test/chaos
 
   typecheck-web:
     needs: changes
@@ -125,7 +166,7 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v6
+      - uses: pnpm/action-setup@v6.0.10
       - uses: actions/setup-node@v7
         with:
           node-version: 20
@@ -140,6 +181,29 @@ jobs:
       - name: Typecheck apps/web
         run: pnpm tsc --noEmit -p apps/web/tsconfig.json
 
+  test-web:
+    needs: changes
+    if: ${{ needs.changes.outputs.web == 'true' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6.0.10
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # apps/web imports pulse-core and pulse-webhooks from their built output.
+      - name: Build workspace dependencies
+        run: |
+          pnpm tsc -p packages/abi-registry/tsconfig.json
+          pnpm tsc -p packages/pulse-core/tsconfig.json
+          pnpm tsc -p packages/pulse-webhooks/tsconfig.json
+      - name: Test apps/web
+        run: pnpm --filter orbital/web run test
+
   build-web:
     needs: changes
     if: ${{ needs.changes.outputs.web == 'true' }}
@@ -148,7 +212,7 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v6
+      - uses: pnpm/action-setup@v6.0.10
       - uses: actions/setup-node@v7
         with:
           node-version: 20
@@ -158,7 +222,21 @@ jobs:
       # workspace deps, incl. abi-registry) and generates reference docs, so
       # no manual dependency-order steps here.
       - name: Build apps/web
+        env:
+          # Canary secrets for the post-build client-bundle assertion. None of
+          # these may appear in .next/static (#892, #926).
+          DEMO_EMITTER_SECRET: SDEMOSECRET_CANARY_DO_NOT_SHIP_000000000000000000000000000
+          SOROBAN_INVOKER_SECRET: SINVOKER_CANARY_DO_NOT_SHIP_00000000000000000000000000000
+          UPSTASH_REDIS_REST_TOKEN: UPSTASH_CANARY_DO_NOT_SHIP_000000000000000000000000000
         run: pnpm --filter orbital/web run build
+      - name: Assert no secret reaches the client bundle
+        env:
+          # Canary values for every secret the web app can read; the assertion
+          # greps .next/static for each. See SECURITY.md for the inventory.
+          DEMO_EMITTER_SECRET: SDEMOSECRET_CANARY_DO_NOT_SHIP_000000000000000000000000000
+          SOROBAN_INVOKER_SECRET: SINVOKER_CANARY_DO_NOT_SHIP_00000000000000000000000000000
+          UPSTASH_REDIS_REST_TOKEN: UPSTASH_CANARY_DO_NOT_SHIP_000000000000000000000000000
+        run: node scripts/assert-no-secrets-in-bundle.mjs
 
   cli-smoke-test:
     needs: changes
@@ -168,7 +246,7 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v6
+      - uses: pnpm/action-setup@v6.0.10
       - uses: actions/setup-node@v7
         with:
           node-version: 20
@@ -218,19 +296,23 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v6
+      - uses: pnpm/action-setup@v6.0.10
       - uses: actions/setup-node@v7
         with:
           node-version: 20
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - name: Build abi-registry
-        run: pnpm tsc -p packages/abi-registry/tsconfig.json
+      # Every package must be built, not just abi-registry: workspace packages
+      # resolve each other through their published `main` (./dist/index.js), so
+      # a cross-package import in a test file - e.g. anchor-sdk's sep10 suite
+      # importing WebAuth from pulse-core - fails to resolve without a dist.
+      - name: Build packages
+        run: pnpm build
       - name: Run coverage (thresholds enforced)
         run: pnpm -r --if-present test:coverage
       - name: Upload coverage reports
         if: always()
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
           name: coverage-reports
           path: |

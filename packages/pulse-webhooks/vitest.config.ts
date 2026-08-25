@@ -17,14 +17,15 @@ export default defineConfig({
         "migrations/",
         // Pure interface (no runtime code to cover)
         "src/RetryQueue.ts",
-        // Unreferenced dead code — no test coverage expected
-        "src/url-validator.ts",
       ],
+      // Ratcheted after url-validator.ts came under test in #926 - it was
+      // previously excluded as unreferenced, which meant an exported SSRF
+      // check shipped with no coverage at all.
       thresholds: {
-        statements: 83,
-        branches: 72,
-        functions: 85,
-        lines: 87,
+        statements: 88,
+        branches: 79,
+        functions: 91,
+        lines: 92,
       },
       reporter: ["text", "html", "json-summary"],
     },

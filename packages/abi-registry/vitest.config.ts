@@ -18,13 +18,16 @@ export default defineConfig({
         // Pure type declarations — no runtime code to cover
         "src/types.ts",
       ],
-      // Functions re-baselined from 87 to 80: #937, #940, #947 and #960 landed
-      // between #923 measuring the baseline and #923 merging, adding exported
-      // helpers faster than tests reached them (measured 85.42%).
+      // Ratcheted to just under measured on `main` after #944 landed:
+      // statements 77.19, branches 68.68, functions 89.37, lines 78.00.
+      //
+      // The lines floor had been dropped 77 -> 76 in #944 with a TODO, when the
+      // branch was 0.05% short. It is not short any more, so the floor is back
+      // above where it was rather than left as a ratchet that moved backwards.
       thresholds: {
-        statements: 76,
-        branches: 66,
-        functions: 80,
+        statements: 77,
+        branches: 68,
+        functions: 89,
         lines: 77,
       },
       reporter: ["text", "html", "json-summary"],

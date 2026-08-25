@@ -50,8 +50,26 @@ export function assertExhaustive(event: NormalizedEvent): string {
     case "claimable.claimed":
     case "lp.deposited":
     case "lp.withdrawn":
+    case "asset.clawback":
+    case "fee.incurred":
     case "contract.invoked":
     case "contract.emitted":
+    case "anchor.transaction_status_changed":
+    case "anchor.deposit.initiated":
+    case "anchor.deposit.pending":
+    case "anchor.deposit.completed":
+    case "anchor.deposit.refunded":
+    case "anchor.deposit.failed":
+    case "anchor.withdrawal.initiated":
+    case "anchor.withdrawal.pending":
+    case "anchor.withdrawal.completed":
+    case "anchor.withdrawal.refunded":
+    case "anchor.withdrawal.failed":
+    case "anchor.payment.initiated":
+    case "anchor.payment.pending":
+    case "anchor.payment.completed":
+    case "anchor.payment.refunded":
+    case "anchor.payment.failed":
       return event.type;
     default: {
       const _exhaustive: never = event;
@@ -110,8 +128,26 @@ export function assertExhaustiveNoDefault(event: NormalizedEvent): string {
     case "claimable.claimed":
     case "lp.deposited":
     case "lp.withdrawn":
+    case "asset.clawback":
+    case "fee.incurred":
     case "contract.invoked":
     case "contract.emitted":
+    case "anchor.transaction_status_changed":
+    case "anchor.deposit.initiated":
+    case "anchor.deposit.pending":
+    case "anchor.deposit.completed":
+    case "anchor.deposit.refunded":
+    case "anchor.deposit.failed":
+    case "anchor.withdrawal.initiated":
+    case "anchor.withdrawal.pending":
+    case "anchor.withdrawal.completed":
+    case "anchor.withdrawal.refunded":
+    case "anchor.withdrawal.failed":
+    case "anchor.payment.initiated":
+    case "anchor.payment.pending":
+    case "anchor.payment.completed":
+    case "anchor.payment.refunded":
+    case "anchor.payment.failed":
       return event.type;
   }
 }

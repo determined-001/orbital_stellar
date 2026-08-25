@@ -3,6 +3,7 @@ import fs from 'fs'
 import path from 'path'
 import matter from 'gray-matter'
 import { docSections } from '@/lib/docroutes'
+import { checkWebhookCooldown, clientIp } from '@/lib/demo-limits'
 
 export type SearchResult = {
   title: string
@@ -44,16 +45,29 @@ function getSnippet(content: string, query: string, length = 160): string {
   return snippet
 }
 
-export async function GET(request: NextRequest) {
-  const query = request.nextUrl.searchParams.get('q')?.trim() ?? ''
+type IndexedDoc = {
+  title: string
+  href: string
+  section: string
+  plainContent: string
+  lowerTitle: string
+  lowerContent: string
+}
 
-  if (query.length < 2) {
-    return NextResponse.json([] as SearchResult[])
-  }
+/**
+ * The docs corpus, parsed once per process.
+ *
+ * Every request used to `existsSync` + `readFileSync` + `gray-matter` + regex
+ * strip every doc file, on a route with no rate limit that the search UI calls
+ * on a 200ms debounce. The content is build-time static - it cannot change
+ * while the server is running - so there is no reason to redo any of it.
+ */
+let corpus: IndexedDoc[] | null = null
 
-  const lowerQuery = query.toLowerCase()
-  const results: (SearchResult & { score: number })[] = []
+function getCorpus(): IndexedDoc[] {
+  if (corpus) return corpus
 
+  const docs: IndexedDoc[] = []
   for (const section of docSections) {
     for (const item of section.items) {
       const slug = item.href.replace('/docs/', '').split('/')
@@ -63,24 +77,66 @@ export async function GET(request: NextRequest) {
       const raw = fs.readFileSync(filePath, 'utf-8')
       const { data: fm, content } = matter(raw)
       const title = (fm.title as string) || item.title
-
-      const titleMatch = title.toLowerCase().includes(lowerQuery)
       const plainContent = stripMarkdown(content)
-      const contentMatch = plainContent.toLowerCase().includes(lowerQuery)
 
-      if (!titleMatch && !contentMatch) continue
-
-      const snippet = contentMatch ? getSnippet(plainContent, query) : plainContent.slice(0, 140).trim() + '…'
-
-      results.push({
+      docs.push({
         title,
         href: item.href,
         section: section.title,
-        snippet,
-        matchInTitle: titleMatch,
-        score: titleMatch ? 10 : 1,
+        plainContent,
+        lowerTitle: title.toLowerCase(),
+        lowerContent: plainContent.toLowerCase(),
       })
     }
+  }
+
+  corpus = docs
+  return corpus
+}
+
+/**
+ * Longest query we will scan the corpus for. Past this a query cannot match
+ * anything meaningful, and the length is attacker-controlled.
+ */
+const MAX_QUERY_LENGTH = 128
+
+export async function GET(request: NextRequest) {
+  const ip = clientIp(request)
+  const cooldown = checkWebhookCooldown(ip)
+  if (!cooldown.ok) {
+    return NextResponse.json(cooldown.body, {
+      status: 429,
+      headers: { 'Retry-After': String(Math.ceil(cooldown.body.retryAfterMs / 1000)) },
+    })
+  }
+
+  const query = request.nextUrl.searchParams.get('q')?.trim().slice(0, MAX_QUERY_LENGTH) ?? ''
+
+  if (query.length < 2) {
+    return NextResponse.json([] as SearchResult[])
+  }
+
+  const lowerQuery = query.toLowerCase()
+  const results: (SearchResult & { score: number })[] = []
+
+  for (const doc of getCorpus()) {
+    const titleMatch = doc.lowerTitle.includes(lowerQuery)
+    const contentMatch = doc.lowerContent.includes(lowerQuery)
+
+    if (!titleMatch && !contentMatch) continue
+
+    const snippet = contentMatch
+      ? getSnippet(doc.plainContent, query)
+      : doc.plainContent.slice(0, 140).trim() + '…'
+
+    results.push({
+      title: doc.title,
+      href: doc.href,
+      section: doc.section,
+      snippet,
+      matchInTitle: titleMatch,
+      score: titleMatch ? 10 : 1,
+    })
   }
 
   results.sort((a, b) => b.score - a.score)

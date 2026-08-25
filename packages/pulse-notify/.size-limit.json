@@ -1,7 +1,41 @@
 [
   {
+    "name": "index (gzip)",
     "path": "dist/index.js",
     "limit": "5 kB",
     "gzip": true
+  },
+  {
+    "name": "index (raw)",
+    "path": "dist/index.js",
+    "limit": "15.5 kB",
+    "gzip": false,
+    "brotli": false
+  },
+  {
+    "name": "devtools (gzip)",
+    "path": "dist/devtools.js",
+    "limit": "1 kB",
+    "gzip": true
+  },
+  {
+    "name": "devtools (raw)",
+    "path": "dist/devtools.js",
+    "limit": "2.1 kB",
+    "gzip": false,
+    "brotli": false
+  },
+  {
+    "name": "vitePlugin (gzip)",
+    "path": "dist/vitePlugin.js",
+    "limit": "450 B",
+    "gzip": true
+  },
+  {
+    "name": "vitePlugin (raw)",
+    "path": "dist/vitePlugin.js",
+    "limit": "750 B",
+    "gzip": false,
+    "brotli": false
   }
 ]

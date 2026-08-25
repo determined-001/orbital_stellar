@@ -20,7 +20,11 @@ export type {
   LiquidityPoolDepositEvent,
   LiquidityPoolWithdrawEvent,
   TrustAuthEvent,
+  AssetClawbackEvent,
+  FeeIncurredEvent,
   ContractInvokedEvent,
   ContractEmittedEvent,
   ContractEvent,
+  AnchorTransactionEvent,
+  AnchorFlowEvent,
 } from "./index.js";

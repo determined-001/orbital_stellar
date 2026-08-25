@@ -13,7 +13,7 @@ const instrumentSerif = Instrument_Serif({
 });
 
 export const metadata: Metadata = {
-  title: "Orbit Stellar - Real-time event infrastructure for Stellar developers",
+  title: "Orbital - Real-time event infrastructure for Stellar developers",
   description:
     "Watch any Stellar address. Register webhooks. React hooks for on-chain events. The missing event layer for Stellar developers.",
 };

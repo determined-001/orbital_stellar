@@ -72,7 +72,8 @@
         "string",
         "symbol",
         "address",
-        "void"
+        "void",
+        "error"
       ]
     },
     "BytesNType": {

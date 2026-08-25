@@ -254,7 +254,7 @@ semantic layer above raw schemas.
 
 - [ ] Human-readable event taxonomy on top of raw topics (e.g. `swap.executed`, `loan.liquidated`) with community-submitted mappings
 - [ ] Entity labels - verified contract → protocol/deployer/asset-issuer attribution - with a public submission and review flow
-- [ ] Labels and taxonomy published as **open data** (see [`docs/open-source-policy.md`](./docs/open-source-policy.md) - the data is open, the operated service is the product)
+- [x] Labels and taxonomy published as **open data** (see [`docs/open-source-policy.md`](./docs/open-source-policy.md) - the data is open, the operated service is the product)
 
 ### Wave 2.4 - Hosted registry (operated)
 

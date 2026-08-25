@@ -8,8 +8,18 @@ A cursor is an opaque string representing a position in the Stellar ledger histo
 
 - **Horizon (Classic)**: Cursors are paging tokens (e.g., `"1234567890-1"`).
 - **Soroban (Contract Events)**: Cursors are composed of ledger sequence, entry index, and event type.
+- **Unified stream (CAP-67)**: Cursors are the Soroban RPC `getEvents` pagination cursor returned alongside each page (e.g., `"0015933813272113152-0000000000"`) - a `toid`-style value that lexically sorts the same order as the ledger/transaction/operation position it encodes, so two cursors can be compared as plain strings without decoding them. Stored under its own key, independent of the Horizon and (contract-event) Soroban cursors for the same network - see below.
 
-The `CursorStore` interface treats these as opaque strings. You should never attempt to parse or modify a cursor string manually.
+The `CursorStore` interface treats every cursor as an opaque string regardless of source. You should never attempt to parse or modify a cursor string manually.
+
+### Unified-stream cursor key
+
+`EventEngine` persists the unified poller's cursor under its own `CursorStore` key so it advances independently of the Horizon and Soroban (contract-event) cursors for the same network:
+
+- `unified:${network}` by default (e.g. `unified:testnet`).
+- `${streamKey}:unified` when a custom `streamKey` is configured.
+
+This required no `CursorStore` interface change - the store already treats cursors as opaque per-key strings, so the unified transport is just a third key alongside the existing `horizon:${network}` / `soroban:${network}` (or `${streamKey}` / `${streamKey}:soroban`) ones. `migrateCursors` needs no changes either, for the same reason: it copies every key it finds, without any source-specific handling.
 
 ## Consistency Model
 

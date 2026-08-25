@@ -1,0 +1,37 @@
+{
+  "name": "orbital-express-starter",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Runnable backend reference: ingest Stellar events, persist a cursor, deliver HMAC-signed webhooks, and verify them on the receiving end.",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "start": "node dist/index.js",
+    "dev": "tsx src/index.ts",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage"
+  },
+  "dependencies": {
+    "@orbital-stellar/pulse-core": "workspace:*",
+    "@orbital-stellar/pulse-webhooks": "workspace:*",
+    "express": "^5.2.0",
+    "express-rate-limit": "^8.6.2",
+    "pg": "^8.22.0"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.6",
+    "@types/node": "^26.1.2",
+    "@types/pg": "^8.11.11",
+    "@vitest/coverage-v8": "^4.1.10",
+    "tsx": "^4.23.1",
+    "vite": "^8.1.5",
+    "vitest": "^4.1.10"
+  }
+}

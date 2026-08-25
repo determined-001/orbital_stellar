@@ -1,0 +1,64 @@
+name: Nightly chaos
+
+# CI runs the reconnection chaos suite with a fixed seed so PR failures are
+# reproducible. This runs the same suite nightly with a random seed to find the
+# faults a single seed never reaches. The seed is printed and included in the
+# job summary, so a red night can be replayed with CHAOS_SEED=<seed>.
+
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+    inputs:
+      seed:
+        description: "Replay a specific seed (leave empty for a random one)"
+        required: false
+        type: string
+
+jobs:
+  chaos:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6.0.10
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      # pulse-core imports @orbital-stellar/abi-registry from its dist output.
+      - name: Build abi-registry
+        run: pnpm tsc -p packages/abi-registry/tsconfig.json
+
+      - name: Pick a seed
+        id: seed
+        run: |
+          seed="${{ inputs.seed }}"
+          if [ -z "$seed" ]; then
+            seed=$(( RANDOM * 32768 + RANDOM ))
+          fi
+          echo "seed=$seed" >> "$GITHUB_OUTPUT"
+          echo "Chaos seed: $seed"
+
+      - name: Reconnection chaos suite (random seed)
+        env:
+          CHAOS_SEED: ${{ steps.seed.outputs.seed }}
+        run: pnpm --filter @orbital-stellar/pulse-core exec vitest run test/chaos
+
+      - name: Record the seed in the job summary
+        if: always()
+        run: |
+          {
+            echo "### Reconnection chaos"
+            echo
+            echo "Seed: \`${{ steps.seed.outputs.seed }}\`"
+            echo
+            echo "Replay locally:"
+            echo
+            echo '```bash'
+            echo "CHAOS_SEED=${{ steps.seed.outputs.seed }} pnpm --filter @orbital-stellar/pulse-core exec vitest run test/chaos"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

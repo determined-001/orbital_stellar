@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
+import Nav from "@/components/Nav";
+import Footer from "@/components/Footer";
 
 const WELL_KNOWN_CONTRACTS = [
   { label: "USDC", contractId: "CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75" },
@@ -102,7 +104,16 @@ export default function ContractEventsPlayground() {
   const [limit, setLimit] = useState<LimitEnvelope | null>(null);
   const [fireStatus, setFireStatus] = useState<FireEventStatus>("idle");
   const [fireError, setFireError] = useState("");
+  const [demoConfigured, setDemoConfigured] = useState<boolean | null>(null);
+  const [lastFireResult, setLastFireResult] = useState<FireEventResult | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    fetch("/api/demo/config")
+      .then((r) => r.json())
+      .then((data: { configured: boolean }) => setDemoConfigured(data.configured))
+      .catch(() => setDemoConfigured(false));
+  }, []);
 
   function watchContract(id: string) {
     if (!id.trim()) return;
@@ -149,6 +160,7 @@ export default function ContractEventsPlayground() {
   async function handleFireEvent() {
     setFireStatus("firing");
     setFireError("");
+    setLastFireResult(null);
     try {
       const res = await fetch("/api/demo/fire-event", { method: "POST" });
       const body = await res.json().catch(() => null);
@@ -166,6 +178,7 @@ export default function ContractEventsPlayground() {
 
       const result = body as FireEventResult;
       setFireStatus("fired");
+      setLastFireResult(result);
       if (contractId.trim() !== result.contractId) {
         handleWatchWellKnown(result.contractId);
       }
@@ -185,310 +198,333 @@ export default function ContractEventsPlayground() {
   const visibleEvents = events.filter((ev) => matchesTopic(ev, topic));
 
   return (
-    <section style={{ padding: "120px 32px" }}>
-      <div
-        style={{
-          maxWidth: "var(--max-width)",
-          margin: "0 auto 24px auto",
-          padding: "12px 16px",
-          background: "#2a2a00",
-          border: "1px solid #444400",
-          color: "#facc15",
-          fontSize: "13px",
-          fontFamily: "var(--font-sans)",
-        }}
-      >
-        ⚠️ This demo streams <strong>Soroban testnet and mainnet</strong> contract events.
-      </div>
-
-      <div style={{ maxWidth: "var(--max-width)", margin: "0 auto" }}>
-        <h1
-          style={{
-            fontFamily: "var(--font-heading)",
-            fontSize: "clamp(1.75rem, 3vw, 2.5rem)",
-            color: "#fff",
-            lineHeight: 1.1,
-            letterSpacing: "-0.01em",
-            marginBottom: "16px",
-          }}
-        >
-          Soroban Contract Events Playground
-        </h1>
-        <p
-          style={{
-            fontFamily: "var(--font-sans)",
-            fontSize: "15px",
-            color: "var(--muted2)",
-            lineHeight: 1.6,
-            marginBottom: "32px",
-            maxWidth: "640px",
-          }}
-        >
-          Paste a deployed Soroban contract ID and watch its <code>contract.emitted</code> and{" "}
-          <code>contract.invoked</code> events stream in live - one shared stream watches both
-          testnet and mainnet at once.
-        </p>
-
+    <>
+      <Nav />
+      <section style={{ padding: "120px 32px" }}>
         <div
           style={{
-            display: "flex",
-            flexWrap: "wrap",
-            alignItems: "center",
-            gap: "8px",
-            marginBottom: "16px",
+            maxWidth: "var(--max-width)",
+            margin: "0 auto 24px auto",
+            padding: "12px 16px",
+            background: "#2a2a00",
+            border: "1px solid #444400",
+            color: "#facc15",
+            fontSize: "13px",
+            fontFamily: "var(--font-sans)",
           }}
         >
-          <span
+          ⚠️ This demo streams <strong>Soroban testnet and mainnet</strong> contract events.
+        </div>
+
+        <div style={{ maxWidth: "var(--max-width)", margin: "0 auto" }}>
+          <h1
             style={{
-              fontFamily: "var(--font-sans)",
-              fontSize: "12px",
-              color: "var(--muted)",
-              marginRight: "4px",
+              fontFamily: "var(--font-heading)",
+              fontSize: "clamp(1.75rem, 3vw, 2.5rem)",
+              color: "#fff",
+              lineHeight: 1.1,
+              letterSpacing: "-0.01em",
+              marginBottom: "16px",
             }}
           >
-            One-click watch:
-          </span>
-          {WELL_KNOWN_CONTRACTS.map((token) => (
-            <button
-              key={token.contractId}
-              onClick={() => handleWatchWellKnown(token.contractId)}
+            Soroban Contract Events Playground
+          </h1>
+          <p
+            style={{
+              fontFamily: "var(--font-sans)",
+              fontSize: "15px",
+              color: "var(--muted2)",
+              lineHeight: 1.6,
+              marginBottom: "32px",
+              maxWidth: "640px",
+            }}
+          >
+            Paste a deployed Soroban contract ID and watch its <code>contract.emitted</code> and{" "}
+            <code>contract.invoked</code> events stream in live - one shared stream watches both
+            testnet and mainnet at once.
+          </p>
+
+          <div
+            style={{
+              display: "flex",
+              flexWrap: "wrap",
+              alignItems: "center",
+              gap: "8px",
+              marginBottom: "16px",
+            }}
+          >
+            <span
               style={{
-                background: "var(--surface2)",
-                border: "1px solid var(--border)",
-                color: "#fff",
-                fontFamily: "var(--font-mono)",
+                fontFamily: "var(--font-sans)",
                 fontSize: "12px",
-                fontWeight: 700,
-                padding: "6px 12px",
-                cursor: "pointer",
+                color: "var(--muted)",
+                marginRight: "4px",
               }}
             >
-              {token.label}
+              One-click watch:
+            </span>
+            {WELL_KNOWN_CONTRACTS.map((token) => (
+              <button
+                key={token.contractId}
+                onClick={() => handleWatchWellKnown(token.contractId)}
+                style={{
+                  background: "var(--surface2)",
+                  border: "1px solid var(--border)",
+                  color: "#fff",
+                  fontFamily: "var(--font-mono)",
+                  fontSize: "12px",
+                  fontWeight: 700,
+                  padding: "6px 12px",
+                  cursor: "pointer",
+                }}
+              >
+                {token.label}
+              </button>
+            ))}
+            <button
+              onClick={handleFireEvent}
+              disabled={fireStatus === "firing" || demoConfigured === false}
+              style={{
+                marginLeft: "auto",
+                background:
+                  demoConfigured === false
+                    ? "var(--surface2)"
+                    : fireStatus === "firing"
+                      ? "var(--surface2)"
+                      : "var(--accent)",
+                border: "none",
+                color:
+                  demoConfigured === false || fireStatus === "firing" ? "var(--muted)" : "#000",
+                fontFamily: "var(--font-sans)",
+                fontSize: "13px",
+                fontWeight: 700,
+                padding: "8px 16px",
+                cursor: fireStatus === "firing" || demoConfigured === false ? "default" : "pointer",
+              }}
+            >
+              {demoConfigured === false
+                ? "⛔ Demo contract not configured"
+                : fireStatus === "firing"
+                  ? "Firing…"
+                  : "🔥 Fire test event"}
             </button>
-          ))}
-          <button
-            onClick={handleFireEvent}
-            disabled={fireStatus === "firing"}
-            style={{
-              marginLeft: "auto",
-              background: fireStatus === "firing" ? "var(--surface2)" : "var(--accent)",
-              border: "none",
-              color: fireStatus === "firing" ? "var(--muted)" : "#000",
-              fontFamily: "var(--font-sans)",
-              fontSize: "13px",
-              fontWeight: 700,
-              padding: "8px 16px",
-              cursor: fireStatus === "firing" ? "default" : "pointer",
-            }}
-          >
-            {fireStatus === "firing" ? "Firing…" : "🔥 Fire test event"}
-          </button>
-        </div>
-        {fireStatus === "fired" && (
-          <p
-            style={{
-              fontFamily: "var(--font-sans)",
-              fontSize: "13px",
-              color: "var(--accent)",
-              marginTop: "-8px",
-              marginBottom: "16px",
-            }}
-          >
-            Test event fired - watch it arrive below.
-          </p>
-        )}
-        {fireStatus === "error" && (
-          <p
-            style={{
-              fontFamily: "var(--font-sans)",
-              fontSize: "13px",
-              color: "#FF5370",
-              marginTop: "-8px",
-              marginBottom: "16px",
-            }}
-          >
-            {fireError}
-          </p>
-        )}
+          </div>
+          {fireStatus === "fired" && lastFireResult && (
+            <p
+              style={{
+                fontFamily: "var(--font-sans)",
+                fontSize: "13px",
+                color: "var(--accent)",
+                marginTop: "-8px",
+                marginBottom: "16px",
+              }}
+            >
+              Test event fired —{" "}
+              <a
+                href={`https://stellar.expert/explorer/testnet/tx/${lastFireResult.txHash}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{ color: "var(--accent)", textDecoration: "underline" }}
+              >
+                view on stellar.expert
+              </a>{" "}
+              — watch it arrive below.
+            </p>
+          )}
+          {fireStatus === "error" && (
+            <p
+              style={{
+                fontFamily: "var(--font-sans)",
+                fontSize: "13px",
+                color: "#FF5370",
+                marginTop: "-8px",
+                marginBottom: "16px",
+              }}
+            >
+              {fireError}
+            </p>
+          )}
 
-        <div style={{ background: "var(--surface)", border: "1px solid var(--border)" }}>
-          <div
-            style={{
-              height: "48px",
-              background: "var(--surface2)",
-              borderBottom: "1px solid var(--border)",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              padding: "0 16px",
-            }}
-          >
-            <div style={{ display: "flex", gap: "8px" }}>
-              {["#FF5F57", "#FEBC2E", "#28C840"].map((color) => (
-                <span
-                  key={color}
+          <div style={{ background: "var(--surface)", border: "1px solid var(--border)" }}>
+            <div
+              style={{
+                height: "48px",
+                background: "var(--surface2)",
+                borderBottom: "1px solid var(--border)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                padding: "0 16px",
+              }}
+            >
+              <div style={{ display: "flex", gap: "8px" }}>
+                {["#FF5F57", "#FEBC2E", "#28C840"].map((color) => (
+                  <span
+                    key={color}
+                    style={{
+                      width: "12px",
+                      height: "12px",
+                      borderRadius: "50%",
+                      background: color,
+                      display: "inline-block",
+                    }}
+                  />
+                ))}
+              </div>
+              <span
+                style={{ fontFamily: "var(--font-mono)", fontSize: "12px", color: "var(--muted)" }}
+              >
+                contract event stream
+              </span>
+            </div>
+
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                borderBottom: "1px solid var(--border)",
+              }}
+            >
+              <div style={{ display: "flex" }}>
+                <input
+                  type="text"
+                  value={contractId}
+                  onChange={(e) => setContractId(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && handleWatch()}
+                  placeholder="C... (Soroban contract ID)"
                   style={{
-                    width: "12px",
-                    height: "12px",
-                    borderRadius: "50%",
-                    background: color,
-                    display: "inline-block",
+                    flex: 1,
+                    fontFamily: "var(--font-mono)",
+                    fontSize: "14px",
+                    background: "transparent",
+                    border: "none",
+                    color: "#fff",
+                    padding: "12px 16px",
+                    outline: "none",
                   }}
                 />
-              ))}
-            </div>
-            <span
-              style={{ fontFamily: "var(--font-mono)", fontSize: "12px", color: "var(--muted)" }}
-            >
-              contract event stream
-            </span>
-          </div>
-
-          <div
-            style={{
-              display: "flex",
-              flexDirection: "column",
-              borderBottom: "1px solid var(--border)",
-            }}
-          >
-            <div style={{ display: "flex" }}>
+                <button
+                  onClick={handleWatch}
+                  style={{
+                    background: "var(--accent)",
+                    color: "#000",
+                    fontFamily: "var(--font-sans)",
+                    fontWeight: 700,
+                    fontSize: "13px",
+                    padding: "12px 20px",
+                    border: "none",
+                    cursor: "pointer",
+                    flexShrink: 0,
+                  }}
+                >
+                  Watch
+                </button>
+              </div>
               <input
                 type="text"
-                value={contractId}
-                onChange={(e) => setContractId(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && handleWatch()}
-                placeholder="C... (Soroban contract ID)"
+                value={topic}
+                onChange={(e) => setTopic(e.target.value)}
+                placeholder="Topic / function filter (optional)"
                 style={{
-                  flex: 1,
                   fontFamily: "var(--font-mono)",
-                  fontSize: "14px",
+                  fontSize: "13px",
                   background: "transparent",
                   border: "none",
-                  color: "#fff",
-                  padding: "12px 16px",
+                  borderTop: "1px solid var(--border)",
+                  color: "var(--muted2)",
+                  padding: "10px 16px",
                   outline: "none",
                 }}
               />
-              <button
-                onClick={handleWatch}
-                style={{
-                  background: "var(--accent)",
-                  color: "#000",
-                  fontFamily: "var(--font-sans)",
-                  fontWeight: 700,
-                  fontSize: "13px",
-                  padding: "12px 20px",
-                  border: "none",
-                  cursor: "pointer",
-                  flexShrink: 0,
-                }}
-              >
-                Watch
-              </button>
             </div>
-            <input
-              type="text"
-              value={topic}
-              onChange={(e) => setTopic(e.target.value)}
-              placeholder="Topic / function filter (optional)"
-              style={{
-                fontFamily: "var(--font-mono)",
-                fontSize: "13px",
-                background: "transparent",
-                border: "none",
-                borderTop: "1px solid var(--border)",
-                color: "var(--muted2)",
-                padding: "10px 16px",
-                outline: "none",
-              }}
-            />
-          </div>
 
-          <div
-            style={{ minHeight: "260px", maxHeight: "520px", overflowY: "auto", padding: "16px" }}
-          >
-            {status === "idle" && (
-              <p style={emptyStateStyle}>Paste a contract ID to start watching.</p>
-            )}
-            {status === "connecting" && <p style={emptyStateStyle}>Connecting...</p>}
-            {status === "live" && visibleEvents.length === 0 && (
-              <p style={emptyStateStyle}>Waiting for events...</p>
-            )}
-            {status === "error" && (
-              <p style={{ ...emptyStateStyle, color: "#FF5370" }}>{errorMsg}</p>
-            )}
-            {status === "limit" && limit && (
-              <div
-                style={{ textAlign: "center", marginTop: "60px", fontFamily: "var(--font-sans)" }}
-              >
-                <p style={{ fontSize: "14px", color: "#facc15", marginBottom: "12px" }}>
-                  {limit.message}
-                </p>
-                <a
-                  href={limit.upgradeUrl}
-                  style={{
-                    display: "inline-block",
-                    background: "var(--accent)",
-                    color: "#000",
-                    fontWeight: 700,
-                    fontSize: "13px",
-                    padding: "10px 18px",
-                    textDecoration: "none",
-                  }}
-                >
-                  Upgrade to Orbital Cloud →
-                </a>
-              </div>
-            )}
-            {visibleEvents.map((ev, idx) => (
-              <div
-                key={`${ev.type}-${ev.txHash ?? ev.timestamp}-${idx}`}
-                style={{
-                  padding: "10px 0",
-                  borderBottom: "1px solid var(--border)",
-                  fontFamily: "var(--font-mono)",
-                  fontSize: "12px",
-                }}
-              >
+            <div
+              style={{ minHeight: "260px", maxHeight: "520px", overflowY: "auto", padding: "16px" }}
+            >
+              {status === "idle" && (
+                <p style={emptyStateStyle}>Paste a contract ID to start watching.</p>
+              )}
+              {status === "connecting" && <p style={emptyStateStyle}>Connecting...</p>}
+              {status === "live" && visibleEvents.length === 0 && (
+                <p style={emptyStateStyle}>Waiting for events...</p>
+              )}
+              {status === "error" && (
+                <p style={{ ...emptyStateStyle, color: "#FF5370" }}>{errorMsg}</p>
+              )}
+              {status === "limit" && limit && (
                 <div
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    color: "var(--accent)",
-                  }}
+                  style={{ textAlign: "center", marginTop: "60px", fontFamily: "var(--font-sans)" }}
                 >
-                  <span>{ev.type}</span>
-                  <span style={{ color: "var(--muted)" }}>{ev.timestamp}</span>
+                  <p style={{ fontSize: "14px", color: "#facc15", marginBottom: "12px" }}>
+                    {limit.message}
+                  </p>
+                  <a
+                    href={limit.upgradeUrl}
+                    style={{
+                      display: "inline-block",
+                      background: "var(--accent)",
+                      color: "#000",
+                      fontWeight: 700,
+                      fontSize: "13px",
+                      padding: "10px 18px",
+                      textDecoration: "none",
+                    }}
+                  >
+                    Upgrade to Orbital Cloud →
+                  </a>
                 </div>
-                <pre
+              )}
+              {visibleEvents.map((ev, idx) => (
+                <div
+                  key={`${ev.type}-${ev.txHash ?? ev.timestamp}-${idx}`}
                   style={{
-                    marginTop: "6px",
-                    color: "#fff",
-                    whiteSpace: "pre-wrap",
-                    wordBreak: "break-all",
+                    padding: "10px 0",
+                    borderBottom: "1px solid var(--border)",
+                    fontFamily: "var(--font-mono)",
+                    fontSize: "12px",
                   }}
                 >
-                  {JSON.stringify(
-                    {
-                      contractId: ev.contractId,
-                      network: ev.network,
-                      topics: ev.topics,
-                      function: ev.function,
-                      args: ev.args,
-                      data: ev.decodedData ?? ev.data,
-                      ledger: ev.ledger,
-                      txHash: ev.txHash,
-                    },
-                    null,
-                    2,
-                  )}
-                </pre>
-              </div>
-            ))}
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      color: "var(--accent)",
+                    }}
+                  >
+                    <span>{ev.type}</span>
+                    <span style={{ color: "var(--muted)" }}>{ev.timestamp}</span>
+                  </div>
+                  <pre
+                    style={{
+                      marginTop: "6px",
+                      color: "#fff",
+                      whiteSpace: "pre-wrap",
+                      wordBreak: "break-all",
+                    }}
+                  >
+                    {JSON.stringify(
+                      {
+                        contractId: ev.contractId,
+                        network: ev.network,
+                        topics: ev.topics,
+                        function: ev.function,
+                        args: ev.args,
+                        data: ev.decodedData ?? ev.data,
+                        ledger: ev.ledger,
+                        txHash: ev.txHash,
+                      },
+                      null,
+                      2,
+                    )}
+                  </pre>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
-      </div>
-    </section>
+      </section>
+      <Footer />
+    </>
   );
 }
 

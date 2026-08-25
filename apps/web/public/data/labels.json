@@ -1,0 +1,85 @@
+{
+  "schemaVersion": "1.0.0",
+  "generatedAt": "2026-08-10T00:48:39.648Z",
+  "recordCount": 5,
+  "records": [
+    {
+      "contractId": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
+      "name": "Stellar Asset Contract (SAC) Interface",
+      "description": "Common interface implemented by every Stellar Asset Contract (SAC). SACs are the standard Soroban wrappers for Stellar classic assets and implement the full SEP-41 token interface plus SAC-specific admin operations.",
+      "network": "mainnet",
+      "tags": [
+        "sep41",
+        "sac",
+        "interface"
+      ],
+      "category": "interface",
+      "verified": true,
+      "specFile": "sac-interface.json"
+    },
+    {
+      "contractId": "CAS3J7GYLGXMF6TDJBBYYSE3HQ6BBSMLNUQ34T6TZMYMW2EVH34XOWMA",
+      "name": "Native Asset Wrapper (XLM SAC)",
+      "description": "Stellar Asset Contract wrapping the native XLM asset. Exposes XLM as a SEP-41-compatible Soroban token.",
+      "network": "mainnet",
+      "tags": [
+        "sep41",
+        "sac",
+        "native",
+        "xlm"
+      ],
+      "category": "native",
+      "verified": true,
+      "specFile": "native-asset-wrapper.json"
+    },
+    {
+      "contractId": "CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75",
+      "name": "USD Coin (USDC)",
+      "description": "Circle's USD-backed stablecoin on Stellar mainnet, deployed as a Stellar Asset Contract (SAC).",
+      "network": "mainnet",
+      "tags": [
+        "sep41",
+        "sac",
+        "stablecoin",
+        "usd",
+        "circle"
+      ],
+      "category": "stablecoin",
+      "verified": true,
+      "specFile": "usdc.json"
+    },
+    {
+      "contractId": "CDTKPWPLOURQA2SGTKTUQOWRCBZEORB4BWBOMJ3D3ZTQQSGE5F6JBQLV",
+      "name": "Euro Coin (EURC)",
+      "description": "Circle's EUR-backed stablecoin on Stellar mainnet, deployed as a Stellar Asset Contract (SAC). MiCA-compliant.",
+      "network": "mainnet",
+      "tags": [
+        "sep41",
+        "sac",
+        "stablecoin",
+        "eur",
+        "circle",
+        "mica"
+      ],
+      "category": "stablecoin",
+      "verified": true,
+      "specFile": "eurc.json"
+    },
+    {
+      "contractId": "CAUIKL3IYGMERDRUN5QQVPKPLZTRNVXV27LFCWQIRNOHSNGB3ZXAEFBX",
+      "name": "Aquarius (AQUA)",
+      "description": "Governance and liquidity incentive token of the Aquarius protocol on Stellar mainnet.",
+      "network": "mainnet",
+      "tags": [
+        "sep41",
+        "sac",
+        "governance",
+        "defi",
+        "aquarius"
+      ],
+      "category": "governance",
+      "verified": true,
+      "specFile": "aqua.json"
+    }
+  ]
+}

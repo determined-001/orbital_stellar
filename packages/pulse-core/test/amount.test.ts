@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { toBigInt } from "../src/amount.js";
+import { toBigInt, fromBigInt } from "../src/amount.js";
 import type { StellarAmount } from "../src/amount.js";
 
 describe("amount.toBigInt", () => {
@@ -22,5 +22,23 @@ describe("amount.toBigInt", () => {
     expect(() => toBigInt("abc" as any)).toThrow();
     expect(() => toBigInt("1.2.3" as any)).toThrow();
     expect(() => toBigInt("" as any)).toThrow();
+  });
+});
+
+describe("amount.fromBigInt", () => {
+  it("converts stroops to a fixed 7-decimal string", () => {
+    expect(fromBigInt(10000000000n)).toBe("1000.0000000");
+    expect(fromBigInt(12345678n)).toBe("1.2345678");
+    expect(fromBigInt(1n)).toBe("0.0000001");
+    expect(fromBigInt(0n)).toBe("0.0000000");
+  });
+
+  it("handles negative amounts", () => {
+    expect(fromBigInt(-25000000n)).toBe("-2.5000000");
+  });
+
+  it("round-trips through toBigInt", () => {
+    const amount = "1000.0000000" as StellarAmount;
+    expect(fromBigInt(toBigInt(amount))).toBe(amount);
   });
 });

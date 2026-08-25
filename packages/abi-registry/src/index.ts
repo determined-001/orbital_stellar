@@ -2,7 +2,13 @@ export { AbiRegistryClient } from "./AbiRegistryClient.js";
 export { scvalToJs, jsToScval } from "./scval.js";
 export { RegistryPublisher } from "./RegistryPublisher.js";
 
-export type { AbiRegistryClientConfig, XdrContractSpec } from "./types.js";
+export type {
+  AbiRegistryClientConfig,
+  XdrContractSpec,
+  AttestationDocument,
+  AttestationValidationResult,
+} from "./types.js";
+export { validateAttestationDocument } from "./types.js";
 
 export type {
   ContractSpec,
@@ -47,11 +53,15 @@ export type { OnChainAbiRegistryClientConfig } from "./OnChainAbiRegistryClient.
 export { BundledWellKnownClient } from "./BundledWellKnownClient.js";
 export { ChainedAbiRegistryClient } from "./ChainedAbiRegistryClient.js";
 export type { AbiRegistryReader } from "./ChainedAbiRegistryClient.js";
+export { HostedAbiRegistryClient } from "./HostedAbiRegistryClient.js";
+export type { HostedAbiRegistryClientConfig } from "./HostedAbiRegistryClient.js";
 export { createDefaultAbiRegistryClient } from "./createDefaultAbiRegistryClient.js";
+export type { CreateDefaultAbiRegistryClientOptions } from "./createDefaultAbiRegistryClient.js";
 export {
   ORBITAL_REGISTRY_TESTNET_CONTRACT_ID,
   ORBITAL_REGISTRY_PUBLISHER_ADDRESS,
   ORBITAL_REGISTRY_TESTNET_RPC_URL,
+  ORBITAL_HOSTED_REGISTRY_BASE_URL,
 } from "./registryConstants.js";
 
 export { discoverContractSpec, NoEmbeddedSpecError } from "./discovery/discoverContract.js";
@@ -66,10 +76,17 @@ export type {
   OrbitalLockFile,
   OrbitalLockEntry,
 } from "./config.js";
-export { loadCodegenConfig, loadLockFile } from "./config.js";
+export { loadCodegenConfig } from "./config.js";
 
 export type { CodegenWatchOptions } from "./watch.js";
 export { generateForContract, watchCodegen, writeLockFile } from "./watch.js";
+
+export type { GeneratedContractArtifacts } from "./generate.js";
+export {
+  generateContractArtifacts,
+  generateContractTypes,
+  generateContractHooks,
+} from "./generate.js";
 
 export { verifySchema } from "./verifySchema.js";
 export type {
@@ -80,6 +97,61 @@ export type {
   SchemaFieldDiff,
   VerifySchemaOptions,
 } from "./verifySchema.js";
+
+// Configuration and codegen exports
+export { defineConfig, validateConfig, ConfigValidationError } from "./config.js";
+export type { OrbitalConfig, ContractConfig, LockFile, LockFileContract } from "./config.js";
+export { loadConfig, configExists, getConfigDirectory, ConfigLoadError } from "./configLoader.js";
+export {
+  loadLockFile,
+  saveLockFile,
+  createLockFile,
+  generateSpecHash,
+  detectDrift,
+  getLockFilePath,
+  formatDriftReport,
+  LockFileError,
+} from "./lockFile.js";
+export { generateBatchTypes, checkForDrift, BatchGenerationError } from "./batchGeneration.js";
+export type { BatchGenerationResult } from "./batchGeneration.js";
+export { LabelResolver } from "./LabelResolver.js";
+export type {
+  LabelRecord,
+  LabelResolverConfig,
+  ResolvedLabel,
+  EntityType,
+} from "./LabelResolver.js";
+
+export {
+  validateTaxonomyEntry,
+  findTaxonomyConflicts,
+  TAXONOMY_NAMESPACE_ROOTS,
+  RESERVED_TAXONOMY_NAMESPACE_ROOTS,
+  TAXONOMY_NAME_RE,
+} from "./taxonomy.js";
+export type {
+  TaxonomyEntry,
+  TaxonomyMatch,
+  TaxonomyScope,
+  TaxonomyProvenance,
+  TaxonomyConflict,
+  TaxonomyNamespaceRoot,
+  TaxonomyNetwork,
+  TopicMatcher,
+  ParameterMapping,
+} from "./taxonomy.js";
+
+export {
+  signAttestation,
+  verifyAttestation,
+  canonicalizeAttestation,
+  AttestationSigningError,
+} from "./attestation.js";
+export type {
+  AttestationEnvelope,
+  AttestationVerdict,
+  VerifyAttestationOptions,
+} from "./attestation.js";
 
 export { InMemoryVerdictStore } from "./verdictStore.js";
 export type { VerdictStore, VerdictRecord, VerdictStatus } from "./verdictStore.js";

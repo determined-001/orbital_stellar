@@ -159,13 +159,39 @@ export class OnChainAbiRegistryClient {
     return spec;
   }
 
+  /**
+   * Pages through all published versions transparently by calling the
+   * contract's `list_versions_paged` in a loop. Handles the truncation
+   * marker from the deprecated `list_versions` path gracefully.
+   */
   private async simulateListVersions(targetContractId: string): Promise<string[]> {
-    const retval = await this.simulate("list_versions", [
-      nativeToScVal(targetContractId, { type: "address" }),
-      nativeToScVal(this.config.publisher, { type: "address" }),
-    ]);
-    if (!retval) return [];
-    return (scValToNative(retval) as unknown[]).map((v) => String(v));
+    const allVersions: string[] = [];
+    let cursor: number | null = 0;
+
+    while (cursor !== null) {
+      const retval = await this.simulate("list_versions_paged", [
+        nativeToScVal(targetContractId, { type: "address" }),
+        nativeToScVal(this.config.publisher, { type: "address" }),
+        nativeToScVal(cursor, { type: "u32" }),
+        nativeToScVal(25, { type: "u32" }), // MAX_PAGE_SIZE
+      ]);
+
+      if (!retval) break;
+
+      const native = scValToNative(retval) as [string[], number | null];
+      const [page, nextCursor] = native;
+
+      for (const version of page) {
+        // Skip truncation sentinel markers from the deprecated list_versions
+        if (!version.startsWith("__truncated_")) {
+          allVersions.push(version);
+        }
+      }
+
+      cursor = nextCursor;
+    }
+
+    return allVersions;
   }
 
   private async simulateGetVersion(

@@ -1,0 +1,60 @@
+{
+  "id": "swap-executed-example-dex",
+  "version": "1.0.0",
+  "name": "swap.executed",
+  "title": "Swap executed",
+  "description": "ILLUSTRATIVE EXAMPLE - not a mapping for any real deployed protocol. The contract ID is the placeholder address used throughout this repository's docs. It shows the shape a DEX swap submission takes: a contract-scoped entry (narrowest scope, correct when a protocol's event is its own rather than a SEP's), map-shaped data, and parameters projected out of both topic slots and data keys. A real submission would name the protocol's deployed router contracts and cite that protocol's documentation.",
+  "match": {
+    "topics": [
+      { "kind": "symbol", "symbol": "swap" },
+      { "kind": "any", "type": "address", "doc": "Account that initiated the swap." }
+    ],
+    "trailingTopics": "forbidden",
+    "dataShape": "map"
+  },
+  "parameters": {
+    "account": {
+      "from": "topic",
+      "index": 1,
+      "type": "address",
+      "doc": "Account that initiated the swap."
+    },
+    "token_in": {
+      "from": "data",
+      "path": "token_in",
+      "type": "address",
+      "doc": "Token the account paid with."
+    },
+    "token_out": {
+      "from": "data",
+      "path": "token_out",
+      "type": "address",
+      "doc": "Token the account received."
+    },
+    "amount_in": {
+      "from": "data",
+      "path": "amount_in",
+      "type": "i128",
+      "doc": "Amount paid, in `token_in`'s base units."
+    },
+    "amount_out": {
+      "from": "data",
+      "path": "amount_out",
+      "type": "i128",
+      "doc": "Amount received, in `token_out`'s base units."
+    }
+  },
+  "scope": {
+    "kind": "contract",
+    "contractIds": ["CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM"],
+    "networks": ["mainnet"]
+  },
+  "provenance": {
+    "submittedBy": "@ezedike-evan",
+    "submittedAt": "2026-07-29T00:00:00Z",
+    "sources": [
+      "https://github.com/chalkeion-stellar/orbital_stellar/blob/main/ROADMAP.md",
+      "https://github.com/chalkeion-stellar/orbital_stellar/blob/main/packages/abi-registry/schema/taxonomy.schema.json"
+    ]
+  }
+}

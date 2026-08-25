@@ -7,6 +7,7 @@ export type GeneratedContractArtifacts = {
   schemas: string;
   guards?: string;
   testDts?: string;
+  hooks?: string;
 };
 
 function toPascalCase(value: string): string {
@@ -509,6 +510,64 @@ function generateEventDeclarations(events: ReadonlyArray<EventSpec>): {
   return { declarations, schemas, guards, testDts };
 }
 
+function generateReactHooks(events: ReadonlyArray<EventSpec>, contractName?: string): string[] {
+  if (events.length === 0) return [];
+  const hooks: string[] = [];
+  const usedNames = new Set<string>();
+
+  hooks.push("// ─── React hooks generated from contract event schema ─────────────");
+  hooks.push("//");
+  hooks.push("// These hooks wrap useContractEvent with the correct Zod-validated");
+  hooks.push("// types so consumers get fully typed events without manual narrowing.");
+  hooks.push("//");
+  hooks.push("// @ts-expect-error - useContractEvent is resolved at the consumer side");
+  hooks.push('import { useContractEvent } from "@orbital-stellar/pulse-notify";');
+  hooks.push("");
+
+  for (const event of events) {
+    const baseName = toPascalCase(event.name);
+    const interfaceName = ensureUniqueName(`${baseName}Event`, usedNames);
+    const schemaName = `${interfaceName}Schema`;
+    const hookName = `use${baseName}`;
+    const fieldName = event.data.length > 0 ? toCamelCase(event.data[0]?.name ?? "data") : "data";
+
+    hooks.push("/**");
+    hooks.push(` * React hook that subscribes to \`${event.name}\` events.`);
+    hooks.push(` * The returned event is validated against \`${schemaName}\` at runtime.`);
+    hooks.push(" */");
+    hooks.push(`export function ${hookName}(`);
+    hooks.push("  config: {");
+    hooks.push("    serverUrl: string;");
+    hooks.push("    contractId: string;");
+    hooks.push("    token?: string;");
+    hooks.push("    tokenProvider?: () => Promise<string>;");
+    hooks.push("    filter?: (event: unknown) => boolean;");
+    hooks.push("    withCredentials?: boolean;");
+    hooks.push("    hideAfterMs?: number;");
+    hooks.push("  },");
+    hooks.push(
+      `): { event: ${interfaceName} | null; connected: boolean; error: string | null; lastEventAt: string | null } {`,
+    );
+    hooks.push("  const result = useContractEvent({");
+    hooks.push("    ...config,");
+    hooks.push("    topics: [],");
+    hooks.push("  });");
+    hooks.push("");
+    hooks.push("  // Validate the event payload against the generated schema");
+    hooks.push("  if (result.event && result.event.type === 'contract.emitted') {");
+    hooks.push(`    const parsed = ${schemaName}.safeParse(result.event.data);`);
+    hooks.push("    if (parsed.success) {");
+    hooks.push(`      return { ...result, event: parsed.data as unknown as ${interfaceName} };`);
+    hooks.push("    }");
+    hooks.push("  }");
+    hooks.push(`  return { ...result, event: null as unknown as ${interfaceName} };`);
+    hooks.push("}");
+    hooks.push("");
+  }
+
+  return hooks;
+}
+
 function generateFromContractSpec(spec: ContractSpec): GeneratedContractArtifacts {
   const declarations: string[] = ['import { z } from "zod";', ""];
   const schemas: string[] = [];
@@ -523,11 +582,14 @@ function generateFromContractSpec(spec: ContractSpec): GeneratedContractArtifact
   declarations.push(...events.declarations);
   schemas.push(...events.schemas);
 
+  const hooks = generateReactHooks(spec.events, spec.name);
+
   return {
     declarations: declarations.join("\n"),
     schemas: schemas.join("\n"),
     guards: events.guards.join("\n"),
     testDts: events.testDts.join("\n"),
+    hooks: hooks.length > 0 ? hooks.join("\n") : undefined,
   };
 }
 
@@ -542,4 +604,15 @@ export function generateContractArtifacts(
 export function generateContractTypes(spec: XdrContractSpec | ContractSpec): string {
   const artifacts = generateContractArtifacts(spec);
   return [artifacts.declarations, artifacts.schemas, artifacts.guards].filter(Boolean).join("\n\n");
+}
+
+/**
+ * Generates React hook wrappers (e.g. `useSwapExecuted()`) for every event
+ * in the contract spec. Returns an empty string if the spec has no events
+ * or is an XDR contract spec (which lacks structured event specs).
+ */
+export function generateContractHooks(spec: XdrContractSpec | ContractSpec): string {
+  if (isXdrContractSpec(spec)) return "";
+  const hooks = generateReactHooks(spec.events, spec.name);
+  return hooks.join("\n");
 }
