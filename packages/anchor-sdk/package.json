@@ -41,9 +41,9 @@
   },
   "devDependencies": {
     "@stellar/stellar-sdk": "^16.1.0",
-    "@types/node": "^26.1.2",
-    "@vitest/coverage-v8": "^4.1.10",
-    "vite": "^8.1.5",
-    "vitest": "^4.1.10"
+    "@types/node": "^26.2.0",
+    "@vitest/coverage-v8": "^4.1.11",
+    "vite": "^8.2.2",
+    "vitest": "^4.1.11"
   }
 }
