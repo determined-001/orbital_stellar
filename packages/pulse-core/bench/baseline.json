@@ -1,0 +1,90 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-08-06T15:08:44.237Z",
+  "environment": {
+    "platform": "win32 x64",
+    "node": "v22.16.0",
+    "cpu": "Intel(R) Core(TM) i5-6200U CPU @ 2.30GHz",
+    "cores": 4,
+    "memoryGb": 8
+  },
+  "results": {
+    "normalize/raw-to-normalized": {
+      "name": "normalize/raw-to-normalized",
+      "hz": 347658.9432338144,
+      "medianNs": 2876.3822115384514,
+      "meanNs": 4154.171173878206,
+      "p75Ns": 5532.812499999987,
+      "p99Ns": 10917.57812500004,
+      "riqr": 1.0122014917577498,
+      "samples": 60,
+      "batchSize": 3328
+    },
+    "decode/cap67-transfer": {
+      "name": "decode/cap67-transfer",
+      "hz": 12578.73996403244,
+      "medianNs": 79499.21875000143,
+      "meanNs": 102292.74088541637,
+      "p75Ns": 101413.28125000016,
+      "p99Ns": 459601.5624999996,
+      "riqr": 0.3639874605685896,
+      "samples": 60,
+      "batchSize": 256
+    },
+    "watcher/fan-out-1": {
+      "name": "watcher/fan-out-1",
+      "hz": 18382910.12673317,
+      "medianNs": 54.398351137329435,
+      "meanNs": 65.37637239140467,
+      "p75Ns": 76.4842753507651,
+      "p99Ns": 144.2590415072292,
+      "riqr": 0.4489450111284567,
+      "samples": 60,
+      "batchSize": 602112
+    },
+    "watcher/fan-out-100": {
+      "name": "watcher/fan-out-100",
+      "hz": 411685.3735467131,
+      "medianNs": 2429.039417613733,
+      "meanNs": 2497.0904356060623,
+      "p75Ns": 2645.5965909090264,
+      "p99Ns": 4636.203835227287,
+      "riqr": 0.17215568315133162,
+      "samples": 60,
+      "batchSize": 11264
+    },
+    "watcher/fan-out-1000": {
+      "name": "watcher/fan-out-1000",
+      "hz": 39742.66623612245,
+      "medianNs": 25161.874999999156,
+      "meanNs": 27254.359374999964,
+      "p75Ns": 27585.468750000076,
+      "p99Ns": 55368.51562499975,
+      "riqr": 0.14847922203732455,
+      "samples": 60,
+      "batchSize": 1280
+    },
+    "cursor/memory-set": {
+      "name": "cursor/memory-set",
+      "hz": 2042467.6862916541,
+      "medianNs": 489.60382908951686,
+      "meanNs": 506.4624123906886,
+      "p75Ns": 668.1664737654427,
+      "p99Ns": 814.1625675154485,
+      "riqr": 0.6259785223727615,
+      "samples": 60,
+      "batchSize": 82944
+    },
+    "cursor/memory-set-many-100": {
+      "name": "cursor/memory-set-many-100",
+      "hz": 18270.575808615955,
+      "medianNs": 54732.81249999929,
+      "meanNs": 57850.833333332244,
+      "p75Ns": 59583.20312500121,
+      "p99Ns": 104006.24999999764,
+      "riqr": 0.18867224299874952,
+      "samples": 60,
+      "batchSize": 256
+    }
+  }
+}
