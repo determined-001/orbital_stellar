@@ -20,7 +20,7 @@
     "@stellar/stellar-sdk": "^16.1.0",
     "@upstash/ratelimit": "^2.0.8",
     "@upstash/redis": "^1.38.2",
-    "framer-motion": "^12.43.0",
+    "framer-motion": "^13.1.1",
     "geist": "^1.7.2",
     "gray-matter": "^4.0.3",
     "marked": "^18.0.9",
