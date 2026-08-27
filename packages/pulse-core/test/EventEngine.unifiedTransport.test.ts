@@ -8,8 +8,9 @@
  *    "engine.reconnected") are emitted with `source: "unified"`
  *
  * Decoding/normalizing/dispatching the polled CAP-67 events to watchers is
- * out of scope here (separate issues) - these tests only exercise the
- * transport's start/stop/status/reconnect lifecycle.
+ * covered separately in `EventEngine.transportRouting.test.ts` (issue
+ * 6.12) - these tests only exercise the transport's start/stop/status/
+ * reconnect lifecycle, which stays the same regardless of ingestion mode.
  */
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { EventEngine } from "../src/EventEngine.js";

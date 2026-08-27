@@ -3,7 +3,8 @@
  *
  * Config surface only, per the issue: the flag exists, validates, and is
  * exposed in status(). Routing behavior itself (what a given mode actually
- * changes about event delivery) is separate, forthcoming work.
+ * changes about event delivery) is covered separately in
+ * `EventEngine.transportRouting.test.ts` (issue 6.12).
  */
 import { describe, it, expect } from "vitest";
 import { EventEngine } from "../src/EventEngine.js";

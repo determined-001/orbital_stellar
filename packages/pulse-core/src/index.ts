@@ -127,8 +127,16 @@ export type EngineStatus = {
   lastEventAt: string | null;
   reconnectAttempt: number;
   pausedSources?: ("horizon" | "soroban")[];
-  /** The configured value of `CoreConfig.ingestion` (default `"horizon"`). Routing/auto-resolution behavior itself is a separate concern - see `CoreConfig.ingestion`'s doc. */
+  /** The configured value of `CoreConfig.ingestion` (default `"horizon"`). */
   ingestion: IngestionMode;
+  /**
+   * The `"unified" | "horizon"` transport actually in effect, once resolved
+   * (issue 6.12) - e.g. what `"auto"` decided based on the probed RPC's
+   * CAP-67 support. `"horizon"` until start() resolves it (or forever, for
+   * `"horizon"` mode and for an engine with no unified transport configured
+   * at all - there's nothing to resolve in either case).
+   */
+  effectiveIngestion: "unified" | "horizon";
   sources: {
     horizon: SourceStatus;
     soroban: SourceStatus;
@@ -849,9 +857,11 @@ export type CoreConfig = {
    * `"auto"` picks between the two based on what the configured Soroban RPC
    * supports. Throws {@link InvalidIngestionModeError} for any other value.
    *
-   * This is config surface only - selecting a mode here doesn't yet change
-   * which transport actually delivers which events; that routing behavior
-   * is separate, forthcoming work.
+   * Selecting `"unified"` or `"auto"` only changes delivery for event
+   * families with a CAP-67 unified equivalent (`payment`, `trustlineAuth` -
+   * see {@link EventFamily}/{@link resolveFamilyTransport}); every other
+   * family stays Horizon-only regardless of this setting. The resolved
+   * transport is reported on {@link EngineStatus.effectiveIngestion}.
    */
   ingestion?: IngestionMode;
   /** Optional internal event queue tuning. */

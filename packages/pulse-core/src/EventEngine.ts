@@ -1,4 +1,4 @@
-import { Horizon } from "@stellar/stellar-sdk";
+import { Horizon, scValToNative, xdr } from "@stellar/stellar-sdk";
 import { createDefaultAbiRegistryClient, decodeContractEvent } from "@orbital-stellar/abi-registry";
 import type { ContractSpec, XdrContractSpec } from "@orbital-stellar/abi-registry";
 import { Watcher } from "./Watcher.js";
@@ -9,14 +9,20 @@ import {
   NetworkMismatchError,
 } from "./errors.js";
 import { resolveSorobanPageLimit, SorobanSubscriber } from "./SorobanSubscriber.js";
-import { SorobanRpcClient } from "./SorobanRpcClient.js";
-import type { SorobanNetworkInfo } from "./SorobanRpcClient.js";
+import { SorobanRpcClient, rpcSupportsUnifiedEvents } from "./SorobanRpcClient.js";
+import type { SorobanNetworkInfo, SorobanRpcEvent } from "./SorobanRpcClient.js";
 import type { SorobanRpcLike, SorobanEvent } from "./SorobanSubscriber.js";
 import { toAccountAddress, toContractAddress } from "./address.js";
-import { toStellarAmount } from "./amount.js";
+import { toStellarAmount, fromBigInt } from "./amount.js";
 import { validateContractFilters } from "./contractFilters.js";
 import { withTimestampDate } from "./timestampDate.js";
 import type { Timestamped } from "./timestampDate.js";
+import { decodeUnifiedTransfer } from "./cap67/decodeTransfer.js";
+import { decodeUnifiedMint } from "./cap67/decodeMint.js";
+import { decodeUnifiedBurn } from "./cap67/decodeBurn.js";
+import { decodeUnifiedSetAuthorized } from "./cap67/decodeSetAuthorized.js";
+import { normalizeUnifiedSetAuthorized } from "./cap67/normalizeSetAuthorized.js";
+import { issuerFromAsset, toPaymentAddress } from "./cap67/normalizeAssetEvent.js";
 import type {
   AccountCreatedEvent,
   AccountMergeEvent,
@@ -34,6 +40,7 @@ import type {
   DataEvent,
   DataEventType,
   EngineStatus,
+  EventFamily,
   HealthCheckResult,
   IngestionMode,
   LiquidityPoolDepositEvent,
@@ -82,6 +89,7 @@ import {
   NETWORK_PASSPHRASES,
   ContractEmittedEvent,
   ContractInvokedEvent,
+  resolveFamilyTransport,
 } from "./index.js";
 import { normalizeClaimPredicate } from "./claimPredicate.js";
 
@@ -126,6 +134,30 @@ const DEFAULT_RECONNECT: Required<ReconnectConfig> = {
 const STELLAR_MAX_TRUSTLINE_LIMIT = "922337203685.4775807";
 
 const VALID_INGESTION_MODES: readonly IngestionMode[] = ["unified", "horizon", "auto"];
+
+/**
+ * Maps a raw Horizon operation `type` string to the {@link EventFamily} it
+ * belongs to, for transport-routing purposes (issue 6.12). Only operation
+ * types `_normalize()` actually recognizes appear here - an op type with no
+ * entry is never routed away from Horizon (see `horizonEventFamily()`).
+ */
+const HORIZON_OP_TYPE_TO_FAMILY: Readonly<Record<string, EventFamily>> = {
+  payment: "payment",
+  create_account: "accountCreated",
+  set_options: "accountOptions",
+  manage_sell_offer: "offer",
+  manage_buy_offer: "offer",
+  bump_sequence: "bumpSequence",
+  manage_data: "manageData",
+  change_trust: "trustlineLimit",
+  account_merge: "accountMerge",
+  create_claimable_balance: "claimableBalance",
+  claim_claimable_balance: "claimableBalance",
+  liquidity_pool_deposit: "liquidityPool",
+  liquidity_pool_withdraw: "liquidityPool",
+  allow_trust: "trustlineAuth",
+  set_trust_line_flags: "trustlineAuth",
+};
 
 const noop: Logger = { info: () => {}, warn: () => {}, error: () => {} };
 
@@ -223,6 +255,16 @@ export class EventEngine {
   private processingQueue = false;
   private inBackpressure = false;
   private wePausedSourcesForBackpressure = false;
+  /**
+   * The resolved `"unified" | "horizon"` transport actually in effect,
+   * per {@link resolveEffectiveIngestion}. Starts at `"horizon"` (matching
+   * `ingestion`'s own default) and is (re)computed once, right before the
+   * unified poller starts - `"horizon"` mode and an unconfigured unified
+   * transport never advance past this default, since there's nothing to
+   * resolve. Read by `horizonEventFamily()`'s Horizon-side suppression and
+   * by `dispatchUnifiedEvent()`'s unified-side dispatch gate.
+   */
+  private effectiveIngestion: "unified" | "horizon" = "horizon";
   /**
    * Optional live Soroban subscriber. Wired only when the engine is configured
    * for live contract streaming; otherwise undefined, and the guarded calls
@@ -977,7 +1019,10 @@ export class EventEngine {
       this.runAfterNetworkVerified(cachedNetwork, () => subscriber.start());
     }
     if (this.unifiedRpc) {
-      this.runAfterNetworkVerified(cachedNetwork, () => this.startUnifiedPoller());
+      this.runAfterNetworkVerified(cachedNetwork, (info) => {
+        this.effectiveIngestion = this.resolveEffectiveIngestion(info ?? undefined);
+        this.startUnifiedPoller();
+      });
     }
     return true;
   }
@@ -989,14 +1034,19 @@ export class EventEngine {
    * probe settles otherwise. Calls `stop()` instead of `onVerified` if a
    * mismatch is found. Shared by the Soroban subscriber and unified poller
    * startup paths in `start()`, since both sit behind the same probe.
+   *
+   * `onVerified` receives the verified {@link SorobanNetworkInfo} (the warm
+   * cache in the immediate case, the settled probe's result otherwise) so
+   * callers that need it - `"auto"` ingestion's protocol-version check -
+   * don't have to re-probe.
    */
   private runAfterNetworkVerified(
     cachedNetwork: SorobanNetworkInfo | null | undefined,
-    onVerified: () => void,
+    onVerified: (info: SorobanNetworkInfo | null | undefined) => void,
   ): void {
     if (cachedNetwork || !this.sorobanNetworkReady) {
       // Already verified above (cache was warm), or no in-flight probe to wait on.
-      onVerified();
+      onVerified(cachedNetwork);
       return;
     }
 
@@ -1019,8 +1069,39 @@ export class EventEngine {
           return;
         }
       }
-      onVerified();
+      onVerified(info);
     });
+  }
+
+  /**
+   * Resolves `this.ingestion` down to the concrete `"unified" | "horizon"`
+   * transport actually in effect (issue 6.12):
+   * - `"horizon"` stays `"horizon"` unconditionally - the documented
+   *   zero-behavior-change default.
+   * - `"unified"` resolves to `"unified"` whenever a unified transport is
+   *   configured at all (`this.unifiedRpc` set); with none configured
+   *   there's nothing to route through, so it falls back to `"horizon"`.
+   * - `"auto"` resolves to `"unified"` only when both a unified transport is
+   *   configured and the probed RPC reports CAP-67 support
+   *   ({@link rpcSupportsUnifiedEvents}); otherwise `"horizon"`.
+   */
+  private resolveEffectiveIngestion(
+    networkInfo: SorobanNetworkInfo | undefined,
+  ): "unified" | "horizon" {
+    if (this.ingestion === "horizon") return "horizon";
+    if (!this.unifiedRpc) return "horizon";
+    if (this.ingestion === "unified") return "unified";
+    return rpcSupportsUnifiedEvents(networkInfo) ? "unified" : "horizon";
+  }
+
+  /**
+   * Maps a raw Horizon SSE record to the {@link EventFamily} it belongs to,
+   * via `HORIZON_OP_TYPE_TO_FAMILY`. Returns `undefined` for an operation
+   * type `_normalize()` doesn't recognize (never a routing candidate).
+   */
+  private horizonEventFamily(record: unknown): EventFamily | undefined {
+    if (!this.isRecord(record) || typeof record.type !== "string") return undefined;
+    return HORIZON_OP_TYPE_TO_FAMILY[record.type];
   }
 
   async healthCheck(thresholdMs = 5 * 60 * 1000): Promise<HealthCheckResult> {
@@ -1201,11 +1282,12 @@ export class EventEngine {
    * `engine.reconnected` lifecycle notifications Horizon's stream does, tagged
    * `source: "unified"`. No-op if already running or unconfigured.
    *
-   * Decoding, normalizing, and dispatching the polled events to watchers is
-   * not yet wired (see the CAP-67 event taxonomy issues) - for now this only
-   * keeps the transport's lifecycle (start/stop/status/reconnect) consistent
-   * with the other two sources, and tracks `unifiedLastEventAt` for status
-   * reporting.
+   * Decoding, normalizing, and dispatching the polled events to watchers
+   * (issue 6.12) only happens once `this.effectiveIngestion` - resolved
+   * right before this method is called from `start()` - is `"unified"`;
+   * otherwise (including the default `"horizon"` mode) this keeps doing what
+   * it always did: track the transport's lifecycle (start/stop/status/
+   * reconnect) and `unifiedLastEventAt`, without touching any watcher.
    */
   private startUnifiedPoller(): void {
     if (!this.unifiedRpc || this.unifiedRunning) return;
@@ -1223,6 +1305,10 @@ export class EventEngine {
             this.log.debug?.("[pulse-core] unified transport received events", {
               count: events.length,
             });
+            if (this.effectiveIngestion !== "unified") return;
+            for (const raw of events) {
+              this.dispatchUnifiedEvent(raw);
+            }
           },
           {
             signal: controller.signal,
@@ -1257,6 +1343,129 @@ export class EventEngine {
       .finally(() => {
         this.unifiedRunning = false;
       });
+  }
+
+  /**
+   * Decodes, normalizes, and routes one raw unified-transport event (issue
+   * 6.12). Only called once `this.effectiveIngestion === "unified"`.
+   *
+   * `transfer`/`mint`/`burn` all become a pending `payment.*` event fed
+   * through `route()`'s existing bidirectional resolution (the same path a
+   * Horizon `payment` record takes) rather than through
+   * `normalizeUnifiedTransfer`/`Mint`/`Burn` directly - those normalizers
+   * each resolve to a single fixed perspective (documented on
+   * `normalizeUnifiedTransfer`, e.g., as out of scope for that module), while
+   * `route()` already knows how to notify both a sender's and a recipient's
+   * watcher from one event and handle the self-payment case, and reusing it
+   * keeps CAP-67-sourced payments indistinguishable from Horizon-sourced ones
+   * downstream. `set_authorized` has no such ambiguity - it already resolves
+   * to one fixed `trustline.authorized`/`.deauthorized` type that `route()`
+   * dispatches directly - so `normalizeUnifiedSetAuthorized` is used as-is.
+   *
+   * `clawback` and `fee` are decoded by neither this method nor any other
+   * caller today: both are new-in-CAP-67 event kinds with no Horizon-side
+   * family to route away from (see `EventFamily`/`UNIFIED_EQUIVALENT_FAMILIES`
+   * in `index.ts`), so wiring their dispatch is follow-up work outside this
+   * issue's routing scope, not a prerequisite for it.
+   */
+  private dispatchUnifiedEvent(raw: SorobanRpcEvent): void {
+    const topic = raw.topic ?? raw.topics;
+    if (!Array.isArray(topic) || !topic.every((t): t is string => typeof t === "string")) {
+      this.log.warn("[pulse-core] unified transport received an event with malformed topics.", {
+        eventId: raw.id,
+      });
+      return;
+    }
+
+    const event = { topic, value: raw.value } as Pick<RawSorobanEvent, "topic" | "value">;
+    const ledgerClosedAt = raw.ledgerClosedAt ?? new Date().toISOString();
+    const symbol = this.peekUnifiedEventSymbol(topic[0]);
+    if (symbol === undefined) {
+      this.log.warn(
+        "[pulse-core] unified transport received an event whose topic[0] isn't a decodable symbol.",
+        { eventId: raw.id },
+      );
+      return;
+    }
+
+    const makeError = (reason: string) => new Error(reason);
+
+    try {
+      switch (symbol) {
+        case "transfer": {
+          const transfer = decodeUnifiedTransfer(event);
+          const asset = transfer.asset === "native" ? "XLM" : transfer.asset;
+          this.route(
+            withTimestampDate({
+              type: "unknown",
+              to: toPaymentAddress(transfer.to, makeError),
+              from: toPaymentAddress(transfer.from, makeError),
+              amount: fromBigInt(transfer.amount),
+              asset,
+              timestamp: ledgerClosedAt,
+              ...(transfer.memo !== undefined ? { memo: transfer.memo } : {}),
+            }),
+          );
+          return;
+        }
+        case "mint": {
+          const mint = decodeUnifiedMint(event);
+          this.route(
+            withTimestampDate({
+              type: "unknown",
+              to: toPaymentAddress(mint.to, makeError),
+              from: issuerFromAsset(mint.asset, makeError),
+              amount: fromBigInt(mint.amount),
+              asset: mint.asset,
+              timestamp: ledgerClosedAt,
+            }),
+          );
+          return;
+        }
+        case "burn": {
+          const burn = decodeUnifiedBurn(event);
+          this.route(
+            withTimestampDate({
+              type: "unknown",
+              to: issuerFromAsset(burn.asset, makeError),
+              from: toPaymentAddress(burn.from, makeError),
+              amount: fromBigInt(burn.amount),
+              asset: burn.asset,
+              timestamp: ledgerClosedAt,
+            }),
+          );
+          return;
+        }
+        case "set_authorized": {
+          const setAuthorized = decodeUnifiedSetAuthorized(event);
+          this.route(normalizeUnifiedSetAuthorized(setAuthorized, ledgerClosedAt));
+          return;
+        }
+        default:
+          // clawback, fee, or any other well-formed-but-unhandled symbol -
+          // not wired for #12's routing scope (see this method's docstring).
+          // A malformed/undecodable topic[0] is caught above, before this
+          // switch, and logged there instead.
+          return;
+      }
+    } catch (err) {
+      this.log.warn("[pulse-core] failed to decode/normalize a unified transport event.", {
+        eventId: raw.id,
+        symbol,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  /** Decodes topic[0] as a Soroban symbol, or `undefined` if it isn't one. */
+  private peekUnifiedEventSymbol(topic0: string | undefined): string | undefined {
+    if (topic0 === undefined) return undefined;
+    try {
+      const native = scValToNative(xdr.ScVal.fromXDR(topic0, "base64"));
+      return typeof native === "string" ? native : undefined;
+    } catch {
+      return undefined;
+    }
   }
 
   private async resolveUnifiedCursor(): Promise<string | undefined> {
@@ -1323,6 +1532,7 @@ export class EventEngine {
       const sorobanLastEventAt: string[] = [];
       const unifiedLastEventAt: string[] = [];
       const pausedSources = new Set<"horizon" | "soroban">();
+      let effectiveIngestion: "unified" | "horizon" = "horizon";
 
       for (const [network, subEngine] of this.networkSources) {
         const subStatus = subEngine.status();
@@ -1332,6 +1542,7 @@ export class EventEngine {
         reconnectAttempt = Math.max(reconnectAttempt, subStatus.reconnectAttempt);
         if (subStatus.lastEventAt) lastEventAt.push(subStatus.lastEventAt);
         subStatus.pausedSources?.forEach((source) => pausedSources.add(source));
+        if (subStatus.effectiveIngestion === "unified") effectiveIngestion = "unified";
 
         horizonRunning = horizonRunning || subStatus.sources.horizon.running;
         sorobanRunning = sorobanRunning || subStatus.sources.soroban.running;
@@ -1361,6 +1572,7 @@ export class EventEngine {
         reconnectAttempt,
         pausedSources: pausedSources.size > 0 ? Array.from(pausedSources) : undefined,
         ingestion: this.ingestion,
+        effectiveIngestion,
         sources: {
           horizon: {
             running: horizonRunning,
@@ -1420,6 +1632,7 @@ export class EventEngine {
       reconnectAttempt: Math.max(horizon.reconnectAttempt, soroban.reconnectAttempt),
       pausedSources: this.pausedSources.size > 0 ? Array.from(this.pausedSources) : undefined,
       ingestion: this.ingestion,
+      effectiveIngestion: this.effectiveIngestion,
       sources,
     };
   }
@@ -1459,6 +1672,18 @@ export class EventEngine {
         }
 
         this.lastEventAt = event.timestamp;
+
+        // Transport routing (issue 6.12): a family the unified transport is
+        // actively claiming under the resolved effective mode is suppressed
+        // here so the same real-world event isn't delivered twice - once via
+        // Horizon, once via `dispatchUnifiedEvent()`. `lastEventAt` above
+        // still updates regardless, since Horizon's stream is genuinely
+        // healthy either way.
+        const family = this.horizonEventFamily(record);
+        if (family && resolveFamilyTransport(family, this.effectiveIngestion) === "unified") {
+          return;
+        }
+
         this.enqueueEvent(event);
       },
       onerror: (error) => {

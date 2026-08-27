@@ -12,7 +12,13 @@ const DEFAULT_TIMEOUT_MS = 10_000;
 const MIN_LEDGER_CLOSE_TIME_POLL_INTERVAL_MS = 1_000;
 
 /** CAP-67 (SEP-41) standard event topic names for Stellar asset contracts. */
-export const CAP_67_EVENT_TOPICS = ["transfer", "mint", "burn", "clawback"] as const;
+export const CAP_67_EVENT_TOPICS = [
+  "transfer",
+  "mint",
+  "burn",
+  "clawback",
+  "set_authorized",
+] as const;
 
 /**
  * Pre-built Soroban event filters matching any CAP-67 topic as the first topic
@@ -24,7 +30,26 @@ const CAP_67_TOPIC_FILTERS: SorobanEventFilter[] = [
   { type: "contract", topics: [["AAAADwAAAARtaW50"]] },
   { type: "contract", topics: [["AAAADwAAAARidXJu"]] },
   { type: "contract", topics: [["AAAADwAAAAhjbGF3YmFjaw=="]] },
+  { type: "contract", topics: [["AAAADwAAAA5zZXRfYXV0aG9yaXplZAAA"]] },
 ];
+
+/**
+ * The Protocol version CAP-67 (the unified event stream) shipped in.
+ * {@link rpcSupportsUnifiedEvents} uses this to decide `"auto"` ingestion
+ * mode's fallback (issue 6.12).
+ */
+export const CAP_67_MIN_PROTOCOL_VERSION = 23;
+
+/**
+ * Whether a probed Soroban RPC supports the CAP-67 unified event stream,
+ * per its {@link SorobanNetworkInfo.protocolVersion}. `undefined` - an RPC
+ * that didn't report a protocol version at all - is treated as unsupported:
+ * `"auto"` ingestion mode falls back to `"horizon"` rather than assuming
+ * support it can't confirm.
+ */
+export function rpcSupportsUnifiedEvents(info: SorobanNetworkInfo | undefined): boolean {
+  return info?.protocolVersion !== undefined && info.protocolVersion >= CAP_67_MIN_PROTOCOL_VERSION;
+}
 
 export type SorobanNetworkInfo = {
   friendbotUrl?: string;
