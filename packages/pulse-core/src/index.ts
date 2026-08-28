@@ -68,6 +68,7 @@ export type { MigrateCursorsResult } from "./migrateCursors.js";
 export type { IRegistryStore } from "./IRegistryStore.js";
 export { InMemoryRegistryStore } from "./IRegistryStore.js";
 export { FileRegistryStore } from "./FileRegistryStore.js";
+export { fullJitterBackoffMs } from "./backoff.js";
 
 export {
   assertRestrictedSecretNetwork,
