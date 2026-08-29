@@ -580,6 +580,7 @@ orbital_stellar/
 - [`docs/proposal.md`](./proposal.md) - SCF grant proposal
 - [`docs/design/cap67-mapping.md`](./design/cap67-mapping.md) - CAP-67 → `NormalizedEvent` mapping design doc (§4.1)
 - [`docs/CAP-67-Event-Mapping.md`](./CAP-67-Event-Mapping.md) - CAP-67 event taxonomy rationale (§4.1)
+- [`docs/design/worker-guard-rails.md`](./design/worker-guard-rails.md) - worker price/slippage guard rails, on-chain vs off-chain split (issue 22.5)
 - Per-package READMEs:
   [`pulse-core`](../packages/pulse-core/README.md),
   [`pulse-webhooks`](../packages/pulse-webhooks/README.md),
