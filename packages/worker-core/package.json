@@ -1,0 +1,39 @@
+{
+  "name": "@orbital-stellar/worker-core",
+  "version": "0.1.0",
+  "description": "Retry, backoff and dead-letter primitives for first-party Stellar workers (time-based payroll runs, etc.).",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/determined-001/orbital_stellar.git",
+    "directory": "packages/worker-core"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage"
+  },
+  "dependencies": {
+    "@orbital-stellar/pulse-core": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^26.2.0",
+    "@vitest/coverage-v8": "^4.1.11",
+    "vite": "^8.2.2",
+    "vitest": "^4.1.11"
+  }
+}

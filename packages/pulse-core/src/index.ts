@@ -46,7 +46,10 @@ export {
   EngineAlreadyStartedError,
   HorizonStreamError,
   InvalidIngestionModeError,
+  SorobanRpcError,
+  isSorobanRpcError,
 } from "./errors.js";
+export { fullJitterBackoffMs } from "./backoff.js";
 export { StrKey } from "@stellar/stellar-sdk";
 // Re-exported so @orbital-stellar/anchor-sdk can validate SEP-10 challenges
 // without taking its own direct dependency on @stellar/stellar-sdk.
