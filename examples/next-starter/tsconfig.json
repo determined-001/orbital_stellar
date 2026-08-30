@@ -1,6 +1,10 @@
 {
-  "extends": "../../tsconfig.base.json",
   "compilerOptions": {
+    "target": "ES2022",
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
     "lib": ["dom", "dom.iterable", "es2022"],
     "jsx": "preserve",
     "noEmit": true,

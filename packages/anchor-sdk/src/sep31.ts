@@ -70,6 +70,8 @@ export class Sep31Client {
   async initiateTransaction(
     params: {
       asset_code: string;
+      /** Amount to send, in the asset's units. Required by SEP-31 - omitting it is rejected by every conforming anchor. */
+      amount: string;
       sender_id?: string;
       receiver_id?: string;
       fields?: Record<string, string>;

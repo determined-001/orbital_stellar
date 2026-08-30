@@ -100,6 +100,12 @@ jobs:
       # before worker-core is typechecked.
       - name: Build pulse-webhooks
         run: pnpm tsc -p packages/pulse-webhooks/tsconfig.json
+      - name: Build anchor-sdk
+        # examples/anchor-starter imports @orbital-stellar/anchor-sdk as a real
+        # dependency (main/types resolve through dist/), not just at the
+        # source level the way anchor-sdk's own tests do - without this,
+        # "Test packages" below fails to resolve the package entry.
+        run: pnpm tsc -p packages/anchor-sdk/tsconfig.json
       - name: Typecheck abi-registry
         run: pnpm tsc --noEmit -p packages/abi-registry/tsconfig.json
       - name: Typecheck worker-core

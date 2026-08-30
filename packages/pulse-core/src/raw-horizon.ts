@@ -5,10 +5,31 @@
  * `_raw-horizon.gen.ts` (do not edit that file directly) and re-exported here
  * for convenience.
  *
- * The hand-written `RawHorizon*` operation interfaces below are kept for types
- * that the OpenAPI spec does not model (e.g. SetOptions, ManageSellOffer) and
- * for backward compatibility. Over time the plan is to migrate toward the
- * OpenAPI-generated types as the single source of truth.
+ * PERMANENT STATE (verified against the generated output, issue 16.3): of the
+ * 12 hand-written `RawHorizon*` operation interfaces below, Horizon's OpenAPI
+ * description only names THREE matching schemas at all - `CreateAccount`,
+ * `AccountMerge`, and `Payment` - not just the two (`SetOptions`,
+ * `ManageSellOffer`) originally assumed. The other nine
+ * (`ManageBuyOffer`, `BumpSequence`, `ManageData`, `ChangeTrust`,
+ * `CreateClaimableBalance`, `ClaimClaimableBalance`, `LiquidityPoolDeposit`,
+ * `LiquidityPoolWithdraw`, `AllowTrust`, `SetTrustLineFlags`, plus
+ * `SetOptions` and `ManageSellOffer`) have no generated counterpart
+ * whatsoever - not a naming difference, they are absent from the spec - and
+ * stay hand-written permanently; there is nothing to migrate them to.
+ *
+ * Of the three that exist, only `CreateAccount` and `AccountMerge` model a
+ * single operation record the way the hand-written interfaces need - those
+ * two are migrated below, picking their per-field types from the generated
+ * schema so a future Horizon spec change flows through automatically, while
+ * keeping the literal `type` discriminant and required `_links` this
+ * package's consumers already depend on. The generated `Payment` schema is
+ * NOT migrated: it models the `/payments` collection endpoint's envelope
+ * (`_embedded.records[]`), not a bare operation record, and its `asset_code`
+ * is typed as an enum of asset *type* strings (`"native" |
+ * "credit_alphanum4" | "credit_alphanum12"`) - which is what `asset_type`
+ * holds, not `asset_code` - so it does not safely back `RawHorizonPayment`.
+ * `RawHorizonPayment` stays hand-written until Horizon's own OpenAPI
+ * description fixes that mismatch.
  *
  * To regenerate:  node scripts/generate-horizon-types.mjs
  */
@@ -18,8 +39,11 @@
 // ---------------------------------------------------------------------------
 export type { components, operations, paths } from "./_raw-horizon.gen.js";
 
+import type { components as _HorizonComponents } from "./_raw-horizon.gen.js";
+
 // ---------------------------------------------------------------------------
-// Hand-written raw operation interfaces (keep for backward compatibility)
+// Hand-written raw operation interfaces (kept where the OpenAPI spec does not
+// model the operation, or models it in a shape unsafe to reuse - see header)
 // ---------------------------------------------------------------------------
 
 /**
@@ -89,11 +113,14 @@ export interface RawHorizonSetOptions extends RawHorizonBaseOperation {
   inflation_dest?: string;
 }
 
+/** Field types sourced from the generated `CreateAccount` schema - see header. */
+type _GeneratedCreateAccount = _HorizonComponents["schemas"]["CreateAccount"];
+
 export interface RawHorizonCreateAccount extends RawHorizonBaseOperation {
   type: "create_account";
-  funder: string;
-  account: string;
-  starting_balance: string;
+  funder: _GeneratedCreateAccount["funder"];
+  account: _GeneratedCreateAccount["account"];
+  starting_balance: _GeneratedCreateAccount["starting_balance"];
 }
 
 export interface RawHorizonManageSellOffer extends RawHorizonBaseOperation {
@@ -143,10 +170,13 @@ export interface RawHorizonChangeTrust extends RawHorizonBaseOperation {
   asset_issuer?: string;
 }
 
+/** Field types sourced from the generated `AccountMerge` schema - see header. */
+type _GeneratedAccountMerge = _HorizonComponents["schemas"]["AccountMerge"];
+
 export interface RawHorizonAccountMerge extends RawHorizonBaseOperation {
   type: "account_merge";
-  account: string;
-  into: string;
+  account: _GeneratedAccountMerge["account"];
+  into: _GeneratedAccountMerge["into"];
 }
 
 export interface RawHorizonCreateClaimableBalance extends RawHorizonBaseOperation {

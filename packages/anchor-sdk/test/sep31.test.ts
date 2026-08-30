@@ -74,6 +74,7 @@ describe("Sep31Client Lifecycle (Fixture-backed)", () => {
       client.initiateTransaction(
         {
           asset_code: "USD",
+          amount: "10",
           sender_id: "sender1",
           receiver_id: "receiver1",
         },
@@ -97,6 +98,7 @@ describe("Sep31Client Lifecycle (Fixture-backed)", () => {
       client.initiateTransaction(
         {
           asset_code: "USD",
+          amount: "10",
           sender_id: "sender1",
           receiver_id: "receiver1",
         },
@@ -119,6 +121,7 @@ describe("Sep31Client Lifecycle (Fixture-backed)", () => {
     const res = await client.initiateTransaction(
       {
         asset_code: "USD",
+        amount: "10",
         sender_id: "sender1",
         receiver_id: "receiver1",
         fields: {

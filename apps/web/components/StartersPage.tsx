@@ -48,9 +48,9 @@ const STARTERS: Starter[] = [
   {
     dir: "anchor-starter",
     description:
-      "Audit-grade, replay-safe event capture for Stellar anchors. Captures payment and trustline events for a set of distribution accounts into an append-only JSON Lines audit log that an auditor can replay byte-identically.",
-    packages: ["@orbital-stellar/pulse-core", "@orbital-stellar/pulse-webhooks"],
-    what: "Replayable append-only anchor audit log",
+      "A runnable SEP-24/31 anchor consumer: SEP-1 discovery, SEP-10 authentication, an interactive SEP-24 deposit, and a SEP-31 cross-border send, all against a real testnet anchor.",
+    packages: ["@orbital-stellar/anchor-sdk"],
+    what: "SEP-24/31 anchor client (deposit + cross-border send)",
     deploy: { kind: "readme" },
   },
 ];

@@ -1,163 +1,65 @@
 # orbital-anchor-starter
 
-Audit-grade, replay-safe event capture for Stellar anchors.
+A runnable SEP-24/31 anchor consumer, built on `@orbital-stellar/anchor-sdk`:
+SEP-1 discovery, SEP-10 authentication, an interactive SEP-24 deposit, and a
+SEP-31 cross-border send - all against a real anchor.
 
-Captures **payment** and **trustline** events for a set of anchor distribution
-accounts into an **append-only audit log** (JSON Lines). Composes
-`CursorStore` + `RetryQueue` + `DeadLetterStore` from the Orbital SDK into a
-single production-shaped pipeline that a compliance auditor can replay and
-verify.
+By default it talks to Stellar Development Foundation's own reference anchor,
+`testanchor.stellar.org`, on testnet. It's the SDF's own service, purpose-built
+for exactly this - no mock server to run, no infrastructure of your own.
 
-## Quick start
+## Quickstart
 
 ```bash
-# Clone and install
-git clone https://github.com/determined-001/orbital_stellar.git
-cd orbital_stellar/examples/anchor-starter
+cp .env.example .env   # set STELLAR_SECRET to a funded testnet account
+export $(cat .env | grep -v '^#' | xargs)
 pnpm install
-pnpm build
-
-# Capture events for your anchor distribution accounts
-node dist/index.js \
-  --accounts GABC...,GDEF... \
-  --audit-log ./audit.jsonl \
-  --network testnet
+pnpm dev deposit
 ```
 
-Press `Ctrl+C` to stop. The audit log is flushed to disk on every record.
-
-## Replay
-
-Rebuild the audit log byte-identically from any cursor:
+That authenticates, starts an interactive SEP-24 deposit, and prints a URL.
+Open it in a browser to complete the anchor-hosted KYC/payment flow, and the
+CLI polls the transaction status until it settles (or 30s pass - the flow is
+still running server-side either way; re-run to check on it).
 
 ```bash
-node dist/index.js replay \
-  --from "1234567890123456789-0" \
-  --accounts GABC...,GDEF... \
-  --audit-log ./audit.jsonl \
-  --output ./audit-replay.jsonl
+pnpm dev send 10
 ```
 
-The replay output is byte-identical to the original run from that cursor
-forward because:
+Starts a SEP-31 cross-border send of 10 units of `ASSET_CODE`. A real send
+needs `sender_id`/`receiver_id` from prior SEP-12 registration; without them,
+or for an asset the anchor doesn't list under SEP-31 `/info`, the CLI reports
+exactly why rather than crashing - that's the anchor correctly enforcing the
+SEP, not a bug here. (As of this writing, the default reference anchor's
+`/sep31/info` lists no receivable assets at all - verified live - so a send
+against it will report that and stop; the code path is spec-correct and will
+complete against any anchor that has SEP-31 assets configured.)
 
-1. Horizon returns the same ledger data in the same order for a given cursor
-   range, and
-2. Audit records are serialized with **sorted keys** for deterministic JSON
-   output.
+## How it fits together
 
-## Audit record format
+| Piece | File | What it does |
+|---|---|---|
+| Config | `src/config.ts` | Validates env at startup; refuses to boot without `STELLAR_SECRET` |
+| Connect | `src/anchor.ts` | SEP-1 discovery + SEP-10 authentication in one call, returns an `AnchorSession` |
+| Commands | `src/commands.ts` | `deposit()` (SEP-24 interactive + poll) and `send()` (SEP-31) |
+| CLI | `src/index.ts` | Argument parsing, dispatches to the two commands |
 
-Every line in the audit log is a JSON object with these fields:
+## Getting a funded testnet account
 
-| Field             | Type             | Description                                     |
-|-------------------|------------------|-------------------------------------------------|
-| `ledger`          | `number`         | Ledger sequence number                          |
-| `txHash`          | `string`         | Transaction hash (hex)                          |
-| `operationIndex`  | `number`         | Zero-based operation index within transaction   |
-| `memo`            | `string \| null` | Transaction memo, or null if absent             |
-| `asset`           | `string`         | Asset code (e.g. `"USDC:GABC..."` or `"XLM"`)   |
-| `from`            | `string`         | Source account (sender or trustor)              |
-| `to`              | `string`         | Destination account (receiver or issuer)        |
-| `eventType`       | `string`         | Normalized event type                           |
-| `timestamp`       | `string`         | ISO 8601 timestamp of ledger close time         |
-| `raw`             | `object`         | Full raw Horizon operation record               |
-
-Example:
-
-```json
-{"asset":"XLM","eventType":"payment.sent","from":"GABC...","ledger":5432100,"memo":"inv-42","operationIndex":1,"raw":{...},"timestamp":"2026-07-27T12:34:56Z","to":"GDEF...","txHash":"abc123..."}
+```bash
+stellar keys generate anchor-demo --network testnet --fund
+stellar keys show anchor-demo
 ```
 
-## Delivery guarantee
+Use the printed secret key (`S...`) as `STELLAR_SECRET`.
 
-### At-least-once with idempotency keys
+## Extending it
 
-This service provides **at-least-once** delivery. An event may appear more
-than once in the audit log when:
-
-- The engine reconnects mid-ledger and Horizon replays a window of events, or
-- The process restarts before the cursor is flushed to disk.
-
-Consumers MUST deduplicate by the composite key `(ledger, operationIndex)` or,
-when forwarding to a webhook receiver, by the `x-orbital-delivery-id` header.
-
-### NOT exactly-once
-
-Exactly-once delivery requires a transactional outbox - writing the event and
-advancing the cursor in a single atomic operation. The primitives composed
-here (`CursorStore` + `RetryQueue` + `DeadLetterStore`) do not provide that
-guarantee. If your compliance regime requires exactly-once, you must layer a
-deduplication store on top of the audit log.
-
-### Honest caveats
-
-- **Process restarts.** The `FileCursorStore` writes cursors atomically (write
-  to temp file, fsync, rename), but a crash between event delivery and cursor
-  flush WILL cause at-least-once duplicates on restart.
-- **Network partitions.** If Horizon is unreachable for longer than the cursor
-  TTL, the stream may reset to the latest ledger. The `engine.cursor_expired`
-  notification fires in this case - catch it and alert.
-- **In-memory retry.** The default `MemoryRetryQueue` does not survive process
-  restarts. Swap to `RedisRetryQueue` for durable retries.
-- **In-memory dead-letter.** The default `MemoryDeadLetterStore` does not
-  survive process restarts. Swap to `PostgresDeadLetterStore` for durable DLQ.
-
-## Architecture
-
-```
-┌──────────────────────────────────────────┐
-│              AnchorService               │
-│                                          │
-│  ┌──────────┐  ┌──────────────┐         │
-│  │EventEngine│  │FileCursorStore│        │
-│  │ (Horizon) │──│ (durable pos) │        │
-│  └─────┬────┘  └──────────────┘         │
-│        │ normalize                       │
-│        ▼                                 │
-│  ┌──────────┐                            │
-│  │  filter   │ payment + trustline only  │
-│  └─────┬────┘                            │
-│        │                                 │
-│        ▼                                 │
-│  ┌──────────┐  ┌──────────────────────┐ │
-│  │AuditLog  │  │MemoryDeadLetterStore │ │
-│  │Writer    │  │(terminal failures)   │ │
-│  └─────┬────┘  └──────────────────────┘ │
-│        │                                 │
-│        ▼                                 │
-│  ┌──────────┐                            │
-│  │ audit.jsonl│  append-only JSON Lines  │
-│  └──────────┘                            │
-│                                          │
-│  ┌──────────────┐                        │
-│  │MemoryRetryQueue│  (if webhook mode)   │
-│  └──────────────┘                        │
-└──────────────────────────────────────────┘
-```
-
-## Production hardening
-
-For production use, swap the in-memory stores for durable backends:
-
-```ts
-import { RedisRetryQueue, PostgresDeadLetterStore } from "@orbital-stellar/pulse-webhooks";
-import { PostgresCursorStore } from "@orbital-stellar/pulse-core";
-
-// Durable cursor store
-const cursorStore = new PostgresCursorStore(pool);
-
-// Durable retry queue (survives restarts)
-const retryQueue = new RedisRetryQueue({ client: redis });
-
-// Durable dead-letter store (audit trail for terminal failures)
-const deadLetter = new PostgresDeadLetterStore(pool);
-```
-
-Then compose them with `EventEngine` and `WebhookDelivery` from the SDK.
-
-## Related
-
-- [Orbital SDK documentation](https://github.com/determined-001/orbital_stellar)
-- [COOKBOOK.md - Anchor audit trail recipe](https://github.com/determined-001/orbital_stellar/blob/main/docs/COOKBOOK.md#10-anchor-audit-trail)
-- [ARCHITECTURE.md](https://github.com/determined-001/orbital_stellar/blob/main/docs/ARCHITECTURE.md)
+- **SEP-12 (KYC)**: `Sep12Client` from `@orbital-stellar/anchor-sdk` is what
+  both `Sep24CustomerInfoNeededError` and `CustomerInfoNeededError` point you
+  at - register the requested fields, then retry `deposit`/`send`.
+- **SEP-6 (non-interactive transfer)**: not wired here; `anchor-sdk` doesn't
+  implement it yet.
+- **A different anchor**: set `HOME_DOMAIN` to any anchor's home domain (no
+  scheme). Discovery, auth, and both commands work against any SEP-1-compliant
+  anchor, not just the reference one.

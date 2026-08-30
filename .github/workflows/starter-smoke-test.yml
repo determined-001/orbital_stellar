@@ -1,0 +1,153 @@
+name: Starter smoke tests
+
+# The acceptance criterion asks that each starter install from npm rather
+# than this monorepo's pnpm workspace links, and that each is typechecked
+# and boot-tested in CI. next-starter-smoke proves both: it copies the
+# starter to a directory outside the repo (so no pnpm-workspace.yaml is
+# discoverable above it) and installs with plain npm against the real
+# registry - the same thing `pnpm create`-style standalone usage does.
+# express-starter-smoke and anchor-starter-smoke prove only the second half
+# for now (typechecks + boots, inside the workspace) - see each job's own
+# comment for why an npm-only install doesn't yet prove anything useful for
+# either.
+
+on:
+  push:
+    branches: ["**"]
+    paths:
+      - 'examples/next-starter/**'
+      - 'examples/express-starter/**'
+      - 'examples/anchor-starter/**'
+      - 'packages/anchor-sdk/**'
+      - '.github/workflows/starter-smoke-test.yml'
+  pull_request:
+    branches: ["**"]
+    paths:
+      - 'examples/next-starter/**'
+      - 'examples/express-starter/**'
+      - 'examples/anchor-starter/**'
+      - 'packages/anchor-sdk/**'
+      - '.github/workflows/starter-smoke-test.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  next-starter-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 20
+
+      - name: Copy starter outside the workspace
+        run: cp -r examples/next-starter "$RUNNER_TEMP/next-starter-smoke"
+
+      - name: Install from npm (no workspace links)
+        working-directory: ${{ runner.temp }}/next-starter-smoke
+        run: npm install
+
+      - name: Typecheck
+        working-directory: ${{ runner.temp }}/next-starter-smoke
+        run: npm run typecheck
+
+      - name: Build (boots the App Router build pipeline)
+        working-directory: ${{ runner.temp }}/next-starter-smoke
+        env:
+          STELLAR_ADDRESSES: GCIX4IU5CLPZ5FFIZQ2NP54WUTXHIBLN6URD2LCRI4G5MB2EBKNV2BKZ
+          NEXT_PUBLIC_STELLAR_NETWORK: testnet
+        run: npm run build
+
+  express-starter-smoke:
+    # express-starter's source uses @orbital-stellar/pulse-core /
+    # pulse-webhooks APIs (CursorStoreLike, signWebhookPayload) that exist in
+    # this workspace's current build but not in the last npm-published
+    # version (0.1.0, confirmed via a real npm-registry install). Pinning to
+    # a real npm range would either fail to resolve (nothing newer is
+    # published) or typecheck-fail against 0.1.0 - neither proves anything
+    # useful. Runs inside the workspace instead, matching anchor-starter's
+    # same interim compromise, until a fresh publish includes these APIs.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6.0.10
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      - name: Build abi-registry
+        run: pnpm tsc -p packages/abi-registry/tsconfig.json
+      - name: Build pulse-core
+        run: pnpm tsc -p packages/pulse-core/tsconfig.json
+      - name: Build pulse-webhooks
+        run: pnpm tsc -p packages/pulse-webhooks/tsconfig.json
+
+      - name: Typecheck
+        run: pnpm --filter orbital-express-starter typecheck
+
+      - name: Build
+        run: pnpm --filter orbital-express-starter build
+
+      - name: Boot and probe /healthz
+        working-directory: examples/express-starter
+        env:
+          STELLAR_ADDRESSES: GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN
+          STELLAR_NETWORK: testnet
+          WEBHOOK_SECRET: ci-smoke-test-secret-not-a-real-credential-0000
+          PORT: 3000
+        run: |
+          node dist/index.js &
+          pid=$!
+          trap "kill $pid" EXIT
+          for i in $(seq 1 30); do
+            if curl -sf http://127.0.0.1:3000/healthz > /dev/null; then
+              echo "healthz responded after ${i}s"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "ERROR: /healthz never responded within 30s"
+          exit 1
+
+  anchor-starter-smoke:
+    # anchor-starter depends on @orbital-stellar/anchor-sdk, which is not yet
+    # published to npm (confirmed 404) - so unlike the other two starters,
+    # this runs inside the workspace rather than proving an npm-only install.
+    # It still proves the same "typechecks and boots" floor the acceptance
+    # criteria ask for. Revisit once anchor-sdk is publishable.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6.0.10
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      - name: Build abi-registry
+        run: pnpm tsc -p packages/abi-registry/tsconfig.json
+      - name: Build pulse-core
+        # anchor-sdk imports @orbital-stellar/pulse-core (WebAuth, status types).
+        run: pnpm tsc -p packages/pulse-core/tsconfig.json
+      - name: Build anchor-sdk
+        run: pnpm tsc -p packages/anchor-sdk/tsconfig.json
+
+      - name: Typecheck
+        run: pnpm --filter orbital-anchor-starter typecheck
+
+      - name: Build
+        run: pnpm --filter orbital-anchor-starter build
+
+      - name: Boots (argument validation happens before any network call)
+        working-directory: examples/anchor-starter
+        run: |
+          if node dist/index.js 2>&1 | grep -q "Usage: orbital-anchor-starter"; then
+            echo "PASS: prints usage and exits without needing STELLAR_SECRET or network access"
+          else
+            echo "ERROR: did not print the expected usage message"
+            exit 1
+          fi
