@@ -1,0 +1,21 @@
+{
+  "name": "@orbital-stellar/worker-core",
+  "version": "0.1.0",
+  "description": "Worker idempotency primitives for Orbital",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "devDependencies": {
+    "vitest": "^4.1.11",
+    "@types/node": "^20.0.0"
+  }
+}
