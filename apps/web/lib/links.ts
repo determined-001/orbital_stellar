@@ -53,6 +53,8 @@ export const NAV_LINKS: NavLink[] = [
   { label: "Docs", href: "/docs" },
   { label: "SDKs", href: "/reference" },
   { label: "Demo", href: "/demo/contracts" },
+  { label: "Registry", href: "/registry" },
+  { label: "Workers", href: "/workers" },
   { label: "Changelog", href: "/changelog" },
   { label: "GitHub", href: GITHUB_REPO, external: true },
 ];
