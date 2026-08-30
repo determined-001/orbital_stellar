@@ -6,8 +6,8 @@
   "main": "dist/cli/index.js",
   "types": "dist/cli/index.d.ts",
   "bin": {
-    "orbital": "dist/cli/index.js",
-    "orbital-worker": "dist/cli/index.js"
+    "orbital": "./bin/orbital-worker",
+    "orbital-worker": "./bin/orbital-worker"
   },
   "files": [
     "dist",
