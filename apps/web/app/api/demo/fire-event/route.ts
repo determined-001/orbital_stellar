@@ -1,6 +1,6 @@
-import { clientIp } from "@/lib/demo-limits";
-import { checkFireEventRateLimit } from "@/lib/fireEventRateLimit";
-import { fireDemoEvent, DemoEmitterNotConfiguredError } from "@/lib/fireDemoEvent";
+import { clientIp } from "@lib/demo-limits";
+import { checkFireEventRateLimit } from "@lib/fireEventRateLimit";
+import { fireDemoEvent, DemoEmitterNotConfiguredError } from "@lib/fireDemoEvent";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -20,6 +20,13 @@ export async function POST(req: Request) {
 
   try {
     const result = await fireDemoEvent();
+    if (!result) {
+      console.warn("[fire-event] Demo emitter returned no result; it may not be configured.");
+      return Response.json(
+        { error: "not_configured", message: "Demo emitter is not configured." },
+        { status: 503 },
+      );
+    }
     return Response.json(result);
   } catch (err) {
     if (err instanceof DemoEmitterNotConfiguredError) {
