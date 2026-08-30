@@ -162,6 +162,7 @@ export type SorobanLatestLedgerResult = {
   id?: string;
   protocolVersion?: number;
   sequence: number;
+  ledgerCloseTime?: number;
 };
 
 export type JsonRpcSuccess<T> = {
@@ -529,6 +530,30 @@ export class SorobanRpcClient {
       options,
     );
     return result.sequence;
+  }
+
+  /**
+   * Returns the latest ledger close time as a Unix timestamp in seconds.
+   *
+   * Ledger close time is the authoritative clock for time-based workers.
+   * Host wall-clock time is only used to decide when to poll; due-ness must
+   * always be evaluated against this ledger value.
+   */
+  async getLatestLedgerCloseTime(
+    options?: SorobanRpcCallOptions,
+  ): Promise<number> {
+    const result = await this.requestResult<SorobanLatestLedgerResult>(
+      "getLatestLedger",
+      undefined,
+      options,
+    );
+    if (typeof result.ledgerCloseTime !== "number") {
+      throw new SorobanRpcError(
+        "Soroban RPC getLatestLedger response did not include ledgerCloseTime",
+        { code: "invalid_request", retryable: false },
+      );
+    }
+    return result.ledgerCloseTime;
   }
 
   async getNetwork(options?: SorobanRpcCallOptions): Promise<SorobanNetworkInfo> {
