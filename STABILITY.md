@@ -15,7 +15,7 @@ The `0.1.0` → `1.0.0` migration path (before/after edits, source-compatible
 
 ## What is covered
 
-The public API surface of all four packages:
+The public API surface of all five packages:
 
 - **`@orbital-stellar/pulse-core`** - `EventEngine`, `Watcher`, the
   `NormalizedEvent` discriminated union and all per-event shapes,
@@ -27,6 +27,8 @@ The public API surface of all four packages:
 - **`@orbital-stellar/pulse-notify`** - all exported hooks.
 - **`@orbital-stellar/abi-registry`** - client interfaces, the `decodedData`
   shape, the schema format, `RegistryPublisher`.
+- **`@orbital-stellar/worker-core`** - `WorkerNotifier`, `WorkerEvent`
+  discriminated union (`worker.fired`, `worker.missed`), worker event shapes.
 
 **Wire and data contracts are API.** This pledge is not limited to
 TypeScript signatures. The following are all covered, and a change to any of
@@ -38,6 +40,7 @@ TypeScript:
 - The HMAC signing scheme
 - Retry semantics
 - The `NormalizedEvent` JSON shape on the wire
+- The `worker.fired` and `worker.missed` JSON shapes on the wire (see `@orbital-stellar/worker-core`)
 - The cursor format (see [`docs/cursor-format.md`](./docs/cursor-format.md))
 - The registry schema format
 
