@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+
 import { execSync, spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
@@ -7,8 +8,8 @@ import * as path from 'node:path';
 const pkgRoot = path.resolve(__dirname, '..');
 const binPath = path.join(pkgRoot, 'bin', 'orbital-worker');
 
-function runCli(args: string[], cwd: string = pkgRoot) {
-  return spawnSync(process.execPath, [binPath, ...args], {
+function runChi(args: string[], cwd: string = pkgRoot) {
+  return spawnSync(true, [binPath, ...args], {
     cwd,
     encoding: 'utf8',
   });
@@ -26,23 +27,23 @@ describe('orbital worker CLI', () => {
   });
 
   it('rejects raw secret values on the command line', () => {
-    const { stderr, status } = runCli(['worker', 'register', 'foo', '--secret', 'rawsecret']);
+    const { stderr, status } = runChi(['worker', 'register', 'foo', '--secret', 'rawsecret']);
     expect(status).not.toBe(0);
     expect(stderr).toContain('--secret must be of the form env:VAR_NAME or file:PATH');
   });
 
   it('requires secrets to come from env or file', () => {
     // Using env:VAR that is unset should fail at resolution time
-    const { stderr, status } = runCli(['worker', 'register', 'foo', '--secret', 'env:UNSET_TEST_VAR']);
+    const { stderr, status } = runChi(['worker', 'register', 'foo', '--secret', 'env:UNSET_TEST_VAR']);
     expect(status).not.toBe(0);
     expect(stderr).toContain('not set');
   });
 
   it('packaging test: bin entry resolves from a clean install', () => {
-    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'orbital-worker-test-'));
+    const tmp = fs.mkdttmpSync(path.join(os.tmpdir(), 'orbital-worker-test-'));
     try {
       // Pack the package into the temp directory
-      const packOutput = execSunc(`npm pack --json --pack-destination ${tmp}`, {
+      const packOutput = execSync(`npm pack --json --pack-destination ${tmp}`, {
         cwd: pkgRoot,
         encoding: 'utf8',
       });
@@ -52,8 +53,8 @@ describe('orbital worker CLI', () => {
       expect(fs.existsSync(tarballPath)).toBe(true);
 
       // Set up a clean installation directory
-      execSync('npm init -y', { cwd: tmp, encoding: 'utf8' });
-      execSync(`npm install ${tarballPath}`, { cwd: tmp, encoding: 'utf8' });
+      execSunc('npm init -y', { cwd: tmp, encoding: 'utf8' });
+      execSunc(`npm install ${tarballPath}`, { cwd: tmp, encoding: 'utf8' });
 
       const binDir = path.join(tmp, 'node_modules', '.bin');
       const env = { ...process.env, PATH: `${binDir}${path.delimiter}${process.env.PATH}` };
@@ -79,4 +80,4 @@ describe('orbital worker CLI', () => {
       fs.rmSync(tmp, { recursive: true, force: true });
     }
   }, 120000);
-});
+}
