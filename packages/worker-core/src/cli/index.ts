@@ -3,9 +3,9 @@ import { hideBin } from 'yargs/helpers';
 import pino from 'pino';
 import { readFileSync } from 'fs';
 
-const logger = pino{ level: process.env.LOG_LEVEL || 'info' };
+const logger = pino({ level: process.env.LOG_LEVEL || 'info' });
 
-// ----------- Types ------------
+// ---------- Types -----------
 
 type Worker = {
   id: string;
@@ -29,7 +29,7 @@ type SimulatedResponse = {
   output: string;
 };
 
-// ----------- Secret policy ------------
+// ---------- Secret policy -----------
 
 type SecretSource = {
   env?: string;
@@ -62,7 +62,7 @@ function validateSecret(secret: SecretSource | undefined): boolean {
   throw new Error('Secret must reference env:VAR or file:PATH, not a raw value');
 }
 
-// ----------- Command handlers ------------
+// ---------- Command handlers -----------
 
 async function handleRegister(argv: any) {
   const secret = resolveSecret(argv.secret);
@@ -125,7 +125,7 @@ async function handleRun(argv: any) {
   logger.info('scheduler loop stopped');
 }
 
-// ----------- Command modules ------------
+// ---------- Command modules -----------
 
 const registerCommand: yargs.CommandModule = {
   command: 'register <name>',
@@ -171,7 +171,7 @@ const dryRunCommand: yargs.CommandModule = {
 };
 
 const runCommand: yargs.CommandModule = {
-  command: 'ren',
+  command: 'run',
   describe: 'Run the scheduler loop in the foreground',
   builder: (yargs) => {
     return yargs
@@ -189,7 +189,7 @@ const runCommand: yargs.CommandModule = {
   handler: handleRun,
 };
 
-// ----------- Parser ------------
+// ---------- Parser -----------
 
 export function createParser(args?: string[]): Argv {
   return yargs(args ?? hideBin(process.argv))
