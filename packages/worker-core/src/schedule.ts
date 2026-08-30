@@ -1,14 +1,26 @@
 import { parseExpression } from 'cron-parser';
 
+export type CatchUpPolicy = 'fire-once' | 'fire-all';
+
 export interface IntervalSchedule {
   type: 'interval';
   intervalMs: number;
+  /**
+   * Catch-up policy when the worker misses scheduled windows.
+   * Defaults to 'fire-once'.
+   */
+  catchUp?: CatchUpPolicy;
 }
 
 export interface CronSchedule {
   type: 'cron';
   expression: string;
   timezone?: string;
+  /**
+   * Catch-up policy when the worker misses scheduled windows.
+   * Defaults to 'fire-once'.
+   */
+  catchUp?: CatchUpPolicy;
 }
 
 export type Schedule = IntervalSchedule | CronSchedule;
@@ -19,7 +31,7 @@ export type Schedule = IntervalSchedule | CronSchedule;
  * due times are aligned to ledger close times, which is the correct
  * reference for Stellar time-based workers.
  */
-export type NextLedgerCloseTime = (after: Date) => Date;
+export type NextLedgerCloseTime = (after: Date) : Date;
 
 export function nextDue(
   schedule: Schedule,
@@ -88,5 +100,9 @@ export function dueTimesBetween(
     }
   }
 
+  const catchUp = schedule.catchUp ?? 'fire-once';
+  if (catchUp === 'fire-once' && result.length > 1) {
+    return [result[result.length - 1]];
+  }
   return result;
 }
