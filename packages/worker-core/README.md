@@ -17,10 +17,24 @@ as* the account that authorizes it. Concretely:
   or a `Trigger`, that need is a design bug in whatever wants it - not a gap
   in this type to fill in.
 
-This is the working formulation of §C.2 for this package; the full
-architecture-decision record (all four §C.2 rules, in precedence order) lands
-in `docs/design/workers.md` per issue 18.13, and this README will link to it
-once that exists.
+This is the working formulation of §C.2 for this package. The full
+architecture-decision record — all four rules in precedence order, the fixed
+W0 → W4 build order, the frozen non-goals, and two corrections that must not be
+re-litigated — is
+**[`docs/design/workers.md`](../../docs/design/workers.md): the trigger is not
+the custodian.**
+
+It is not background reading. It carries the review rule this package is
+maintained by:
+
+> If a proposed worker needs signing authority to do its job, the design is the
+> bug — not the worker.
+
+A change that gives a worker authority over user funds is rejected on that basis
+alone, however convenient it is. Prior art and competitive notes are kept
+separately in
+[`docs/design/prior-art-workers.md`](../../docs/design/prior-art-workers.md),
+because they date fast and are self-reported rather than audited.
 
 ```bash
 pnpm add @orbital-stellar/worker-core
