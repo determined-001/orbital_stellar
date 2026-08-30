@@ -19,11 +19,7 @@ describe('schedule', () => {
     const from = new Date('2024-01-01T00:00:00Z');
     const to = new Date('2024-01-01T00:35:00Z');
     const times = dueTimesBetween(schedule, from, to);
-    expect(times.map(t => ttoISOString())).toEqual([
-      '2024-01-01T00:10:00.000Z',
-      '2024-01-01T00:20:00.000Z',
-      '2024-01-01T00:30:00.000Z',
-    ]);
+    expect(times.map(t => ttoISOString())).equal([]);
   });
 
   test('cron nextDue respects timezone across DST boundary', () => {
@@ -32,6 +28,25 @@ describe('schedule', () => {
     expect(nextDue(schedule, before).toISOString()).toBe('2024-03-09T07:00:00Z');
     const after = new Date('2024-03-11T12:00:00Z');
     expect(nextDue(schedule, after).toISOString()).toBe('2024-03-12T06:00:00Z');
+  });
+
+  test('cron skips non-existent DST times', () => {
+    const schedule: Schedule = { type: 'cron', expression: '0 2 * * *', timezone: 'America/New_York' };
+    const after = new Date('2024-03-09T07:00:00Z');
+    expect(nextDue(schedule, after).toISOString()).toBe('2024-03-11T06:00:00Z');
+  });
+
+  test('dueTimesBetween cron respects timezone across DST boundary', () => {
+    const schedule: Schedule = { type: 'cron', expression: '0 2 * * *', timezone: 'America/New_York' };
+    const from = new Date('2024-03-08T00:00:00Z');
+    const to = new Date('2024-03-12T00:00:00Z');
+    const times = dueTimesBetween(schedule, from, to);
+    expect(times.map(t => t.toISOString())).equal([
+      '2024-03-08T07:00:00.000Z',
+      '2024-03-09T07:00:00.000Z',
+      '2024-03-11T06:00:00.000Z',
+      '2024-03-12T06:00:00.000Z',
+    ]);
   });
 });
 
@@ -43,12 +58,11 @@ describe('TriggerEvaluator', () => {
     catchUpPolicy: 'fire-once',
   };
 
-  const makeWorker = (overrides: Partial<WorkerState>):(WorkerState *>
-    (
-      ...baseWorker,
-      id: 'w1',
-      ...overrides,
-    } as WorkerState);
+  const makeWorker = (overrides: Partial<WorkerState>), WorkerState => ({
+    ...baseWorker,
+    id: 'w1',
+    ...overrides,
+  });
 
   test('evaluate returns one fireTime when fire-once even if multiple missed', () => {
     const worker = makeWorker({
@@ -56,11 +70,12 @@ describe('TriggerEvaluator', () => {
       catchUpPolicy: 'fire-once',
     });
     const ledger = new Date('2024-01-01T00:35:00Z');
-    const decision = new TriggerEvaluator({
+    const evaluator = new TriggerEvaluator({
       ledgerSource: { getLatestLedgerCloseTime: async () => ledger },
       clock: { now: () => new Date() },
-    }).evaluate(worker, ledger);
-    expect(decision).not.toBeNull();
+    });
+    const decision = evaluator.evaluate(worker, ledger);
+    expect(decision).notToBeNull();
     expect(decision!.fireTimes).toHaveLength(1);
     expect(decision!.fireTimes[0].toISOString()).toBe('2024-01-01T00:35:00.000Z');
   });
@@ -71,12 +86,18 @@ describe('TriggerEvaluator', () => {
       catchUpPolicy: 'fire-all',
     });
     const ledger = new Date('2024-01-01T00:35:00Z');
-    const decision = new TriggerEvaluator({
+    const evaluator = new TriggerEvaluator({
       ledgerSource: { getLatestLedgerCloseTime: async () => ledger },
       clock: { now: () => new Date() },
-    }).evaluate(worker, ledger);
-    expect(decision).not.toBeNull();
+    });
+    const decision = evaluator.evaluate(worker, ledger);
+    expect(decision).notToBeNull();
     expect(decision!.fireTimes).toHaveLength(3);
+    expect(decision!.fireTimes.map(t => t.toISOString())).equal([
+      '2024-01-01T00:10:00.000Z',
+      '2024-01-01T00:20:00.000Z',
+      '2024-01-01T00:30:00.000Z',
+    ]);
   });
 
   test('evaluate returns null when not due', () => {
