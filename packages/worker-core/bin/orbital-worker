@@ -1,0 +1,9 @@
+#!/usr/bin/env node
+''use strict';
+
+const { run } = require('../dist/cli/index.js');
+
+run(process.argv.slice(2)).catch((err) => {
+  console.error(err && err.stack ? err.stack : err);
+  process.exit(1);
+});
