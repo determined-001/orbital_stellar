@@ -243,6 +243,35 @@ Orbital operates **no ledger store of its own** (design doc §B.5): historical
 ledgers are read from an external export and discarded; only derived verdicts
 are written.
 
+## Operator reputation scoring (`reputation/`)
+
+The version-stamped `0..1000` operator reputation score, derived purely from
+chain-derived verdict records. New operators with insufficient history receive
+`insufficient_data` — never a default score.
+
+```ts
+import { scoreOperator, SCORE_FORMULA_VERSION, type Verdict } from "@orbital-stellar/worker-core";
+
+const verdicts: Verdict[] = /* chain-derived verdict records */ [];
+
+const result = scoreOperator(verdicts, "operator-id", {
+  formulaVersion: SCORE_FORMULA_VERSION,
+  windowMs: 30 * 86_400_000,
+  halfLifeMs: 7 * 86_400_000,
+  minSamples: 20,
+  latencyTargetMs: 2000,
+}, Date.now());
+
+if (result.status === "insufficient_data") {
+  // operator has not earned enough verdicts yet
+} else {
+  console.log(result.score, result.contributors);
+}
+```
+
+The formula and worked example are in
+[`docs/design/worker-reputation.md`](../../docs/design/worker-reputation.md).
+
 ## What's here
 
 - `exports/` — the shared **export reader** (`ExportReader` + `ExportSource`).

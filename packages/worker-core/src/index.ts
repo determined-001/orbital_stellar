@@ -369,3 +369,7 @@ export type {
 } from "./events.js";
 export { WorkerNotifier } from "./notify.js";
 export type { WorkerNotifyConfig } from "./notify.js";
+
+// Operator reputation (issue #1051).
+export * from "./reputation/window.js";
+export * from "./reputation/score.js";
