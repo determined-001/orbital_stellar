@@ -14,6 +14,14 @@ function getDemoEmitterConfigStatus(): {
     return { configured: true, status: "configured" };
   }
 
+  if (process.env.NODE_ENV === "production") {
+    return {
+      configured: false,
+      status: "not-configured",
+      error: "DEMO_EMITTER_CONTRACT_ID is required in production",
+    };
+  }
+
   const manifestPath = resolve(process.cwd(), "..", "..", "contracts", "deployed.testnet.json");
 
   try {
@@ -24,6 +32,7 @@ function getDemoEmitterConfigStatus(): {
     }
     return { configured: false, status: "not-configured" };
   } catch (error) {
+    console.warn(`Failed to read demo emitter manifest at ${manifestPath}:`, error);
     return {
       configured: false,
       status: "configuration-error",
