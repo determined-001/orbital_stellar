@@ -469,3 +469,27 @@ export type {
   SubscriptionStatus,
   SubscriptionTier,
 } from "./subscription/index.js";
+
+// Event-based trigger class (issue #1060).
+// The class is exported as `EventTriggerPlanner`: `EventTrigger` is already the
+// name of the `Trigger` union's event member in ./types.js, and a barrel cannot
+// carry both. The planner is the thing that turns events into fire decisions;
+// the type is the thing a worker definition holds.
+export {
+  EventTriggerPlanner,
+  InMemoryFireClaimStore,
+  ClaimStoreFireClaims,
+  eventIdentity,
+  registerEventTrigger,
+} from "./triggers/eventTrigger.js";
+export type {
+  EventTriggerDefinition,
+  FireClaimStore,
+  FireDecision,
+  PlanResult,
+  RegisterResult,
+  SkipReason,
+  SkippedEvent,
+} from "./triggers/eventTrigger.js";
+export { TRADE_SIGNAL_REJECTION, compileEventCondition } from "./triggers/predicate.js";
+export type { CompileResult, EventConditionSpec, EventPredicate } from "./triggers/predicate.js";
