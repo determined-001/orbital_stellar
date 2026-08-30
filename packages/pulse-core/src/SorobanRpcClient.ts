@@ -61,6 +61,17 @@ export interface SorobanRpcClientOptions {
   /** Optional logger. Per-request diagnostics go to `logger.debug` (header values redacted). */
   logger?: Logger;
   /**
+   * Minimum interval between getLatestLedgerCloseTime RPC calls.
+   * Defaults to 1 second, which prevents idle fleets from hammering RPC.
+   */
+  minLedgerCloseTimePollIntervalMs?: number;
+  /**
+   * Injectable clock for poll-cadence decisions. Defaults to `Date.now`.
+   * Ledger close time remains the authority for due-ness; this clock is only
+   * used to bound how often the RPC endpoint is polled.
+   */
+  now?: () => number;
+  /**
    * Default XDR format for `getEvents` requests.
    * - `"json"` (default): the RPC decodes XDR values into JSON objects, and
    *   `decodedData` is populated on normalized events.
@@ -314,6 +325,8 @@ export class SorobanRpcClient {
   private readonly xdrFormat: "base64" | "json";
   private latestLedgerCloseTime?: number;
   private lastLedgerCloseTimeFetchMs = 0;
+  private readonly now: () => number;
+  private readonly minLedgerCloseTimePollIntervalMs: number;
 
   /**
    * @param options - Configuration for the RPC client.
@@ -330,6 +343,9 @@ export class SorobanRpcClient {
       throw new TypeError("SorobanRpcClient requires a fetch implementation.");
     }
     this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+    this.minLedgerCloseTimePollIntervalMs =
+      options.minLedgerCloseTimePollIntervalMs ?? MIN_LEDGER_CLOSE_TIME_POLL_INTERVAL_MS;
+    this.now = options.now ?? Date.now;
     this.logger = options.logger;
     this.xdrFormat = options.xdrFormat ?? "json";
   }
@@ -547,11 +563,11 @@ export class SorobanRpcClient {
   async getLatestLedgerCloseTime(
     options?: SorobanRpcCallOptions,
   ): Promise<number> {
-    const now = Date.now();
+    const nowMs = this.now();
     if (
       this.latestLedgerCloseTime !== undefined &&
-      now - this.lastLedgerCloseTimeFetchMs <
-        MIN_LEDGER_CLOSE_TIME_POLL_INTERVAL_MS
+      nowMs - this.lastLedgerCloseTimeFetchMs <
+        this.minLedgerCloseTimePollIntervalMs
     ) {
       return this.latestLedgerCloseTime;
     }
@@ -568,7 +584,7 @@ export class SorobanRpcClient {
       );
     }
     this.latestLedgerCloseTime = result.ledgerCloseTime;
-    this.lastLedgerCloseTimeFetchMs = Date.now();
+    this.lastLedgerCloseTimeFetchMs = this.now();
     return result.ledgerCloseTime;
   }
 
