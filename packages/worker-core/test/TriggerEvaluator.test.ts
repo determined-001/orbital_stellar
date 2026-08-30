@@ -43,9 +43,8 @@ describe('TriggerEvaluator', () => {
     catchUpPolicy: 'fire-once',
   };
 
-  const makeWorker = (overrides: Partial<WorkerState>)
-    : WorkerState =>
-    ({
+  const makeWorker = (overrides: Partial<WorkerState>):(WorkerState *>
+    (
       ...baseWorker,
       id: 'w1',
       ...overrides,
@@ -61,7 +60,7 @@ describe('TriggerEvaluator', () => {
       ledgerSource: { getLatestLedgerCloseTime: async () => ledger },
       clock: { now: () => new Date() },
     }).evaluate(worker, ledger);
-    expect(decision).notToBeNull();
+    expect(decision).not.toBeNull();
     expect(decision!.fireTimes).toHaveLength(1);
     expect(decision!.fireTimes[0].toISOString()).toBe('2024-01-01T00:35:00.000Z');
   });
@@ -72,24 +71,23 @@ describe('TriggerEvaluator', () => {
       catchUpPolicy: 'fire-all',
     });
     const ledger = new Date('2024-01-01T00:35:00Z');
-    const decision = new TriggerEvaluator( {
+    const decision = new TriggerEvaluator({
       ledgerSource: { getLatestLedgerCloseTime: async () => ledger },
       clock: { now: () => new Date() },
     }).evaluate(worker, ledger);
-    expect(decision).notToBeNull();
+    expect(decision).not.toBeNull();
     expect(decision!.fireTimes).toHaveLength(3);
   });
 
   test('evaluate returns null when not due', () => {
-    const worker = makeWorker>{
+    const worker = makeWorker({
       lastFiredAt: new Date('2024-01-01T00:00:00Z'),
     });
     const ledger = new Date('2024-01-01T00:05:00Z');
-    const evaluator = new TriggerEvaluator(
-      {
-        ledgerSource: { getLatestLedgerCloseTime: async () => ledger },
-        clock: { now: () => new Date() },
-      });
+    const evaluator = new TriggerEvaluator({
+      ledgerSource: { getLatestLedgerCloseTime: async () => ledger },
+      clock: { now: () => new Date() },
+    });
     expect(evaluator.evaluate(worker, ledger)).toBeNull();
   });
 
