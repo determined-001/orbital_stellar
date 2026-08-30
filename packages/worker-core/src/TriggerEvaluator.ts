@@ -77,7 +77,9 @@ export class TriggerEvaluator {
 
     const policy = worker.catchUpPolicy ?? 'fire-once';
     if (policy === 'fire-once') {
-      return { workerId: worker.id, fireTimes: [ledgerCloseTime] };
+      // Fire once at the latest due time (most recent missed occurrence) so
+      // that all missed windows are considered caught up.
+      return { workerId: worker.id, fireTimes: [dueTimes[dueTimes.length - 1]] };
     }
     return { workerId: worker.id, fireTimes: dueTimes };
   }
