@@ -579,6 +579,7 @@ orbital_stellar/
 - [`docs/semantic-layer.md`](./semantic-layer.md) - Semantic taxonomy, labels, precedence, honesty rule
 - [`docs/proposal.md`](./proposal.md) - SCF grant proposal
 - [`docs/design/cap67-mapping.md`](./design/cap67-mapping.md) - CAP-67 → `NormalizedEvent` mapping design doc (§4.1)
+- [`docs/design/worker-offchain-triggers.md`](./design/worker-offchain-triggers.md) - Attestation model for off-chain-computation triggers (20.7, §C.1/§C.8)
 - [`docs/CAP-67-Event-Mapping.md`](./CAP-67-Event-Mapping.md) - CAP-67 event taxonomy rationale (§4.1)
 - Per-package READMEs:
   [`pulse-core`](../packages/pulse-core/README.md),
