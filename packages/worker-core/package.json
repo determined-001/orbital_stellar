@@ -1,0 +1,40 @@
+{
+  "name": "@orbital-stellar/worker-core",
+  "version": "0.1.0",
+  "description": "Off-chain worker runtime for Orbital. This package currently exports first-party backstop SLO evaluation; the worker definition model lands in 18.3.",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/determined-001/orbital_stellar.git",
+    "directory": "packages/worker-core"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@orbital-stellar/abi-registry": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^26.2.0",
+    "@vitest/coverage-v8": "^4.1.11",
+    "vite": "^8.2.2",
+    "vitest": "^4.1.11"
+  }
+}

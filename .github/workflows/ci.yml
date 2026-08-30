@@ -85,6 +85,8 @@ jobs:
         run: pnpm tsc -p packages/pulse-core/tsconfig.json
       - name: Typecheck abi-registry
         run: pnpm tsc --noEmit -p packages/abi-registry/tsconfig.json
+      - name: Typecheck worker-core
+        run: pnpm tsc --noEmit -p packages/worker-core/tsconfig.json
       - name: Typecheck pulse-webhooks
         run: pnpm tsc --noEmit -p packages/pulse-webhooks/tsconfig.json
       - name: Typecheck pulse-notify
