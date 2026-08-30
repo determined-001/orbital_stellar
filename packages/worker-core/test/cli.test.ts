@@ -68,7 +68,7 @@ describe('orbital worker CLI', () => {
       expect(orbitalResult.stdout).toContain('orbital worker');
 
       // The `orbital-worker` binary should also be available
-      const workerResult = spawnSync('orbital-worker', ['H:	lp"], {
+      const workerResult = spawnSync('orbital-worker', ['worker', '--help'], {
         cwd: tmp,
         encoding: 'utf8',
         env,
