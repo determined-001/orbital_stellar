@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["registry", "demo-emitter", "vault"]
+members = ["registry", "demo-emitter", "vault", "payroll"]
 
 [workspace.dependencies]
 soroban-sdk = "27.0.0"
