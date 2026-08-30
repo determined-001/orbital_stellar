@@ -52,7 +52,15 @@ describe("create", () => {
       cancelEffectiveWindow: null,
     });
     expect(record.audit).toEqual([
-      { action: "create", at: clock, from: null, to: "active", window: 41 },
+      {
+        action: "create",
+        at: clock,
+        from: null,
+        to: "active",
+        window: 41,
+        version: 1,
+        tier: "time-insensitive",
+      },
     ]);
   });
 

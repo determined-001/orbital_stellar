@@ -1,3 +1,5 @@
+import type { TierId } from "../backstop/tiers.js";
+
 /**
  * The subscription record (20.5).
  *
@@ -21,13 +23,15 @@
 export type SubscriptionStatus = "active" | "paused" | "cancelled";
 
 /**
- * Service tier. W3 ships the time-insensitive tier only; the
- * latency-sensitive one is defined but not registrable until 22.4 (see 21.3).
+ * Service tier. The definitions — latency bound, grace period, price and the
+ * conditions under which intervention is guaranteed — live in
+ * `../backstop/tiers.js`, which is also what decides which tiers are
+ * registrable today (21.3).
  */
-export type SubscriptionTier = "time-insensitive" | "latency-sensitive";
+export type SubscriptionTier = TierId;
 
 /** Lifecycle transitions, each of which appends an audit entry. */
-export type SubscriptionAction = "create" | "pause" | "resume" | "cancel";
+export type SubscriptionAction = "create" | "pause" | "resume" | "cancel" | "change-tier";
 
 /**
  * One entry of the audit trail.
@@ -38,6 +42,10 @@ export type SubscriptionAction = "create" | "pause" | "resume" | "cancel";
  */
 export interface SubscriptionAuditEntry {
   readonly action: SubscriptionAction;
+  /** Subscription version this entry was written at. */
+  readonly version: number;
+  /** Tier in force after this entry. Lets a reader replay what was promised. */
+  readonly tier: TierId;
   /** Ledger-independent wall clock, epoch ms. */
   readonly at: number;
   readonly from: SubscriptionStatus | null;
@@ -53,6 +61,16 @@ export interface SubscriptionAuditEntry {
 
 export interface SubscriptionRecord {
   readonly id: string;
+  /**
+   * Subscription version. Starts at 1 and increments on a **tier change**.
+   *
+   * A tier change is a new version rather than an edit because the tier is the
+   * guarantee: what was promised between window 10 and window 40 has to stay
+   * answerable after the tier moves, or an SLO dispute becomes an argument
+   * about what the record used to say. Lifecycle transitions (pause, resume,
+   * cancel) do not change what was promised, so they do not bump it.
+   */
+  readonly version: number;
   /** Opaque subscriber identifier. Not a key, not an address to draw from. */
   readonly subscriber: string;
   /** The offering being subscribed to. */

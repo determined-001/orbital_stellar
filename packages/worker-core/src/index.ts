@@ -40,6 +40,16 @@ export {
   TierEnableWithoutMeasurementError,
   assertTierEnableDecisionIsValid,
 } from "./backstop/tiers.js";
+// Latency-tier configuration (issue #1064). Same module as the enable decision
+// above: the tier table derives `latency-sensitive`'s registrability from it.
+export {
+  TIERS,
+  guaranteeDeadline,
+  registrableTiers,
+  tierDefinition,
+  withinGuarantee,
+} from "./backstop/index.js";
+export type { GuaranteeBounds, TierDefinition, TierId } from "./backstop/index.js";
 export {
   classifySubmissionError,
   isRetryableSubmissionFailure,
