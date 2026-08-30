@@ -30,6 +30,7 @@ export async function POST(req: Request) {
     return Response.json(result);
   } catch (err) {
     if (err instanceof DemoEmitterNotConfiguredError) {
+      console.warn("[fire-event] Demo emitter not configured:", err.message);
       return Response.json({ error: "not_configured", message: err.message }, { status: 503 });
     }
     return Response.json(
