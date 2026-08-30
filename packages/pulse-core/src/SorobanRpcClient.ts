@@ -8,6 +8,9 @@ import { fullJitterBackoffMs } from "./backoff.js";
 
 const DEFAULT_TIMEOUT_MS = 10_000;
 
+/** Minimum interval between getLatestLedgerCloseTime RPC calls. */
+const MIN_LEDGER_CLOSE_TIME_POLL_INTERVAL_MS = 1_000;
+
 /** CAP-67 (SEP-41) standard event topic names for Stellar asset contracts. */
 export const CAP_67_EVENT_TOPICS = ["transfer", "mint", "burn", "clawback"] as const;
 
@@ -309,6 +312,8 @@ export class SorobanRpcClient {
   private readonly timeoutMs: number;
   private readonly logger?: Logger;
   private readonly xdrFormat: "base64" | "json";
+  private latestLedgerCloseTime?: number;
+  private lastLedgerCloseTimeFetchMs = 0;
 
   /**
    * @param options - Configuration for the RPC client.
@@ -542,6 +547,15 @@ export class SorobanRpcClient {
   async getLatestLedgerCloseTime(
     options?: SorobanRpcCallOptions,
   ): Promise<number> {
+    const now = Date.now();
+    if (
+      this.latestLedgerCloseTime !== undefined &&
+      now - this.lastLedgerCloseTimeFetchMs <
+        MIN_LEDGER_CLOSE_TIME_POLL_INTERVAL_MS
+    ) {
+      return this.latestLedgerCloseTime;
+    }
+
     const result = await this.requestResult<SorobanLatestLedgerResult>(
       "getLatestLedger",
       undefined,
@@ -553,6 +567,8 @@ export class SorobanRpcClient {
         { code: "invalid_request", retryable: false },
       );
     }
+    this.latestLedgerCloseTime = result.ledgerCloseTime;
+    this.lastLedgerCloseTimeFetchMs = Date.now();
     return result.ledgerCloseTime;
   }
 
