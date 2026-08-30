@@ -9,6 +9,44 @@ This file rolls up changes across the public packages: `@orbital-stellar/pulse-c
 `@orbital-stellar/pulse-webhooks`, `@orbital-stellar/pulse-notify`, and `@orbital-stellar/abi-registry`.
 Per-package changelogs live in each package directory.
 
+## [Unfrozen] — 2026-08-30 — Worker layer (Part C)
+
+**Unfreeze of the worker layer.** Per the procedure in
+[`ROADMAP.md`'s Frozen section](./ROADMAP.md#frozen--out-of-scope-until-the-core-thesis-is-proven)
+(unfreezing a row requires the Phase 2 gate met, the Phase 3 gate met, and a
+maintainer-signed rationale recorded here — this is the written rationale, and
+this is the only issue in the majors 18–22 range that is intentionally not
+blocked), the **worker layer (Part C)** is unfrozen and moved onto the active
+roadmap as [Phase 4 — Workers entry gate](./ROADMAP.md#phase-4--workers-entry-gate).
+
+- **What is unfrozen:** the worker layer — an open standard plus a runtime that
+  lets off-chain workers *trigger* on-chain settlement and other Orbital events
+  **without taking custody** of the funds they move (the §C.2
+  trigger-≠-custodian constraint, quoted verbatim in Phase 4).
+- **Counterparty that motivated it:** **Aether Settlement** — a registered
+  Stellar anchor / settlement desk. Gate 3 (the counterparty-integration gate,
+  `W3`) exists specifically because Aether Settlement requires the
+  trigger-without-custody primitive to automate cross-anchor payouts without
+  holding counterparty funds. "There is demand" is explicitly *not* the
+  rationale; a named team is.
+- **Staging (build order is a hard constraint — W4 lands last):**
+  - `W0` — Worker standard (MIT)
+  - `W1` — `worker-core` runtime (MIT)
+  - `W2` — vault contract (MIT, the only custodial contract)
+  - `W3` — counterparty integration gate (Aether Settlement sign-off)
+  - `W4` — backstop (operated service, **lands last**)
+- **Not unfrozen:** payments SDK, auth/identity, x402, agent-sdk, intent
+  compiler, shadow-fork simulator, and analytics dashboards remain frozen per
+  the Frozen section.
+- **Gate durability:** the worker-layer gate is cross-linked to
+  [`ORBITAL_PRD.md` §C.9](./ORBITAL_PRD.md#c9) so it survives the PRD going
+  stale; its text is replicated in Phase 4 on purpose.
+
+**Maintainer sign-off:** recorded here, in writing, as required by the unfreeze
+procedure. This entry is the written lift of the implicit freeze on workers.
+
+---
+
 ## [Unreleased]
 
 ### Added
