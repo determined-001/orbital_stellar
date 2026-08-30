@@ -1,0 +1,34 @@
+{
+  "name": "@orbital/worker-core",
+  "version": "0.1.0",
+  "description": "Orbital worker CLI and core",
+  "type": "commonjs",
+  "main": "dist/cli/index.js",
+  "types": "dist/cli/index.d.ts",
+  "bin": {
+    "orbital": "bin/orbital-worker",
+    "orbital-worker": "bin/orbital-worker"
+  },
+  "files": [
+    "dist",
+    "bin"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "prepack": "npm run build",
+    "pretest": "npm run build",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "pino": "^8.15.0",
+    "yargs": "^17.7.2"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0",
+    "vitest": "^0.34.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
