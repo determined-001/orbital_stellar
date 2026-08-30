@@ -568,3 +568,39 @@ export {
   MAX_FEE_MULTIPLIER,
 } from "./fees.js";
 export type { FeeConfig, ResolvedFee } from "./fees.js";
+// Backstop watcher: per-window outcome vocabulary (issue #1062).
+// `WindowOutcome` rather than `Verdict` - `./verification/verdict.js` already
+// exports a `Verdict`, the chain-derived verification record from #1054. See
+// the note at the top of backstop/windowVerdict.ts.
+export { isExcludedFromScoring, isFailure } from "./backstop/windowVerdict.js";
+export type {
+  WindowOutcome,
+  WindowOutcomeReason,
+  WindowVerdict,
+  WindowVerdictSource,
+} from "./backstop/windowVerdict.js";
+
+export {
+  BackstopWatcher,
+  LATENCY_SENSITIVE_REJECTION,
+  registerBackstop,
+} from "./backstop/BackstopWatcher.js";
+export type {
+  BackstopDeps,
+  BackstopOutcome,
+  BackstopStats,
+  // `WatchedSubscription`, not `BackstopSubscription`: #1067's lifecycle already
+  // exports a `BackstopSubscription` class. This is the narrower thing the
+  // watcher needs - an id, a worker, a tier and a grace window.
+  WatchedSubscription,
+  FallbackSubmitter,
+  LatencyTier,
+  RegisterBackstopResult,
+} from "./backstop/BackstopWatcher.js";
+export { InMemoryInterventionRecorder } from "./backstop/intervention.js";
+export type {
+  Intervention,
+  InterventionCause,
+  InterventionNotifier,
+  InterventionRecorder,
+} from "./backstop/intervention.js";

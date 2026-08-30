@@ -55,6 +55,39 @@ function when a condition becomes true. This package is that type model:
 - **`Schedule`** - `interval` or `cron`, both with an explicit `timezone` so a
   schedule's execution times don't depend on where the worker happens to run.
 
+## Backstop
+
+§C.7's mechanism: when a registered external worker fails to fire, an Orbital
+worker catches the miss and triggers the contract.
+
+```ts
+import { BackstopWatcher, registerBackstop } from "@orbital-stellar/worker-core";
+
+const registration = registerBackstop({
+  subscriptionId: "sub-1",
+  workerId: "payroll-w1",
+  tier: "time-insensitive",   // latency-sensitive tiers wait for 22.4
+  graceLedgers: 5,            // per-subscription, from the manifest's bound
+});
+
+const watcher = new BackstopWatcher(registration.subscription, deps);
+const outcome = await watcher.evaluate(window, currentLedger);
+```
+
+The double-fire race is the central correctness problem, and it is not solved
+with timing. The backstop claims **the same window id the primary claims**,
+through the same 18.6 store, so the race is decided by one atomic claim rather
+than by who noticed first. A primary that fires late — after its deadline but
+inside grace — already holds the claim, and the backstop stands down.
+
+`watcher.stats` counts **windows watched**, not only interventions, because the
+cost of a backstop is readiness rather than payouts: it scales with
+subscriptions, not with failures. Exposed from the start rather than retrofitted
+by 21.2, since a cost model added afterwards measures whatever the
+implementation happened to do.
+
+## Design notes
+
 Nothing in this package runs a worker. Execution, submission, and signing are
 later packages in the 18.x-22.x series; this is the shared vocabulary they
 build on.
