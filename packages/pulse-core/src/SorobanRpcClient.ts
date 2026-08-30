@@ -179,6 +179,18 @@ export type SorobanLatestLedgerResult = {
   ledgerCloseTime?: number;
 };
 
+/**
+ * Minimal ledger close-time source used by the time-based trigger evaluator.
+ *
+ * The evaluator depends on this interface rather than on `SorobanRpcClient`
+ * directly, which keeps it pure and lets unit tests inject a fake ledger
+ * source. Implementations must return the latest ledger's close time in Unix
+ * seconds, never host wall-clock time.
+ */
+export interface LedgerCloseTimeSource {
+  getLatestLedgerCloseTime(options?: SorobanRpcCallOptions): Promise<number>;
+}
+
 export type JsonRpcSuccess<T> = {
   jsonrpc: "2.0";
   id: string | number | null;
@@ -290,7 +302,7 @@ function sleep(ms: number, signal?: AbortSignal): Promise<void> {
  * const { events } = await client.getEvents();
  * ```
  */
-export class SorobanRpcClient {
+export class SorobanRpcClient implements LedgerCloseTimeSource {
   private static cachedNetwork: SorobanNetworkInfo | null = null;
 
   static setCachedNetwork(info: SorobanNetworkInfo | null): void {
