@@ -7,8 +7,19 @@ export type {
   XdrContractSpec,
   AttestationDocument,
   AttestationValidationResult,
+  TriggerClass,
+  LatencyTier,
+  OperatorTerms,
+  OperatorRecord,
+  WorkerOfferingRecord,
+  OperatorValidationResult,
+  WorkerOfferingValidationResult,
 } from "./types.js";
-export { validateAttestationDocument } from "./types.js";
+export {
+  validateAttestationDocument,
+  validateOperatorRecord,
+  validateWorkerOfferingRecord,
+} from "./types.js";
 
 export type {
   ContractSpec,
