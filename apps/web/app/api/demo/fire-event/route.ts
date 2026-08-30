@@ -33,6 +33,7 @@ export async function POST(req: Request) {
       console.warn("[fire-event] Demo emitter not configured:", err.message);
       return Response.json({ error: "not_configured", message: err.message }, { status: 503 });
     }
+    console.error("[fire-event] Unhandled error invoking demo emitter:", err);
     return Response.json(
       {
         error: "fire_event_failed",
