@@ -376,7 +376,27 @@ function generateUdtDeclarations(types: Readonly<Record<string, UserDefinedType>
       // union: a Rust enum-with-data, cases are either unit (void) or carry positional fields.
       const caseTypes = udt.cases.map((c) => {
         if (c.fields.length === 0) return `{ case: "${c.name}" }`;
-        const valueTypes = c.fields.map((f) => mapContractSpecTypeToTs(f.type)).join(", ");
+        const valueTypes = c.fields.map((f) => mapContractSpecTypeToTs(f.type));
+        return `{ case: "${c.name}", values: [${valueTypes.join(", ")}] }`;
+      });
+      declarations.push(`export type ${name} = ${caseTypes.join(" | ") || "never"};`);
+      declarations.push("");
+
+      schemas.push(`export const ${name}Schema = z.discriminatedUnion("case", [`);
+      schemas.push(
+        ...udt.cases.map((c) => {
+          if (c.fields.length === 0) return `z.object({ case: z.literal("${c.name}") })`;
+          const valueTypes = c.fields.map((f) => mapContractSpecTypeToZod(f.type));
+          return `z.object({ case: z.literal("${c.name}"), values: z.tuple([${valueTypes.join(", ")}]) })`;
+        }),
+      );
+      schemas.push("]);");
+      schemas.push("");
+    }
+  }
+
+  return { declarations, schemas };
+}SpecTypeToTs(f.type)).join(", ");
         return `{ case: "${c.name}"; values: [${valueTypes}] }`;
       });
       declarations.push(`export type ${name} = ${caseTypes.join(" | ") || "never"};`);
