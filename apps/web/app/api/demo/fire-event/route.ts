@@ -6,7 +6,10 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 export async function POST(req: Request) {
-  if (process.env.NODE_ENV === "production" && !process.env.DEMO_EMITTER_CONTRACT_ID) {
+  const isProduction = process.env.VERCEL_ENV === "production" ||
+    (process.env.VERCEL_ENV === undefined && process.env.NODE_ENV === "production");
+
+  if (isProduction && !process.env.DEMO_EMITTER_CONTRACT_ID) {
     console.error("[fire-event] DEMO_EMITTER_CONTRACT_ID is required in production.");
     return Response.json(
       { error: "not_configured", message: "Demo emitter is not configured." },
@@ -41,12 +44,16 @@ export async function POST(req: Request) {
       console.warn("[fire-event] Demo emitter not configured:", err.message);
       return Response.json({ error: "not_configured", message: err.message }, { status: 503 });
     }
+
+    const errorMessage = err instanceof Error ? err.message : "Failed to invoke the demo-emitter contract.";
+    if (/manifest/i.test(errorMessage)) {
+      console.error("[fire-event] Demo emitter manifest error:", errorMessage);
+      return Response.json({ error: "manifest_error", message: errorMessage }, { status: 502 });
+    }
+
     console.error("[fire-event] Unhandled error invoking demo emitter:", err);
     return Response.json(
-      {
-        error: "fire_event_failed",
-        message: err instanceof Error ? err.message : "Failed to invoke the demo-emitter contract.",
-      },
+      { error: "fire_event_failed", message: errorMessage },
       { status: 502 },
     );
   }
