@@ -257,10 +257,18 @@ function validateOperatorTerms(terms: unknown, prefix: string, errors: string[])
   if (typeof terms["denomination"] !== "string" || terms["denomination"].length === 0) {
     errors.push(`${prefix}.denomination: must be a non-empty string`);
   }
-  if (typeof terms["dailyCap"] !== "number" || terms["dailyCap"] < 0 || !Number.isInteger(terms["dailyCap"])) {
+  if (
+    typeof terms["dailyCap"] !== "number" ||
+    terms["dailyCap"] < 0 ||
+    !Number.isInteger(terms["dailyCap"])
+  ) {
     errors.push(`${prefix}.dailyCap: must be a non-negative integer`);
   }
-  if (typeof terms["slaMs"] !== "number" || terms["slaMs"] < 0 || !Number.isInteger(terms["slaMs"])) {
+  if (
+    typeof terms["slaMs"] !== "number" ||
+    terms["slaMs"] < 0 ||
+    !Number.isInteger(terms["slaMs"])
+  ) {
     errors.push(`${prefix}.slaMs: must be a non-negative integer`);
   }
   if (terms["notes"] !== undefined) {
@@ -323,7 +331,7 @@ export function validateOperatorRecord(doc: unknown): OperatorValidationResult {
     errors.push(`latencyTier: must be one of ${VALID_LATENCY_TIERS.join(", ")}`);
   }
   if (typeof doc["version"] !== "string" || !SEMVER_RE.test(doc["version"])) {
-    errors.push("version: must be a semver string (e.g. \"1.0.0\")");
+    errors.push('version: must be a semver string (e.g. "1.0.0")');
   }
   if (typeof doc["createdAt"] !== "string" || !ISO_8601_RE.test(doc["createdAt"])) {
     errors.push("createdAt: must be an ISO 8601 timestamp");
@@ -368,7 +376,7 @@ export function validateWorkerOfferingRecord(doc: unknown): WorkerOfferingValida
     errors.push("operatorId: must be a kebab-case slug");
   }
   if (typeof doc["version"] !== "string" || !SEMVER_RE.test(doc["version"])) {
-    errors.push("version: must be a semver string (e.g. \"1.0.0\")");
+    errors.push('version: must be a semver string (e.g. "1.0.0")');
   }
   if (typeof doc["createdAt"] !== "string" || !ISO_8601_RE.test(doc["createdAt"])) {
     errors.push("createdAt: must be an ISO 8601 timestamp");

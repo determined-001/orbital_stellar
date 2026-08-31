@@ -55,7 +55,9 @@ describe("validateOperatorRecord", () => {
 
   it("accepts a record with optional terms.notes", () => {
     expect(
-      validateOperatorRecord(makeOperator({ terms: { ...makeOperator().terms, notes: "Free tier available" } })),
+      validateOperatorRecord(
+        makeOperator({ terms: { ...makeOperator().terms, notes: "Free tier available" } }),
+      ),
     ).toEqual({ valid: true });
   });
 
@@ -87,7 +89,9 @@ describe("validateOperatorRecord", () => {
     const result = validateOperatorRecord(makeOperator({ stellarAddress: "not-a-g-address" }));
     expect(result.valid).toBe(false);
     if (!result.valid) {
-      expect(result.errors).toContain("stellarAddress: must be a G-prefixed 56-character Stellar strkey");
+      expect(result.errors).toContain(
+        "stellarAddress: must be a G-prefixed 56-character Stellar strkey",
+      );
     }
   });
 
@@ -101,26 +105,36 @@ describe("validateOperatorRecord", () => {
 
   it("rejects an invalid trigger class", () => {
     const result = validateOperatorRecord(
-      makeOperator({ supportedTriggers: ["event", "bogus" as OperatorRecord["supportedTriggers"][number]] }),
+      makeOperator({
+        supportedTriggers: ["event", "bogus" as OperatorRecord["supportedTriggers"][number]],
+      }),
     );
     expect(result.valid).toBe(false);
     if (!result.valid) {
-      expect(result.errors.some((e) => e.includes('supportedTriggers: invalid trigger class "bogus"'))).toBe(true);
+      expect(
+        result.errors.some((e) => e.includes('supportedTriggers: invalid trigger class "bogus"')),
+      ).toBe(true);
     }
   });
 
   it("rejects an invalid network", () => {
     const result = validateOperatorRecord(
-      makeOperator({ networks: ["mainnet", "invalid-network" as OperatorRecord["networks"][number]] }),
+      makeOperator({
+        networks: ["mainnet", "invalid-network" as OperatorRecord["networks"][number]],
+      }),
     );
     expect(result.valid).toBe(false);
     if (!result.valid) {
-      expect(result.errors.some((e) => e.includes('networks: invalid network "invalid-network"'))).toBe(true);
+      expect(
+        result.errors.some((e) => e.includes('networks: invalid network "invalid-network"')),
+      ).toBe(true);
     }
   });
 
   it("rejects an invalid latencyTier", () => {
-    const result = validateOperatorRecord(makeOperator({ latencyTier: "turbo" as OperatorRecord["latencyTier"] }));
+    const result = validateOperatorRecord(
+      makeOperator({ latencyTier: "turbo" as OperatorRecord["latencyTier"] }),
+    );
     expect(result.valid).toBe(false);
     if (!result.valid) {
       expect(result.errors.some((e) => e.includes("latencyTier:"))).toBe(true);
@@ -207,7 +221,9 @@ describe("validateWorkerOfferingRecord", () => {
     const result = validateWorkerOfferingRecord(makeOffering({ contractId: "not-a-contract" }));
     expect(result.valid).toBe(false);
     if (!result.valid) {
-      expect(result.errors).toContain("contractId: must be a C-prefixed 56-character Stellar strkey");
+      expect(result.errors).toContain(
+        "contractId: must be a C-prefixed 56-character Stellar strkey",
+      );
     }
   });
 
@@ -239,7 +255,9 @@ describe("validateWorkerOfferingRecord", () => {
 
   it("rejects invalid terms", () => {
     const result = validateWorkerOfferingRecord(
-      makeOffering({ terms: { pricePerInvocation: -1, denomination: "USDC", dailyCap: 0, slaMs: 0 } }),
+      makeOffering({
+        terms: { pricePerInvocation: -1, denomination: "USDC", dailyCap: 0, slaMs: 0 },
+      }),
     );
     expect(result.valid).toBe(false);
     if (!result.valid) {

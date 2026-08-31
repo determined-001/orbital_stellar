@@ -7,7 +7,10 @@
 import { readFileSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { validateOperatorRecord, validateWorkerOfferingRecord } from "@orbital-stellar/abi-registry";
+import {
+  validateOperatorRecord,
+  validateWorkerOfferingRecord,
+} from "@orbital-stellar/abi-registry";
 import type { OperatorRecord, WorkerOfferingRecord } from "@orbital-stellar/abi-registry";
 
 const __filename = fileURLToPath(import.meta.url);
