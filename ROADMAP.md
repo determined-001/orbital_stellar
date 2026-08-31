@@ -291,8 +291,8 @@ off-chain workers *trigger* on-chain settlement and other Orbital events
 unfrozen in writing by issue #1036 / the 2026-08-30
 [`CHANGELOG.md`](./CHANGELOG.md) unfreeze entry, which is the maintainer-signed
 rationale the [Frozen](#frozen--out-of-scope-until-the-core-thesis-is-proven)
-procedure requires. The counterparty that motivated it is **Aether Settlement**
-(gate `W3`).
+procedure requires. The counterparty that motivated it is named in the
+[`CHANGELOG.md`](./CHANGELOG.md) unfreeze entry (gate `W3`).
 
 **Release gate (overall):** every one of the five stages `W0`–`W4` reaches its
 individual gate below, the §C.2 trigger-≠-custodian constraint is enforced as a
@@ -338,7 +338,8 @@ the release process, not a scheduling preference.
   contract with custodial authority — workers call into it, they never parallel
   it. This is what makes the §C.2 constraint true rather than aspirational.
 - **`W3` — counterparty integration gate.**
-  *Gate:* the named counterparty **Aether Settlement** signs off that the
+  *Gate:* the named counterparty (see the [`CHANGELOG.md`](./CHANGELOG.md)
+  unfreeze entry — name to be supplied by maintainer) signs off that the
   worker layer's trigger-without-custody primitive satisfies their
   settlement-desk automation need; at least one production settlement flow runs
   worker-triggered and vault-custodied. This gate is what motivated the
