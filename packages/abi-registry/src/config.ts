@@ -47,7 +47,9 @@ export function evaluateTimeTrigger(
   intervalMs: number,
   now: number = Date.now(),
 ): boolean {
-  if (!lastRunAt) return true;
+  if (!lastRunAt) {
+    return true;
+  }
   return now - Date.parse(lastRunAt) >= intervalMs;
 }
 
