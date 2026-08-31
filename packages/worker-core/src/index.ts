@@ -163,3 +163,22 @@ export type {
 
 export { WorkerRegistryClient, LocalWorkerRegistry } from "./registry/index.js";
 export type { WorkerRegistryClientConfig } from "./registry/index.js";
+
+export type {
+  PriceReading,
+  StalenessBound,
+  DeviationBound,
+  PriceGuardConfig,
+  PriceGuardVerdict,
+  GuardTripRecord,
+  ReenableRecord,
+  CircuitBreakerState,
+  CircuitBreakerConfig,
+} from "./guards/index.js";
+export {
+  checkStaleness,
+  checkDeviation,
+  checkPriceGuard,
+  CircuitBreaker,
+  CircuitBreakerNotOpenError,
+} from "./guards/index.js";

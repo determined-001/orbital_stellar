@@ -18,6 +18,7 @@ export default defineConfig({
         "src/hotPath/index.ts",
         "src/vault/types.ts",
         "src/workers/index.ts",
+        "src/guards/index.ts",
       ],
       reporter: ["text", "html", "json-summary"],
       exclude: ["node_modules/", "dist/", "test/", "**/*.test.ts", "**/*.config.*"],

@@ -610,6 +610,7 @@ orbital_stellar/
 - [`docs/design/worker-verification-verdicts.md`](./design/worker-verification-verdicts.md) - Verdict taxonomy for chain-derived worker verification (19.1, §C.3/§C.6)
 - [`docs/design/worker-offchain-triggers.md`](./design/worker-offchain-triggers.md) - Attestation model for off-chain-computation triggers (20.7, §C.1/§C.8)
 - [`docs/CAP-67-Event-Mapping.md`](./CAP-67-Event-Mapping.md) - CAP-67 event taxonomy rationale (§4.1)
+- [`docs/design/worker-guard-rails.md`](./design/worker-guard-rails.md) - worker price/slippage guard rails, on-chain vs off-chain split (issue 22.5)
 - Per-package READMEs:
   [`pulse-core`](../packages/pulse-core/README.md),
   [`pulse-webhooks`](../packages/pulse-webhooks/README.md),
