@@ -3,6 +3,33 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const dnsLookupMock = vi.hoisted(() => vi.fn());
 vi.mock("dns/promises", () => ({ lookup: dnsLookupMock }));
+const agentInstances = vi.hoisted(
+  () => [] as Array<{ options: AgentOptionsMock; close: () => Promise<void> }>,
+);
+type AgentOptionsMock = {
+  connect?: {
+    lookup?: (
+      hostname: string,
+      options: unknown,
+      callback: (
+        err: Error | null,
+        address: string | Array<{ address: string; family: number }>,
+        family?: number,
+      ) => void,
+    ) => void;
+  };
+};
+vi.mock("undici", () => ({
+  Agent: class Agent {
+    readonly options: AgentOptionsMock;
+    readonly close = vi.fn().mockResolvedValue(undefined);
+
+    constructor(options: AgentOptionsMock) {
+      this.options = options;
+      agentInstances.push(this);
+    }
+  },
+}));
 
 import { Watcher } from "@orbital-stellar/pulse-core";
 import type { BackoffStrategy, RetryQueue, UrlEntry, WebhookMetrics } from "../src/index.js";
@@ -41,6 +68,7 @@ async function flushAsyncWork(): Promise<void> {
 beforeEach(() => {
   dnsLookupMock.mockReset();
   dnsLookupMock.mockResolvedValue([{ address: "93.184.216.34", family: 4 }]);
+  agentInstances.length = 0;
 });
 
 function signWebhookPayload(secret: string, payload: string, timestamp: string): string {
@@ -464,6 +492,49 @@ describe("pulse-webhooks WebhookDelivery", () => {
         }),
       }),
     );
+  });
+
+  it("pins hostname delivery to the address that passed DNS validation", async () => {
+    dnsLookupMock.mockResolvedValue([{ address: "203.0.113.10", family: 4 }]);
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200 });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const url = "https://hooks.example.com/stellar";
+    const watcher = new Watcher("GABC");
+
+    new WebhookDelivery(watcher, { url, secret: "top-secret" });
+    watcher.emit("*", deliveryEvent);
+    await flushAsyncWork();
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledWith(
+      url,
+      expect.objectContaining({
+        method: "POST",
+        redirect: "manual",
+        dispatcher: agentInstances[0],
+      }),
+    );
+
+    let pinnedResult: {
+      err: Error | null;
+      address: string | Array<{ address: string; family: number }>;
+      family?: number;
+    } | null = null;
+    agentInstances[0]?.options.connect?.lookup?.(
+      "hooks.example.com",
+      {},
+      (err, address, family) => {
+        pinnedResult = { err, address, family };
+      },
+    );
+
+    expect(pinnedResult).toEqual({
+      err: null,
+      address: "203.0.113.10",
+      family: 4,
+    });
+    expect(agentInstances[0]?.close).toHaveBeenCalledTimes(1);
   });
 
   it("re-checks DNS before a retry and blocks a rebound private address", async () => {
