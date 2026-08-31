@@ -223,6 +223,34 @@ export type AccountOptionsChanges = {
 };
 
 /**
+ * Transaction-identity fields carried by every classic (Horizon-sourced)
+ * normalized event, mirroring the `ledger`/`txHash` the Soroban half of the
+ * taxonomy already carries. All three are optional because a transport that
+ * cannot supply them must still produce a valid event - `STABILITY.md`'s
+ * semver pledge binds from `1.0.0`, and optional fields stay additive.
+ *
+ * Populated from the Horizon operation record (`transaction_hash`) and from
+ * the transaction joined onto it via `join=transactions` (`ledger`, `memo`).
+ */
+export type ClassicEventIdentity = {
+  /**
+   * Hash of the transaction this event came from. The stable transaction
+   * identity a consumer needs to deduplicate work already done - pair it with
+   * an operation index and {@link deriveDedupeKey}.
+   */
+  txHash?: string;
+  /** Ledger sequence the transaction was included in, for audit and attestation without a second Horizon round-trip. */
+  ledger?: number;
+  /**
+   * The originating transaction's memo, when the transaction carried one.
+   * Set by the CAP-67 unified transport (from a transfer event's map-based
+   * data form) and, for Horizon-sourced events, from the joined transaction.
+   * Absent when `memo_type` is `"none"`.
+   */
+  memo?: string;
+};
+
+/**
  * A normalized payment event from the Stellar network.
  */
 export type PaymentEvent = {
@@ -238,17 +266,11 @@ export type PaymentEvent = {
   asset: string;
   /** ISO 8601 timestamp of the payment. */
   timestamp: string;
-  /**
-   * The originating transaction's memo, when present. Only ever set by the
-   * CAP-67 unified transport today (from a transfer event's map-based data
-   * form) - Horizon-sourced payments don't populate this.
-   */
-  memo?: string;
   /** Lazy, cached `Date` derived from `event.timestamp`. Non-enumerable; does not appear in JSON.stringify output. */
   readonly timestampDate: Date;
   /** The original raw record from the Horizon API. */
   raw?: RawHorizonPayment;
-};
+} & ClassicEventIdentity;
 
 /**
  * A normalized account options change event from the Stellar network.
@@ -266,7 +288,7 @@ export type AccountOptionsEvent = {
   readonly timestampDate: Date;
   /** The original raw record from the Horizon API. */
   raw?: RawHorizonSetOptions;
-};
+} & ClassicEventIdentity;
 
 /** Rational (numerator/denominator) form of an offer's price, as returned by Horizon. */
 export type PriceR = { n: number; d: number };
@@ -285,7 +307,7 @@ export type OfferEvent = {
   /** Lazy, cached `Date` derived from `event.timestamp`. Non-enumerable; does not appear in JSON.stringify output. */
   readonly timestampDate: Date;
   raw?: RawHorizonManageSellOffer | RawHorizonManageBuyOffer;
-};
+} & ClassicEventIdentity;
 
 export type BumpSequenceEvent = {
   type: BumpSequenceEventType;
@@ -295,7 +317,7 @@ export type BumpSequenceEvent = {
   /** Lazy, cached `Date` derived from `event.timestamp`. Non-enumerable; does not appear in JSON.stringify output. */
   readonly timestampDate: Date;
   raw?: RawHorizonBumpSequence;
-};
+} & ClassicEventIdentity;
 
 export type ClaimableBalanceClaimant = {
   destination: AccountAddress;
@@ -313,7 +335,7 @@ export type ClaimableCreatedEvent = {
   /** Lazy, cached `Date` derived from `event.timestamp`. Non-enumerable; does not appear in JSON.stringify output. */
   readonly timestampDate: Date;
   raw?: RawHorizonCreateClaimableBalance;
-};
+} & ClassicEventIdentity;
 
 export type ClaimableClaimedEvent = {
   type: ClaimableClaimedEventType;
@@ -323,7 +345,7 @@ export type ClaimableClaimedEvent = {
   /** Lazy, cached `Date` derived from `event.timestamp`. Non-enumerable; does not appear in JSON.stringify output. */
   readonly timestampDate: Date;
   raw?: RawHorizonClaimClaimableBalance;
-};
+} & ClassicEventIdentity;
 
 export type DataEvent = {
   type: DataEventType;
@@ -337,7 +359,7 @@ export type DataEvent = {
   /** Lazy, cached `Date` derived from `event.timestamp`. Non-enumerable; does not appear in JSON.stringify output. */
   readonly timestampDate: Date;
   raw?: RawHorizonManageData;
-};
+} & ClassicEventIdentity;
 
 export type LiquidityPoolReserve = {
   asset: string;
@@ -354,7 +376,7 @@ export type LiquidityPoolDepositEvent = {
   /** Lazy, cached `Date` derived from `event.timestamp`. Non-enumerable; does not appear in JSON.stringify output. */
   readonly timestampDate: Date;
   raw?: RawHorizonLiquidityPoolDeposit;
-};
+} & ClassicEventIdentity;
 
 export type LiquidityPoolWithdrawEvent = {
   type: "lp.withdrawn";
@@ -366,7 +388,7 @@ export type LiquidityPoolWithdrawEvent = {
   /** Lazy, cached `Date` derived from `event.timestamp`. Non-enumerable; does not appear in JSON.stringify output. */
   readonly timestampDate: Date;
   raw?: RawHorizonLiquidityPoolWithdraw;
-};
+} & ClassicEventIdentity;
 
 export type TrustAuthEvent = {
   type: TrustAuthEventType;
@@ -379,7 +401,7 @@ export type TrustAuthEvent = {
   /** The originating operation type: "allow_trust" or "set_trust_line_flags" from Horizon, or "set_authorized" from the CAP-67 unified stream. */
   operation: string;
   raw?: RawHorizonAllowTrust | RawHorizonSetTrustLineFlags;
-};
+} & ClassicEventIdentity;
 
 /**
  * A normalized account creation event from the Stellar network.
@@ -399,7 +421,7 @@ export type AccountCreatedEvent = {
   readonly timestampDate: Date;
   /** The original raw record from the Horizon API. */
   raw?: RawHorizonCreateAccount;
-};
+} & ClassicEventIdentity;
 
 /**
  * A normalized trustline lifecycle event from the Stellar network.
@@ -419,7 +441,7 @@ export type TrustlineEvent = {
   readonly timestampDate: Date;
   /** The original raw record from the Horizon API. */
   raw?: RawHorizonChangeTrust;
-};
+} & ClassicEventIdentity;
 
 /**
  * A normalized account merge event from the Stellar network.
@@ -437,7 +459,7 @@ export type AccountMergeEvent = {
   readonly timestampDate: Date;
   /** The original raw record from the Horizon API. */
   raw?: RawHorizonAccountMerge;
-};
+} & ClassicEventIdentity;
 
 // ---------------------------------------------------------------------------
 // Anchor Events (SEP-24, SEP-31)

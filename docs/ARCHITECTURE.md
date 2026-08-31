@@ -215,6 +215,34 @@ The full taxonomy is documented in
 and the per-event TypeScript shapes live in
 [`packages/pulse-core/src/index.ts`](../packages/pulse-core/src/index.ts).
 
+### Transaction identity on classic events
+
+Every classic normalized event carries three optional identity fields -
+`txHash`, `ledger`, and `memo` - matching the `txHash`/`ledger` the Soroban
+half of the taxonomy already had. Without them a consumer switching on
+`event.type` gets a different guarantee depending on which transport the event
+arrived over, and cannot dedupe, audit, or correlate a payment to an invoice
+without a second Horizon round-trip.
+
+`transaction_hash` is on every Horizon operation record. `ledger` and `memo`
+live on the *transaction*, so the engine opens its operations stream with
+`join("transactions")`, which makes Horizon embed the full transaction in each
+operation record rather than costing a second request.
+
+Two consequences worth knowing:
+
+- **Response size.** The joined transaction roughly triples the payload: a
+  3-record `/operations` page measured 6,455 bytes without the join and 19,148
+  bytes with it (testnet, 2026-08-31). The cost is bandwidth on a stream that
+  is already open, not extra requests.
+- **Cursor semantics are unaffected.** `paging_token` is identical with and
+  without `join=transactions`, so cursors written by an older version stay
+  valid across the change.
+
+All three fields are optional. A transport that cannot supply them still emits
+a valid event, and `STABILITY.md`'s semver pledge binds from `1.0.0` - adding
+optional fields stays additive, adding required ones later would not.
+
 ---
 
 ## 4.1 Unified event ingestion (CAP-67) 🛠️
