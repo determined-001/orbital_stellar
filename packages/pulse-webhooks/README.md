@@ -514,7 +514,9 @@ new WebhookDelivery(watcher, {
 });
 ```
 
-`RedisRetryQueue` expects a client exposing `zadd` / `zrangebyscore` / `zrevrange` / `zrem` / `zcard` (the `RedisLike` type) - `ioredis` matches this directly; other clients need a thin wrapper.
+`RedisRetryQueue` expects a client exposing `zadd` / `zrangebyscore` / `zrevrange` / `zrem` / `zcard` / `hget` / `eval` (the `RedisLike` type) - `ioredis` matches this directly; other clients need a thin wrapper. `eval` uses ioredis's variadic `(script, numKeys, ...keysAndArgs)` shape.
+
+It keeps four keys per queue: the queued sorted set (scored by `nextRetryAt`), the in-flight sorted set (scored by visibility expiry), and a companion hash per set mapping record ID to that set's member. The hashes are what make `ack`/`nack` O(1) instead of a scan; every move between the two sets runs as a single Lua script, so a process dying mid-transition can never leave a record in neither set. Upgrading from a build without the hashes needs no migration - queued records still dequeue by score and rebuild the index as they move, and in-flight records written by the older build are reclaimed after their visibility timeout rather than lost.
 
 `WebhookDelivery` polls the queue (`retryQueuePollIntervalMs`, default 1000ms) instead of using in-process `setTimeout` retries when `retryQueue` is configured. On process restart, any records left in the queue are picked back up.
 
