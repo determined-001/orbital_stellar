@@ -1,0 +1,54 @@
+{
+  "manifestVersion": "1.0.0",
+  "id": "example-org/xlm-price-oracle",
+  "name": "XLM Price Oracle Updater",
+  "description": "Pushes the latest XLM/USDC spot price from an off-chain feed into a Soroban oracle contract once per minute. The oracle contract emits a price_updated event containing the new price and the ledger sequence at which it was recorded.",
+  "version": "1.0.0",
+  "network": "mainnet",
+  "author": "example-org",
+  "repository": "https://github.com/example-org/xlm-oracle-worker",
+  "tags": ["oracle", "price-feed", "xlm"],
+  "trigger": {
+    "class": "cron",
+    "cron": "* * * * *",
+    "timezone": "UTC",
+    "windowSec": 30
+  },
+  "target": {
+    "contractId": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
+    "function": "update_price",
+    "params": [
+      {
+        "name": "price",
+        "type": "u128",
+        "doc": "Latest XLM/USDC price scaled to 7 decimal places (1 XLM = 1_0000000 units)."
+      },
+      {
+        "name": "source",
+        "type": "symbol",
+        "doc": "Identifier of the off-chain price source, e.g. \"coinbase\"."
+      }
+    ]
+  },
+  "latencyBound": {
+    "maxSeconds": 25,
+    "targetSeconds": 8,
+    "tier": "fast"
+  },
+  "fireEvent": {
+    "contractId": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
+    "topics": [{ "kind": "symbol", "value": "price_updated" }],
+    "dataFields": [
+      {
+        "name": "price",
+        "type": "u128",
+        "doc": "The price value that was written."
+      },
+      {
+        "name": "ledger",
+        "type": "u32",
+        "doc": "Ledger sequence at which the price was recorded."
+      }
+    ]
+  }
+}

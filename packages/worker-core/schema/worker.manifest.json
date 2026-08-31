@@ -1,0 +1,272 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://orbital-stellar.io/schema/worker.manifest.json",
+  "title": "WorkerManifest",
+  "description": "Standard descriptor for an Orbital worker. Any scheduler implementation — including ones that do not use @orbital-stellar/worker-core — may emit a worker.manifest.json that conforms to this schema. Consumers (the Orbital verification engine, dashboards, scoring systems) can process manifests from any conformant emitter without operator cooperation.",
+  "type": "object",
+  "required": ["manifestVersion", "id", "name", "trigger", "target", "latencyBound", "fireEvent"],
+  "additionalProperties": false,
+  "properties": {
+    "manifestVersion": {
+      "type": "string",
+      "description": "Version of this manifest schema the document conforms to. Currently must be \"1.0.0\". Minor bumps add optional fields; patch bumps are editorial. A major bump introduces a breaking change and changes the $id.",
+      "const": "1.0.0"
+    },
+    "id": {
+      "type": "string",
+      "description": "Stable, globally unique identifier for this worker definition. Recommended format: \"<org>/<worker-name>\", e.g. \"my-org/xlm-price-oracle\". This value appears in fire events and reputation records — changing it is a breaking change.",
+      "minLength": 1,
+      "maxLength": 200,
+      "pattern": "^[a-zA-Z0-9_\\-./]+$"
+    },
+    "name": {
+      "type": "string",
+      "description": "Short human-readable display name for this worker.",
+      "minLength": 1,
+      "maxLength": 120
+    },
+    "description": {
+      "type": "string",
+      "description": "Optional free-text description of what this worker does.",
+      "maxLength": 1000
+    },
+    "version": {
+      "type": "string",
+      "description": "Semantic version of this worker implementation. Consumers should treat a version change as a signal to re-evaluate the manifest.",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$"
+    },
+    "trigger": {
+      "$ref": "#/$defs/TriggerSpec",
+      "description": "What causes this worker to fire."
+    },
+    "target": {
+      "$ref": "#/$defs/TargetSpec",
+      "description": "The Soroban contract and function this worker invokes when it fires."
+    },
+    "latencyBound": {
+      "$ref": "#/$defs/LatencyBound",
+      "description": "The worker's contractual latency commitment. Used by the verification engine (19.1) to score workers: a fire that lands outside the bound is late regardless of network conditions. Without this field 'late' has no contractual meaning."
+    },
+    "fireEvent": {
+      "$ref": "#/$defs/FireEventSpec",
+      "description": "The Soroban event the target contract emits to confirm that the worker's invocation succeeded. The verification engine uses this event — fetched from Stellar RPC — to score a worker from its manifest alone, with no operator cooperation."
+    },
+    "network": {
+      "type": "string",
+      "description": "The Stellar network this worker runs on.",
+      "enum": ["mainnet", "testnet", "futurenet"]
+    },
+    "author": {
+      "type": "string",
+      "description": "Operator identity, e.g. a GitHub handle or organisation name.",
+      "maxLength": 200
+    },
+    "repository": {
+      "type": "string",
+      "description": "URL of the source repository for this worker implementation.",
+      "format": "uri",
+      "maxLength": 2048
+    },
+    "tags": {
+      "type": "array",
+      "description": "Optional freeform tags for discovery and filtering.",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 64
+      },
+      "maxItems": 20,
+      "uniqueItems": true
+    }
+  },
+  "$defs": {
+    "TriggerSpec": {
+      "description": "What causes a worker to fire. Currently only time-based (cron) triggers are defined; additional trigger classes will be added in later milestones without breaking the schema.",
+      "oneOf": [{ "$ref": "#/$defs/CronTrigger" }]
+    },
+    "CronTrigger": {
+      "type": "object",
+      "description": "A time-based trigger driven by a cron schedule. The worker fires once per matching window.",
+      "required": ["class", "cron", "timezone"],
+      "additionalProperties": false,
+      "properties": {
+        "class": {
+          "const": "cron",
+          "description": "Identifies this as a cron (time-based) trigger."
+        },
+        "cron": {
+          "type": "string",
+          "description": "Standard five-field cron expression (minute hour dom month dow). E.g. \"0 * * * *\" for every hour.",
+          "minLength": 9,
+          "maxLength": 100
+        },
+        "timezone": {
+          "type": "string",
+          "description": "IANA timezone name for evaluating the cron expression (e.g. \"UTC\", \"America/New_York\"). Defaults to UTC at evaluation time if absent, but explicit declaration is strongly recommended.",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "windowSec": {
+          "type": "integer",
+          "description": "Width of the fire window in seconds. The scheduler must fire within this window starting at the cron moment. Defaults to 60 if absent.",
+          "minimum": 1,
+          "maximum": 86400
+        }
+      }
+    },
+    "TargetSpec": {
+      "type": "object",
+      "description": "The Soroban contract and function the worker calls when it fires.",
+      "required": ["contractId", "function"],
+      "additionalProperties": false,
+      "properties": {
+        "contractId": {
+          "type": "string",
+          "description": "Bech32-encoded Soroban contract address (C…, 56 characters).",
+          "pattern": "^C[A-Z2-7]{55}$"
+        },
+        "function": {
+          "type": "string",
+          "description": "Name of the Soroban function to invoke.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$"
+        },
+        "params": {
+          "type": "array",
+          "description": "Optional ordered list of static parameter descriptors passed to the function. Dynamic parameters resolved at fire time are not described here.",
+          "items": { "$ref": "#/$defs/ParamSpec" }
+        }
+      }
+    },
+    "ParamSpec": {
+      "type": "object",
+      "description": "Describes one static parameter passed to the target function.",
+      "required": ["name", "type"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$"
+        },
+        "type": {
+          "type": "string",
+          "description": "Soroban scalar type name (e.g. \"address\", \"u128\", \"symbol\").",
+          "minLength": 1
+        },
+        "doc": {
+          "type": "string",
+          "maxLength": 500
+        }
+      }
+    },
+    "LatencyBound": {
+      "type": "object",
+      "description": "The worker's contractual latency commitment. Defines what 'on time' means for scoring. A worker is late if its confirmed fire event lands outside the defined window after the trigger moment. This field makes W3 tier pricing expressible: tiers are latency SLAs, not subjective ratings.",
+      "required": ["maxSeconds"],
+      "additionalProperties": false,
+      "properties": {
+        "maxSeconds": {
+          "type": "integer",
+          "description": "Maximum elapsed seconds from the trigger moment to the on-chain confirmation of the fire event. A worker is scored 'late' by the verification engine if the confirmed ledger timestamp exceeds triggerTime + maxSeconds.",
+          "minimum": 1,
+          "maximum": 86400
+        },
+        "targetSeconds": {
+          "type": "integer",
+          "description": "Optional target latency the operator aims to achieve in normal conditions. Used for P50/P99 dashboards. Must be less than maxSeconds.",
+          "minimum": 1
+        },
+        "tier": {
+          "type": "string",
+          "description": "Optional human-readable tier label (e.g. \"standard\", \"fast\", \"realtime\"). Purely advisory — scoring uses maxSeconds, not this label.",
+          "maxLength": 32
+        }
+      }
+    },
+    "FireEventSpec": {
+      "type": "object",
+      "description": "Describes the on-chain Soroban event emitted by the target contract when the worker's invocation succeeds. The verification engine fetches this event from Stellar RPC and uses it to confirm execution — with no operator cooperation required.",
+      "required": ["contractId", "topics"],
+      "additionalProperties": false,
+      "properties": {
+        "contractId": {
+          "type": "string",
+          "description": "Bech32-encoded address of the contract that emits the confirmation event. Usually the same as target.contractId but may differ for proxy patterns.",
+          "pattern": "^C[A-Z2-7]{55}$"
+        },
+        "topics": {
+          "type": "array",
+          "description": "Ordered topic matchers. The verification engine matches incoming events against these in order. At minimum one topic must be provided.",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/TopicMatcher" }
+        },
+        "dataFields": {
+          "type": "array",
+          "description": "Optional list of data field descriptors the engine may extract from the event payload for scoring metadata.",
+          "items": { "$ref": "#/$defs/DataFieldSpec" }
+        }
+      }
+    },
+    "TopicMatcher": {
+      "description": "A single topic constraint used when matching a fire event.",
+      "oneOf": [{ "$ref": "#/$defs/LiteralTopicMatcher" }, { "$ref": "#/$defs/TypedTopicMatcher" }]
+    },
+    "LiteralTopicMatcher": {
+      "type": "object",
+      "description": "Matches a topic that must be a specific symbol value (the most common first-topic pattern).",
+      "required": ["kind", "value"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": { "const": "symbol" },
+        "value": {
+          "type": "string",
+          "description": "The exact Symbol string this topic must equal.",
+          "minLength": 1,
+          "maxLength": 32
+        }
+      }
+    },
+    "TypedTopicMatcher": {
+      "type": "object",
+      "description": "Matches any topic of the given Soroban type (wildcard by type).",
+      "required": ["kind", "type"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": { "const": "typed" },
+        "type": {
+          "type": "string",
+          "description": "Soroban scalar type name the topic must match (e.g. \"address\", \"u64\").",
+          "minLength": 1
+        },
+        "doc": {
+          "type": "string",
+          "maxLength": 300
+        }
+      }
+    },
+    "DataFieldSpec": {
+      "type": "object",
+      "description": "Describes one field in the fire event's data payload that the verification engine may extract.",
+      "required": ["name", "type"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$"
+        },
+        "type": {
+          "type": "string",
+          "description": "Soroban type of this field.",
+          "minLength": 1
+        },
+        "doc": {
+          "type": "string",
+          "maxLength": 300
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,61 @@
+{
+  "manifestVersion": "1.0.0",
+  "id": "example-org/liquidity-pool-rebalancer",
+  "name": "Liquidity Pool Daily Rebalancer",
+  "description": "Rebalances a Soroban AMM pool at midnight UTC every day to restore the target reserve ratio. The pool contract emits a rebalance_executed event with the amounts moved and the resulting ratio.",
+  "version": "2.1.0",
+  "network": "mainnet",
+  "author": "example-org",
+  "repository": "https://github.com/example-org/pool-rebalancer",
+  "tags": ["amm", "liquidity", "defi", "daily"],
+  "trigger": {
+    "class": "cron",
+    "cron": "0 0 * * *",
+    "timezone": "UTC",
+    "windowSec": 120
+  },
+  "target": {
+    "contractId": "CBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB4",
+    "function": "rebalance",
+    "params": [
+      {
+        "name": "caller",
+        "type": "address",
+        "doc": "The operator account authorising the rebalance."
+      }
+    ]
+  },
+  "latencyBound": {
+    "maxSeconds": 90,
+    "targetSeconds": 30,
+    "tier": "standard"
+  },
+  "fireEvent": {
+    "contractId": "CBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB4",
+    "topics": [
+      { "kind": "symbol", "value": "rebalance_executed" },
+      {
+        "kind": "typed",
+        "type": "address",
+        "doc": "The caller account that triggered the rebalance."
+      }
+    ],
+    "dataFields": [
+      {
+        "name": "token_a_moved",
+        "type": "i128",
+        "doc": "Amount of token A moved (positive = added, negative = removed)."
+      },
+      {
+        "name": "token_b_moved",
+        "type": "i128",
+        "doc": "Amount of token B moved."
+      },
+      {
+        "name": "new_ratio",
+        "type": "u128",
+        "doc": "Reserve ratio after rebalancing, scaled to 7 decimal places."
+      }
+    ]
+  }
+}
