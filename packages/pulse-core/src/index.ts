@@ -7,16 +7,20 @@ export type {
   JsonRpcFailure,
   JsonRpcResponse,
   JsonRpcSuccess,
+  PollTransactionOptions,
   PollUnifiedEventsOptions,
   SorobanEventFilter,
   SorobanEventXdrFormat,
   SorobanGetEventsParams,
   SorobanGetEventsResult,
+  SorobanGetTransactionResult,
   SorobanLatestLedgerResult,
   SorobanNetworkInfo,
   SorobanRpcCallOptions,
   SorobanRpcClientOptions,
   SorobanRpcEvent,
+  SorobanSendTransactionResult,
+  SorobanSimulateTransactionResult,
 } from "./SorobanRpcClient.js";
 export { EventEngine } from "./EventEngine.js";
 export { SorobanSubscriber } from "./SorobanSubscriber.js";
@@ -50,6 +54,7 @@ export {
   isSorobanRpcError,
 } from "./errors.js";
 export { fullJitterBackoffMs } from "./backoff.js";
+export type { SorobanRpcErrorCode, SorobanRpcErrorOptions } from "./errors.js";
 export { StrKey } from "@stellar/stellar-sdk";
 // Re-exported so @orbital-stellar/anchor-sdk can validate SEP-10 challenges
 // without taking its own direct dependency on @stellar/stellar-sdk.
