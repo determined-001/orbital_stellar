@@ -30,6 +30,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
+    "@orbital-stellar/abi-registry": "workspace:*",
     "@orbital-stellar/pulse-core": "workspace:*"
   },
   "devDependencies": {

@@ -142,3 +142,21 @@ export {
   verdictKey,
 } from "./verification/stores.js";
 export type { VerdictSink, CheckpointStore, BackfillCheckpoint } from "./verification/stores.js";
+
+export {
+  ORBITAL_BACKSTOP_OPERATOR_ID,
+  BackstopSloError,
+  evaluateBackstopSlo,
+} from "./backstop/slo.js";
+export type {
+  BackstopSloBounds,
+  BackstopSloErrorCode,
+  BackstopSloResult,
+  EvaluateBackstopSloInput,
+  OperatorScore,
+  OperatorScorer,
+  SloStatus,
+  WorkerVerdictStore,
+  WorkerWindowStatus,
+  WorkerWindowVerdict,
+} from "./backstop/slo.js";
