@@ -1,7 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { createHash } from "node:crypto";
 import { Address, Keypair, Networks, rpc as SorobanRpc, StrKey, xdr } from "@stellar/stellar-sdk";
-import { OnChainAbiRegistryClient } from "../src/OnChainAbiRegistryClient.js";
+import {
+  OnChainAbiRegistryClient,
+  RegistryEntryArchivedError,
+} from "../src/OnChainAbiRegistryClient.js";
 import type { ContractSpec } from "../src/spec.js";
 
 vi.mock("@stellar/stellar-sdk", async (importOriginal) => {
@@ -292,5 +295,65 @@ describe("OnChainAbiRegistryClient", () => {
 
     expect(simulate).toHaveBeenCalledTimes(2); // list_versions + get_version, once total
     expect(transport).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("OnChainAbiRegistryClient archival", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("throws a restorable error, not null, when the RPC answers with a restore preamble", async () => {
+    installMockServer(
+      vi.fn().mockResolvedValue({
+        result: { retval: xdr.ScVal.scvVoid() },
+        restorePreamble: {
+          minResourceFee: "9182736",
+          transactionData: { toXDR: () => "AAAABase64RestoreData" },
+        },
+      }),
+    );
+
+    const client = makeClient();
+    const error = await client.getSpec(TARGET_CONTRACT_ID).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(RegistryEntryArchivedError);
+    const archived = error as RegistryEntryArchivedError;
+    expect(archived.contractId).toBe(TARGET_CONTRACT_ID);
+    expect(archived.publisher).toBe(PUBLISHER_ADDRESS);
+    expect(archived.fn).toBe("list_versions_paged");
+    expect(archived.minResourceFee).toBe("9182736");
+    expect(archived.restoreTransactionData).toBe("AAAABase64RestoreData");
+    expect(archived.message).toContain("archived");
+  });
+
+  it("treats a simulation error naming an archived entry as restorable too", async () => {
+    installMockServer(
+      vi.fn().mockResolvedValue({
+        error: "host invocation failed: entry archived: ContractData(...)",
+      }),
+    );
+
+    const client = makeClient();
+    await expect(client.getSpec(TARGET_CONTRACT_ID)).rejects.toBeInstanceOf(
+      RegistryEntryArchivedError,
+    );
+  });
+
+  it("keeps an unrelated simulation failure a plain error", async () => {
+    installMockServer(vi.fn().mockResolvedValue({ error: "unreachable rpc endpoint" }));
+
+    const client = makeClient();
+    const error = await client.getSpec(TARGET_CONTRACT_ID).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(Error);
+    expect(error).not.toBeInstanceOf(RegistryEntryArchivedError);
+  });
+
+  it("still reports a never-published contract as null rather than archived", async () => {
+    installMockServer(routingSimulate({ versions: [], records: {} }));
+
+    const client = makeClient();
+    await expect(client.getSpec(TARGET_CONTRACT_ID)).resolves.toBeNull();
   });
 });

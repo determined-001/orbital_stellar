@@ -27,6 +27,68 @@ only globs `packages/*` and `apps/*`); it has its own toolchain and CI job.
   gate](../SECURITY.md#vault-audit-gate-phase-4-worker-layer) for the
   mainnet-deployment policy.
 
+## Registry durability (entry TTL)
+
+Soroban archives persistent storage entries once their TTL runs out. The
+guarantee a publisher gets from `registry` is:
+
+| | |
+| --- | --- |
+| TTL every write asks for | `max_entry_ttl`, currently **3,110,400 ledgers (~180 days)** |
+| When the contract re-extends | Once an entry is within 30 days of expiring (`LIFETIME_THRESHOLD`) |
+| What a read does | **Nothing** - reads never extend a TTL |
+| Keeping an entry alive past 180 days | Call `touch`, e.g. via `packages/abi-registry/scripts/touch-registry.ts` |
+
+`publish` bumps the spec entry and both index entries (`Latest`, `Versions`) to
+the network maximum, so a spec published once and never republished is good for
+about 180 days without anyone doing anything. Earlier versions of the contract
+bumped by 30 days, which meant the canonical record of a contract's event shape
+archived roughly a month after publication and the `RestoreFootprint` cost
+landed on a downstream consumer.
+
+`MAX_ENTRY_TTL` in `registry/src/lib.rs` must never exceed the network's own
+`max_entry_ttl` - the host rejects an extension that asks for more. It is a
+validator-votable setting, not a protocol constant, so re-read it before
+raising the value:
+
+```bash
+curl -s -X POST https://soroban-testnet.stellar.org \
+  -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"getLedgerEntries",
+       "params":{"keys":["AAAACAAAAAo="]}}'
+# STATE_ARCHIVAL config setting; max_entry_ttl is the first u32 of the payload.
+# Both testnet and pubnet read 3,110,400 as of 2026-08-31.
+```
+
+### Why reads do not extend
+
+Every resolver in this repo reads the registry through `simulateTransaction`
+with an unfunded throwaway source (see
+`packages/abi-registry/src/OnChainAbiRegistryClient.ts`). Extending a TTL is a
+state change, so a read that extended would stop being a free simulation and
+become a signed, fee-paying transaction for every consumer of every spec. The
+durability budget is spent on the write path and on the keeper instead.
+
+### Keeper
+
+`packages/abi-registry/scripts/touch-registry.ts` calls the contract's
+permissionless `touch(contract_id, publisher, versions)` entrypoint, which
+re-extends the index entries plus up to `MAX_PAGE_SIZE` (25) spec versions per
+call and returns how many entries it extended. It errors with `NothingToTouch`
+rather than succeeding silently when the pair has no live entries.
+
+**Cadence: run it at least every 90 days per `(contract_id, publisher)` pair** -
+half the ~180-day window, so a single missed run is not an outage. Running it
+more often is cheap: the contract only pays rent once an entry is inside the
+30-day threshold, and is a no-op before that. Wiring it to a scheduled runner is
+follow-up work; today it is a manual/cron-invocable script.
+
+Note that `touch` cannot revive an entry that has *already* archived - that
+needs a `RestoreFootprint` operation first.
+`OnChainAbiRegistryClient` surfaces that case as a `RegistryEntryArchivedError`
+(carrying the RPC's quoted restore fee) rather than as a `null` "never
+published" result.
+
 ## Toolchain
 
 Pinned via `rust-toolchain.toml`: an **exact** compiler version (currently
