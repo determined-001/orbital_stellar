@@ -278,7 +278,6 @@ Attaches a delivery driver to a `Watcher`. Every event the watcher emits is deli
 | `config.secret`               | `string`             | -        | Shared secret used to sign payloads                                                   |
 | `config.retries`              | `number`             | `3`      | Number of retry attempts before emitting `webhook.failed`                             |
 | `config.deliveryTimeoutMs`    | `number`             | `10_000` | Abort threshold for each HTTP attempt                                                 |
-| `config.allowPrivateNetworks` | `boolean`            | `false`  | If true, bypass SSRF checks for local/private IP ranges                               |
 | `config.random`               | `() => number`       | `random` | Optional RNG for testing jitter. Defaults to `Math.random`.                           |
 | `config.backoff`              | `BackoffStrategy`    | `exponentialJittered` | Retry delay strategy. Built-ins: `exponentialJittered`, `linear`, `cappedExponential`, `constant`. |
 
@@ -567,8 +566,8 @@ Orbital provides a hardened delivery pipeline for high-stakes financial events. 
 | **Integrity** | `timestamp . payload` signing bubble | Replay attacks (when window-checked) |
 | **Idempotency** | `x-orbital-delivery-id` (UUID v4) per event-URL pair | Duplicate processing on retry |
 | **Side-channel defense** | `crypto.timingSafeEqual` comparison | Timing attacks on signatures |
-| **SSRF Protection** | RFC 1918 & loopback block-list | Internal network exfiltration |
-| **DNS Rebinding defense** | Pre-delivery IP validation | Validation-time vs Request-time IP swaps |
+| **SSRF Protection** | Loopback, private, link-local, CGNAT, reserved, and `.localhost` block-list | Internal network exfiltration |
+| **DNS Rebinding defense** | Per-attempt DNS validation with Node delivery pinned to the validated first-hop address | Validation-time vs request-time IP swaps |
 | **Resource bounding** | `maxConcurrentRetries` + body-size caps | Memory exhaustion / DoS |
 
 ### Threat Model
@@ -590,6 +589,7 @@ Always pass `maxAgeMs` explicitly. A consumer that omits the option still receiv
 
 - **Retries live in-process unless a `retryQueue` is configured.** See [Durable retry queues](#durable-retry-queues) above for the Redis/SQS adapters that persist pending retries across restarts.
 - **Retries use a small built-in strategy set.** For specialized schedules, pass a custom `BackoffStrategy` through `config.backoff`.
+- **Outbound delivery is a Node runtime feature.** Edge helpers (`verifyWebhookEdge`, `verifyWebhookEdgeRaw`, and `verifyWebhookEdgeStream`) verify inbound webhook payloads only; they do not perform outbound delivery or DNS pinning.
 - **No signature versioning.** The header format is fixed at `x-orbital-signature` (HMAC-SHA256 hex) - there is no `v1=…` prefix. If the algorithm needs to change, a future `x-orbital-signature-v2` header will be introduced alongside `v1` for a deprecation window.
 
 ## Related documents
