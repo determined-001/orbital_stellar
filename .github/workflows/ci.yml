@@ -234,10 +234,11 @@ jobs:
         env:
           # Canary values for every secret the web app can read; the assertion
           # greps .next/static for each. See SECURITY.md for the inventory.
+          DEMO_EMITTER_CONTRACT_ID: CDEMOEMITTER_CANARY_DO_NOT_SHIP_000000000000000000000000000
           DEMO_EMITTER_SECRET: SDEMOSECRET_CANARY_DO_NOT_SHIP_000000000000000000000000000
           SOROBAN_INVOKER_SECRET: SINVOKER_CANARY_DO_NOT_SHIP_00000000000000000000000000000
           UPSTASH_REDIS_REST_TOKEN: UPSTASH_CANARY_DO_NOT_SHIP_000000000000000000000000000
-        run: node scripts/assert-no-secrets-in-bundle.mjs
+        run: node scripts/assert-no-secrets-in-bundle.mjs --log-manifest-errors
 
   cli-smoke-test:
     needs: changes
