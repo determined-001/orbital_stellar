@@ -47,32 +47,6 @@ export interface BatchGenerationResult {
 }
 
 /**
- * Evaluates whether a time-based trigger should fire based on the elapsed
- * time since the last run.
- */
-export function evaluateTimeBasedTrigger(
-  lastRunAt: number,
-  intervalMs: number,
-  now: number = Date.now(),
-): boolean {
-  if (intervalMs <= 0) {
-    return true;
-  }
-  return now - lastRunAt >= intervalMs;
-}
-
-/**
- * Evaluator for time-based triggers that fire on a fixed interval.
- */
-export class TimeBasedTriggerEvaluator {
-  constructor(private readonly intervalMs: number) {}
-
-  evaluate(lastRunAt: number, now: number = Date.now()): boolean {
-    return evaluateTimeBasedTrigger(lastRunAt, this.intervalMs, now);
-  }
-}
-
-/**
  * Generates TypeScript types for all contracts in the config
  */
 export async function generateBatchTypes(
