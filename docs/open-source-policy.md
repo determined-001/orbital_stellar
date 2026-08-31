@@ -193,6 +193,27 @@ These are honest uncertainties as of `v0.1.0`. They will be resolved in writing 
 | Question | Status |
 |---|---|
 | Will the Soroban ABI Registry **data** (schemas, taxonomy, labels) be a public good or a paid dataset? | The **data** (event taxonomy and entity labels) is published as **open data** under Creative Commons Zero (CC0 1.0) on every release, fetchable over plain HTTP (`/data/taxonomy.json`, `/data/labels.json`) with no JS SDK dependency. The **client** and **schema** are MIT. The **hosted read API** is currently planned as a free-tier public good, with a paid tier for high-volume integrators. Final structure TBD by Phase 2 close. |
+
+### Verifying the open data (integrity manifest)
+
+The repository publishes an integrity manifest at `data/integrity.json` (mirrored to `apps/web/public/data/integrity.json`) alongside `taxonomy.json`, `labels.json`, and `LICENSE`. The manifest records, for each published file:
+
+- a **SHA-256 digest** of the file's exact bytes,
+- its **byte length**, and
+- for `taxonomy.json` and `labels.json`, the **record count**.
+
+**What it guarantees.** The digest is computed over the exact committed bytes of each file, so a third party can confirm that the artifact they downloaded is byte-for-byte identical to what Orbital published. It does **not** assert anything about the *content* of the records (schema conformance is validated separately in CI); it is a claim of *integrity and provenance*, not of correctness.
+
+**How a third party verifies it.**
+
+1. Download the artifact and its manifest (e.g. `curl -O https://<host>/data/taxonomy.json` and `curl -O https://<host>/data/integrity.json`).
+2. Compute the digest over the exact downloaded bytes:
+   `shasum -a 256 taxonomy.json` (or `Get-FileHash` on Windows).
+3. Compare with the `files.taxonomy.json.sha256` value in the manifest. A match means the file is exactly what Orbital published; a mismatch means the file was altered in transit or on disk.
+4. Repeat for `labels.json` and `LICENSE`. Optionally compare `recordCount` with the parsed record array length as a sanity check.
+
+**How the manifest stays honest.** The open data is machine-generated from a single source (`scripts/generate-open-data.mjs`) into both `data/` and `apps/web/public/data/` in the same step. CI regenerates it on every relevant change and **fails if the committed output differs** from the generator's output (`validate-data.yml`), so the published hashes always describe what the repository actually contains — drift is prevented, not merely discouraged.
+
 | Will the intent compiler ship as runnable-locally OSS at maturity? | Frozen - not scheduled. See [ROADMAP.md's Frozen section](../ROADMAP.md#frozen--out-of-scope-until-the-core-thesis-is-proven). Revisit only if unfrozen per that section's procedure. |
 | Will the reactor-contract certification service be Orbital-operated or community-governed? | Frozen - not scheduled. See [ROADMAP.md's Frozen section](../ROADMAP.md#frozen--out-of-scope-until-the-core-thesis-is-proven). |
 
