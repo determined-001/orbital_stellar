@@ -27,8 +27,17 @@ jobs:
           filters: |
             # Root manifests + lockfile affect every workspace project - a
             # dependency-only change must not skip the test jobs.
+            # Rule: any path whose contents are read at build or test time must
+            # appear in a filter. contracts/** carries deployed.testnet.json and
+            # Rust source consumed by verify-provenance; data/** feeds the
+            # schema-validated publishing pipeline and integrity.json; scripts/**
+            # contains build-time helpers invoked by both packages and web jobs
+            # (generate-horizon-types.mjs, assert-no-secrets-in-bundle.mjs).
             packages:
               - 'packages/**'
+              - 'contracts/**'
+              - 'data/**'
+              - 'scripts/**'
               - 'tsconfig.base.json'
               - 'package.json'
               - 'pnpm-workspace.yaml'
@@ -37,6 +46,9 @@ jobs:
             web:
               - 'apps/web/**'
               - 'packages/**'
+              - 'contracts/**'
+              - 'data/**'
+              - 'scripts/**'
               - 'package.json'
               - 'pnpm-workspace.yaml'
               - 'pnpm-lock.yaml'
@@ -85,12 +97,16 @@ jobs:
         run: pnpm tsc -p packages/pulse-core/tsconfig.json
       - name: Typecheck abi-registry
         run: pnpm tsc --noEmit -p packages/abi-registry/tsconfig.json
+      - name: Typecheck worker-core
+        run: pnpm tsc --noEmit -p packages/worker-core/tsconfig.json
       - name: Typecheck pulse-webhooks
         run: pnpm tsc --noEmit -p packages/pulse-webhooks/tsconfig.json
       - name: Typecheck pulse-notify
         run: pnpm tsc --noEmit -p packages/pulse-notify/tsconfig.json
       - name: Typecheck anchor-sdk
         run: pnpm tsc --noEmit -p packages/anchor-sdk/tsconfig.json
+      - name: Typecheck worker-core
+        run: pnpm tsc --noEmit -p packages/worker-core/tsconfig.json
       - name: Validate ABI specs
         run: pnpm --filter @orbital-stellar/abi-registry validate
       - name: Generate Horizon types & check drift      
