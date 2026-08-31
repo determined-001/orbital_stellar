@@ -6,6 +6,14 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 export async function POST(req: Request) {
+  if (process.env.NODE_ENV === "production" && !process.env.DEMO_EMITTER_CONTRACT_ID) {
+    console.error("[fire-event] DEMO_EMITTER_CONTRACT_ID is required in production.");
+    return Response.json(
+      { error: "not_configured", message: "Demo emitter is not configured." },
+      { status: 503 },
+    );
+  }
+
   const ip = clientIp(req);
   const cooldown = await checkFireEventRateLimit(ip);
   if (!cooldown.ok) {
