@@ -510,7 +510,7 @@ function generateEventDeclarations(events: ReadonlyArray<EventSpec>): {
   return { declarations, schemas, guards, testDts };
 }
 
-function generateReactHooks(events: ReadonlyArray<EventSpec>, contractName?: string): string[] {
+function generateReactHooks(events: ReadonlyArray<EventSpec>): string[] {
   if (events.length === 0) return [];
   const hooks: string[] = [];
   const usedNames = new Set<string>();
@@ -529,7 +529,6 @@ function generateReactHooks(events: ReadonlyArray<EventSpec>, contractName?: str
     const interfaceName = ensureUniqueName(`${baseName}Event`, usedNames);
     const schemaName = `${interfaceName}Schema`;
     const hookName = `use${baseName}`;
-    const fieldName = event.data.length > 0 ? toCamelCase(event.data[0]?.name ?? "data") : "data";
 
     hooks.push("/**");
     hooks.push(` * React hook that subscribes to \`${event.name}\` events.`);
@@ -582,7 +581,7 @@ function generateFromContractSpec(spec: ContractSpec): GeneratedContractArtifact
   declarations.push(...events.declarations);
   schemas.push(...events.schemas);
 
-  const hooks = generateReactHooks(spec.events, spec.name);
+  const hooks = generateReactHooks(spec.events);
 
   return {
     declarations: declarations.join("\n"),
@@ -613,6 +612,6 @@ export function generateContractTypes(spec: XdrContractSpec | ContractSpec): str
  */
 export function generateContractHooks(spec: XdrContractSpec | ContractSpec): string {
   if (isXdrContractSpec(spec)) return "";
-  const hooks = generateReactHooks(spec.events, spec.name);
+  const hooks = generateReactHooks(spec.events);
   return hooks.join("\n");
 }
