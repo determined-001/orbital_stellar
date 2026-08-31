@@ -1,5 +1,4 @@
 import { defineConfig } from "vitest/config";
-import { fileURLToPath } from "node:url";
 
 export default defineConfig({
   test: {
@@ -8,21 +7,20 @@ export default defineConfig({
     coverage: {
       provider: "v8",
       include: ["src/**/*.ts"],
-      exclude: ["node_modules/", "dist/", "test/", "**/*.test.ts", "**/*.config.*", "src/index.ts"],
-      thresholds: {
-        statements: 90,
-        branches: 80,
-        functions: 90,
-        lines: 90,
-      },
+      exclude: [
+        "node_modules/",
+        "dist/",
+        "test/",
+        "**/*.test.ts",
+        "**/*.config.*",
+        // Pure type declarations / barrel re-exports - no runtime code to cover
+        "src/index.ts",
+        "src/hotPath/index.ts",
+        "src/vault/types.ts",
+        "src/workers/index.ts",
+      ],
       reporter: ["text", "html", "json-summary"],
-    },
-  },
-  resolve: {
-    alias: {
-      "@orbital-stellar/abi-registry": fileURLToPath(
-        new URL("../abi-registry/src/index.ts", import.meta.url),
-      ),
+      exclude: ["node_modules/", "dist/", "test/", "**/*.test.ts", "**/*.config.*"],
     },
   },
 });

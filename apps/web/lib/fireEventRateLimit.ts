@@ -1,8 +1,8 @@
 import "server-only";
 
 import { Ratelimit } from "@upstash/ratelimit";
-import { Redis } from "@upstash/redis";
 import { DEMO_LIMITS, type RateLimitEnvelope } from "@/lib/demo-limits";
+import { getUpstashRedis, __resetUpstashRedisForTests } from "@/lib/upstashRedis";
 
 /**
  * Shared rate limit for POST /api/demo/fire-event.
@@ -22,15 +22,14 @@ let ratelimit: Ratelimit | null | undefined;
 function getRatelimit(): Ratelimit | null {
   if (ratelimit !== undefined) return ratelimit;
 
-  const url = process.env.UPSTASH_REDIS_REST_URL;
-  const token = process.env.UPSTASH_REDIS_REST_TOKEN;
-  if (!url || !token) {
+  const redis = getUpstashRedis();
+  if (!redis) {
     ratelimit = null;
     return null;
   }
 
   ratelimit = new Ratelimit({
-    redis: new Redis({ url, token }),
+    redis,
     limiter: Ratelimit.slidingWindow(1, `${DEMO_LIMITS.fireEventCooldownMs / 1000} s`),
     prefix: "orbital:demo:fire-event",
     analytics: false,
@@ -89,4 +88,5 @@ export async function checkFireEventRateLimit(ip: string): Promise<FireEventRate
 /** Test helper — clears the cached Ratelimit client between cases. */
 export function __resetFireEventRateLimitForTests(): void {
   ratelimit = undefined;
+  __resetUpstashRedisForTests();
 }
