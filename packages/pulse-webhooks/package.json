@@ -26,6 +26,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "vitest run",
+    "test:integration": "INTEGRATION_TESTS=true vitest run test/integration",
     "test:coverage": "vitest run --coverage"
   },
   "bin": {
