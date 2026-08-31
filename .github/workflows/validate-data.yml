@@ -4,6 +4,18 @@ on:
   pull_request:
     paths:
       - 'data/**'
+      - 'apps/web/public/data/**'
+      - 'scripts/generate-open-data.mjs'
+      - 'packages/abi-registry/specs/well-known/**'
+      - 'packages/abi-registry/schemas/**'
+      - 'packages/abi-registry/schema/**'
+  push:
+    branches: [main]
+    paths:
+      - 'data/**'
+      - 'apps/web/public/data/**'
+      - 'scripts/generate-open-data.mjs'
+      - 'packages/abi-registry/specs/well-known/**'
       - 'packages/abi-registry/schemas/**'
       - 'packages/abi-registry/schema/**'
 
@@ -27,6 +39,20 @@ jobs:
           cache: pnpm
 
       - run: pnpm install --frozen-lockfile
+
+      - name: Regenerate open data and fail on drift
+        # The published open data (data/ and apps/web/public/data/) is generated
+        # from a single source by scripts/generate-open-data.mjs. Regenerate it
+        # here and fail if the committed output differs — drift becomes
+        # impossible rather than merely discouraged, so integrity.json always
+        # describes what the generator actually produces.
+        run: |
+          pnpm docs:generate-open-data
+          if ! git diff --exit-code -- data apps/web/public/data; then
+            echo "::error::Open data is out of sync with its generator. Run 'pnpm docs:generate-open-data' and commit the result."
+            exit 1
+          fi
+          echo "Open data is in sync with its generator."
 
       - name: Auto-label semantic-data PRs
         if: github.event_name == 'pull_request'

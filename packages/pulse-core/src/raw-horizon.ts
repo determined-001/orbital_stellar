@@ -22,13 +22,40 @@ export type { components, operations, paths } from "./_raw-horizon.gen.js";
 // Hand-written raw operation interfaces (keep for backward compatibility)
 // ---------------------------------------------------------------------------
 
+/**
+ * The transaction record Horizon embeds on each operation when a request asks
+ * for `join=transactions`. Only the fields this package reads are modeled;
+ * Horizon returns the full transaction resource.
+ */
+export interface RawHorizonJoinedTransaction {
+  hash: string;
+  /** Ledger sequence the transaction was included in. */
+  ledger: number;
+  /** Present as `null`/absent when `memo_type` is `"none"`. */
+  memo?: string | null;
+  memo_type?: string;
+  successful?: boolean;
+  [key: string]: unknown;
+}
+
 export interface RawHorizonBaseOperation {
   id: string;
   paging_token: string;
   transaction_successful: boolean;
+  /**
+   * Hash of the transaction this operation belongs to. Horizon returns it on
+   * every operation record, with or without `join=transactions`.
+   */
+  transaction_hash: string;
   source_account: string;
   created_at: string;
   type_i: number;
+  /**
+   * The full transaction, present only when the request asked for
+   * `join=transactions`. Source of `ledger` and `memo`, which live on the
+   * transaction rather than the operation.
+   */
+  transaction?: RawHorizonJoinedTransaction;
   _links: {
     self: { href: string };
     transaction: { href: string };

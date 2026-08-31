@@ -27,6 +27,30 @@ None / Yes (describe below)
 
 ---
 
+### Custody checklist (PRs touching `packages/worker-core/`, `contracts/vault/` or `contracts/payroll/`)
+
+*Delete this section if the PR touches none of those paths.*
+
+**§C.2 rule 3 — a design that requires a worker to hold signing authority over a
+user's account is a design bug, not a feature.** A worker's power is limited to
+"call a constrained function", never "decide where money goes". See
+[docs/design/workers.md](../docs/design/workers.md#c2-no-user-custody).
+
+- [ ] **No user key material is stored** — no user secret, seed, keypair or
+      private key appears in a worker type, a subscription record, or a manifest
+- [ ] **The worker cannot choose a destination** — any value it moves goes
+      somewhere fixed by the depositor's configuration, not by a parameter the
+      worker supplies
+- [ ] **Bounds are enforced where they cannot be edited around** — on chain, not
+      only in the worker's own code path
+- [ ] **The user can revoke unilaterally** — immediately, without the worker's
+      cooperation, including mid-incident
+- [ ] `node scripts/check-no-user-custody.mjs` passes locally, **or** a reviewer
+      has confirmed the finding is a false positive and applied the
+      `custody-reviewed` label
+
+---
+
 ### Reviewer checklist (semantic-data PRs only)
 
 *This section applies when the PR touches `data/` or `packages/abi-registry/schemas/`.
