@@ -16,6 +16,8 @@ export default defineConfig({
         // Pure type declarations / barrel re-exports - no runtime code to cover
         "src/index.ts",
         "src/hotPath/index.ts",
+        "src/vault/types.ts",
+        "src/workers/index.ts",
       ],
       reporter: ["text", "html", "json-summary"],
     },

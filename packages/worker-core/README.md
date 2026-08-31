@@ -133,6 +133,60 @@ per the acceptance criteria, a real hot-path submitter must observe
 conditions through that existing mechanism, not a parallel one. This package
 has no dependency on `pulse-core` yet because there is no real consumer of
 one here; that dependency belongs to the real implementation.
+## Copy-trade worker on the vault pattern (`workers/copyTrade.ts`, `vault/`)
+
+> **Decision logic only - not runnable against a real vault yet.** This
+> issue (22.3) is explicitly "the last thing built in the entire backlog,
+> deliberately," and depends on five other open issues: 22.2 (vault audit),
+> 22.1 (the vault contract itself - `contracts/vault` does not exist in this
+> repo), 20.6 (event triggers), 21.5 (regulatory framing), and 19.1
+> (verification). What ships here is the skip/execute decision logic a real
+> copy-trade worker runs, built against the `VaultClient` interface below and
+> exercised in tests against a fake implementation - never against a real
+> vault.
+
+§C.1's reference trade-like worker: a whale trade is observed, and the action
+is mirrored to subscribers, executed **strictly through the vault** - this
+module's authority never exceeds "call a constrained function." Nothing in
+`workers/copyTrade.ts` holds a signer, a secret, or a balance; the only thing
+it can do to a vault is read its subscriber-set `VaultConfig` and request one
+`VaultExecutionRequest`.
+
+### `VaultClient` / `UNIMPLEMENTED_VAULT_CLIENT`
+
+`VaultClient` (in `vault/`) is the specification a real vault-calling client
+must satisfy once 22.1 ships: `getConfig(vaultId)` and `execute(request)`.
+There is deliberately no deposit/withdraw/arbitrary-call method - a worker
+needing one has exceeded the constrained-function boundary. The only value of
+this type shipped here, `UNIMPLEMENTED_VAULT_CLIENT`, throws
+`VaultNotImplementedError` from every method.
+
+### `createCopyTradeTrigger(sourceAccount, asset)`
+
+Builds an `EventTrigger` (the existing trigger type from this package, not a
+bespoke shape) for watching a source account's trades on an asset -
+implementation note 3: "Reuse 20.6's event trigger for the observation side -
+do not add a second matching path." Not runtime-usable until 20.6 implements
+event matching.
+
+### `computeMirroredSize(observed, vaultConfig, mirrorRatioBps)`
+
+Mirrors the observed trade proportionally, capped at
+`vaultConfig.maxPositionSizeRaw` - "position sizing is bounded by vault
+configuration the subscriber set."
+
+### `planCopyTrade(observed, config, mirrorRatioBps, currentLedgerSequence, nowUnix)`
+
+Decides, for one observed trade, whether to mirror it through the vault or
+skip it with a named reason - implementation note 1: "skips are a normal,
+expected outcome here and must be first-class in the record." Every skip is
+recorded (`CopyTradeSkipRecord`) and handed to an optional `onSkip` callback,
+never silently dropped. Skip reasons: `asset_not_allow_listed`,
+`pool_not_allow_listed`, `position_size_zero_after_bound`,
+`slippage_reverted` (a vault-contract revert - the constraint working, not a
+miss), `subscriber_revoked`, `latency_budget_exceeded`. Checks run cheapest
+and most decisive first: the latency budget and subscriber revocation are
+checked before the vault is consulted for a trade at all.
 
 ## Stability
 
