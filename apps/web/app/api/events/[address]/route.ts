@@ -23,9 +23,9 @@ export async function GET(
   }
 
   const ip = clientIp(req);
-  const slot = acquireStream(ip);
+  const slot = await acquireStream(ip);
   if (!slot.ok) {
-    return Response.json(slot.body, { status: 429 });
+    return Response.json(slot.body, { status: slot.status });
   }
 
   const engine = getEngine();
@@ -42,7 +42,7 @@ export async function GET(
         clearTimeout(sessionTimer);
         watcher.removeListener("*", onEvent);
         engine.unsubscribe(address);
-        slot.release();
+        void slot.release();
         try {
           controller.close();
         } catch {

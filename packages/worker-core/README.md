@@ -93,6 +93,46 @@ by `TimeTrigger`) is `IntervalSchedule | CronSchedule`, both carrying a required
 Narrows a `Trigger` to `TimeTrigger`, throwing `TriggerNotImplementedError` for
 `event` and `computation` triggers. Call this before acting on any `Trigger`.
 
+## Latency-sensitive tier (`hotPath/`, `backstop/tiers.ts`) - stub, not wired up
+
+> **This is a standalone stub, not a working hot path.** Issue #1071 (22.4)
+> depends on #1064 (21.3, tier configuration) and #1070 (22.3, the copy-trade
+> worker), both open. There is no submitter, RPC/simulation layer, or real
+> tier-configuration system to plug into yet. What ships here is the
+> structural safety boundary the acceptance criteria ask for, with everything
+> gated shut - not a usable execution path. `assertHotPathReady` throws
+> unconditionally.
+
+§C.7: for copy-trading and liquidations, "late" means the opportunity is gone,
+and catching the miss costs the same as running primary infrastructure - so
+this tier is worth building only once its cost is actually measured, not
+promised.
+
+- **`HotPathPlan`** (`StaticHotPathPlan | DynamicHotPathPlan`) - the
+  pre-signing boundary is structural, not a judgment call: only a
+  `StaticHotPathPlan` (fixed `args`, nothing left to observe) is ever
+  pre-signable; a `DynamicHotPathPlan` (an `ArgBuilder`, evaluated against
+  chain state at submission time) never is. `isPreSignable(plan)` narrows on
+  this.
+- **`LatencyScorecardEntry`** / `recordScorecardEntry(...)` - the "measured
+  end to end, published on the scorecards" shape: condition observed to
+  transaction submitted, in a declared ledger budget (`LatencyBudget`), with
+  `latencyMs`/`withinBudget` derived rather than caller-supplied.
+- **`TierEnableDecision`** / `LATENCY_SENSITIVE_TIER_DEFAULT` /
+  `assertTierEnableDecisionIsValid` (in `backstop/tiers.ts`) - "enabling the
+  tier is a documented, reversible operational decision": who decided, when,
+  why, and (once `enabled` is true) a required `CostMeasurement` from 21.2.
+  The shipped default is disabled, with an unset decider and a rationale
+  naming the unimplemented dependencies. `reversible` is a literal `true` -
+  a decision that claims to be irreversible does not type-check.
+
+**Backpressure**: this module does not define its own queue.
+`packages/pulse-core/src/EventEngine.ts` already implements bounded-queue
+backpressure (`CoreConfig.queue`, the `engine.backpressure` notification) -
+per the acceptance criteria, a real hot-path submitter must observe
+conditions through that existing mechanism, not a parallel one. This package
+has no dependency on `pulse-core` yet because there is no real consumer of
+one here; that dependency belongs to the real implementation.
 ## Price and slippage guard rails (`guards/`)
 
 Trade automation reads prices, and a price source is an attack surface. These

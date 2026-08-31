@@ -17,7 +17,7 @@ if (!fs.existsSync(webPublicDataDir)) {
   fs.mkdirSync(webPublicDataDir, { recursive: true });
 }
 
-const generatedAt = new Date().toISOString();
+let generatedAt = new Date().toISOString();
 const SCHEMA_VERSION = "1.0.0";
 
 // ---------------------------------------------------------------------------
@@ -345,6 +345,42 @@ const labelsData = {
   recordCount: labelRecords.length,
   records: labelRecords,
 };
+
+// Keep the manifest deterministic: `generatedAt` is bumped only when the
+// regenerated *content* actually changes. If the records are byte-identical
+// to what is already committed (ignoring the timestamp), reuse the committed
+// `generatedAt` so a regeneration with no real drift produces a byte-identical
+// snapshot. This is what lets CI regenerate and fail on `git diff --exit-code`
+// without a false positive on every run.
+function existingGeneratedAt(file) {
+  try {
+    const existing = JSON.parse(fs.readFileSync(file, "utf-8"));
+    return typeof existing.generatedAt === "string" ? existing.generatedAt : null;
+  } catch {
+    return null;
+  }
+}
+
+function recordsMatch(candidate, existingFile) {
+  try {
+    const existing = JSON.parse(fs.readFileSync(existingFile, "utf-8"));
+    return JSON.stringify(existing.records) === JSON.stringify(candidate.records);
+  } catch {
+    return false;
+  }
+}
+
+const previousGeneratedAt = existingGeneratedAt(path.join(dataDir, "integrity.json"));
+const taxonomyChanged = !recordsMatch(taxonomyData, path.join(dataDir, "taxonomy.json"));
+const labelsChanged = !recordsMatch(labelsData, path.join(dataDir, "labels.json"));
+
+if (!taxonomyChanged && !labelsChanged && previousGeneratedAt) {
+  generatedAt = previousGeneratedAt;
+  // The record objects above were constructed with the "now" value; align them
+  // so the emitted files carry the deterministic timestamp too.
+  taxonomyData.generatedAt = generatedAt;
+  labelsData.generatedAt = generatedAt;
+}
 
 // Write taxonomy.json & labels.json to data/ and apps/web/public/data/
 const taxonomyJsonStr = JSON.stringify(taxonomyData, null, 2) + "\n";
