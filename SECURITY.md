@@ -81,7 +81,7 @@ Adversaries, assets, and mitigations. Each scenario describes the failure mode, 
 
 **Threat.** A misconfigured or malicious operator points a `WebhookDelivery` at a loopback address, a private RFC 1918 IP, or a metadata service like `169.254.169.254` to exfiltrate cloud credentials.
 
-**Mitigation.** `WebhookDelivery` validates the target URL at construction time and re-validates against DNS resolution before each request. Loopback (`127.0.0.0/8`, `::1`), private (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`), and link-local (`169.254.0.0/16`) ranges are blocked unless `allowPrivateNetworks: true` is explicitly set. The DNS revalidation defends against DNS-rebinding attacks where an attacker-controlled hostname resolves to a public IP at validation time and a private IP at request time.
+**Mitigation.** `WebhookDelivery` validates the target URL before each request. Loopback (`127.0.0.0/8`, `::1`), private (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`), link-local (`169.254.0.0/16`, `fe80::/10`), CGNAT (`100.64.0.0/10`), multicast/reserved IPv4 ranges, and `.localhost` names are blocked. For hostname targets in the Node delivery path, every A and AAAA DNS answer is checked and the request's first hop is pinned to the checked address through a custom resolver; TLS still verifies the certificate against the original hostname. Redirects are not followed because redirect targets have not passed the same URL and DNS checks.
 
 **Detection.** A `webhook.dropped` event is emitted when delivery is blocked. Surface this in your observability.
 
@@ -199,7 +199,7 @@ A short checklist if you are building on top of Orbital.
 
 ### `pulse-webhooks`
 
-- **Never deploy with `allowPrivateNetworks: true`** in production. It is a developer convenience for `localhost` testing only.
+- **Do not bypass the built-in URL checks** in production. `WebhookDelivery` does not expose an `allowPrivateNetworks` escape hatch; localhost and private-network endpoints should be tested with a separate development-only delivery path.
 - **Enforce HTTPS at every layer where users supply a webhook URL.** The SDK enforces it; your registration UI should too.
 - **Reject signatures older than 5 minutes** in your receiver - bound replay window:
   ```ts
