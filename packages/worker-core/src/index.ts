@@ -66,6 +66,8 @@ export {
   type WorkerReplayHandler,
   type MemoryWorkerDeadLetterStoreOptions,
 } from "./WorkerDeadLetterStore.js";
+
+export type {
   VaultConfig,
   VaultExecutionRequest,
   VaultExecutionResult,
