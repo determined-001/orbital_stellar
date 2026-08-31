@@ -102,13 +102,21 @@ const MAX_QUERY_LENGTH = 128
 
 export async function GET(request: NextRequest) {
   const ip = clientIp(request)
-  const cooldown = checkWebhookCooldown(ip)
-  if (!cooldown.ok) {
+  const cooldown = await checkWebhookCooldown(ip)
+  if (!cooldown.ok && cooldown.status === 429) {
     return NextResponse.json(cooldown.body, {
       status: 429,
       headers: { 'Retry-After': String(Math.ceil(cooldown.body.retryAfterMs / 1000)) },
     })
   }
+  // status === 503 (Redis unconfigured) intentionally falls through instead of
+  // blocking: unlike the faucet or the webhook-sample signer, nothing here
+  // touches funds or a funded key. The corpus is build-time static and already
+  // parsed once per process (see getCorpus below), so an unbounded query rate
+  // is bounded CPU, not an open financial liability. Breaking search entirely
+  // because Redis is misconfigured would be a worse failure mode than
+  // best-effort (unlimited) search. This limiter is best-effort protection,
+  // not a security boundary.
 
   const query = request.nextUrl.searchParams.get('q')?.trim().slice(0, MAX_QUERY_LENGTH) ?? ''
 

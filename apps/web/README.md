@@ -18,8 +18,8 @@ The site runs on `http://localhost:3000`.
 | `NEXT_PUBLIC_NETWORK` | yes | `testnet` \| `mainnet` | Stellar network the demo `EventEngine` subscribes to. Surfaced in the UI's network notice. Fails loudly at first request if missing or invalid. |
 | `DEMO_EMITTER_CONTRACT_ID` | for fire-event | contract ID | Demo-emitter contract; falls back to `contracts/deployed.testnet.json` when unset. |
 | `DEMO_EMITTER_SECRET` | for fire-event | Stellar secret | Server-only invoker for `ping()` — never exposed to the client. |
-| `UPSTASH_REDIS_REST_URL` | for fire-event | URL | Shared Upstash Redis REST URL (serverless rate limit). |
-| `UPSTASH_REDIS_REST_TOKEN` | for fire-event | token | Shared Upstash Redis REST token. |
+| `UPSTASH_REDIS_REST_URL` | for fire-event, SSE, webhook-sample, docs search | URL | Shared Upstash Redis REST URL (serverless rate limit). |
+| `UPSTASH_REDIS_REST_TOKEN` | for fire-event, SSE, webhook-sample, docs search | token | Shared Upstash Redis REST token. |
 | `TRUSTED_PROXY_HOPS` | non-Vercel only | positive integer | Number of reverse proxies in front of the app. See [Client identification](#client-identification). |
 
 ## Client identification
@@ -42,11 +42,29 @@ so a directly-reachable origin cannot distinguish a proxy-set value from a clien
 
 ## Demo limits
 
-The on-page demos are intentionally sandboxed so they don't burn Vercel resources:
+The on-page demos are intentionally sandboxed so they don't burn Vercel resources. All four limiters
+below are backed by the same shared Upstash Redis client (`lib/upstashRedis.ts`) — apps/web runs on
+serverless, so an in-memory counter is per-instance and the effective ceiling becomes (configured limit)
+x (live instances), which is not a limit at all.
 
-- **`/api/events/[address]`** - 1 concurrent SSE stream per IP, 25-second max duration per stream.
-- **`/api/webhook-sample`** - 1 signing request per IP every 20 seconds.
-- **`/api/demo/fire-event`** - 1 on-chain fire per IP every 10 seconds via Upstash Redis (`lib/fireEventRateLimit.ts`). Without Upstash env vars the route returns `503` (fail closed).
+- **`/api/events/[address]`** and **`/api/contracts/[contractId]`** - 1 concurrent SSE stream per IP
+  (`acquireStream`), 25-second max duration per stream. Backed by a Redis counter, not a rate window, since
+  it tracks concurrently-open streams rather than a request rate.
+- **`/api/webhook-sample`** - 1 signing request per IP every 20 seconds (`checkWebhookCooldown`).
+- **`/api/demo/fire-event`** - 1 on-chain fire per IP every 10 seconds via Upstash Redis
+  (`lib/fireEventRateLimit.ts`).
+
+**Fail-closed vs. best-effort**, when Upstash is unconfigured (`UPSTASH_REDIS_REST_URL` /
+`UPSTASH_REDIS_REST_TOKEN` unset):
+
+- `fire-event`, the SSE routes, and `/api/webhook-sample` **fail closed** (`503`): none of these are
+  protection you can afford to lose silently — `fire-event` signs real testnet transactions with a funded
+  key, and unbounded SSE concurrency is unbounded server resource usage.
+- **`/api/docs/search`** (also gated by `checkWebhookCooldown`) **fails open** instead: it deliberately lets
+  search through unlimited when Redis is down, because search touches no funds and the corpus is
+  build-time-static and parsed once per process, so an unbounded query rate is bounded CPU, not an open
+  liability. This limiter is **best-effort abuse mitigation, not a protection boundary** — see the comment
+  in `app/api/docs/search/route.ts`.
 
 When a limit trips, the route returns `429` with a JSON envelope (`{ error: "demo_limit_reached", reason, message, upgradeUrl }`) and the demo components surface an "Upgrade to Orbital Cloud" call-to-action. Tune the numbers in `lib/demo-limits.ts`.
 
