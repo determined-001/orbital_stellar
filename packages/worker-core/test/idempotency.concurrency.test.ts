@@ -14,13 +14,13 @@ describe("Idempotency concurrency", () => {
 
     // Run both claim attempts in parallel
     await Promise.all([
-      mgrA.claimThenSubmit(key, "concurrent", async () => {
+      mgrA.claimThenSubmit(key, "process-a", async () => {
         submitCalls.push("A");
         // simulate some work
         await new Promise((r) => setTimeout(r, 50));
         chainSeen = true;
       }),
-      mgrB.claimThenSubmit(key, "concurrent", async () => {
+      mgrB.claimThenSubmit(key, "process-b", async () => {
         submitCalls.push("B");
         await new Promise((r) => setTimeout(r, 50));
         chainSeen = true;

@@ -15,9 +15,9 @@ describe("IdempotencyManager basic behavior", () => {
     expect(submitted).toBe(true);
     expect(ran).toBe(true);
 
-    // After submission the claim should be released
+    // Keep the claim until the confirmation-lag TTL expires.
     const rec = await store.get(fireKeyToString(key));
-    expect(rec).toBeNull();
+    expect(rec?.owner).toBe("w1");
   });
 
   it("skips submit if chain already shows execution", async () => {
@@ -32,5 +32,17 @@ describe("IdempotencyManager basic behavior", () => {
     });
     expect(submitted).toBe(false);
     expect(ran).toBe(false);
+  });
+
+  it("keeps a successful submission claim until the TTL expires", async () => {
+    const store = new InMemoryClaimStore();
+    const mgr = new IdempotencyManager(store, async () => false, 1000);
+    const key = { workerId: "w3", windowStartLedger: 30 };
+
+    await mgr.claimThenSubmit(key, "process-a", async () => undefined);
+    const secondAttempt = await mgr.claimThenSubmit(key, "process-b", async () => undefined);
+
+    expect(secondAttempt).toBe(false);
+    expect((await store.get(fireKeyToString(key)))?.owner).toBe("process-a");
   });
 });

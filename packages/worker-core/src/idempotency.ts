@@ -15,8 +15,7 @@ export interface ClaimRecord {
 export interface ClaimStore {
   claim(key: string, owner: string, ttlMs: number): Promise<boolean>;
   get(key: string): Promise<ClaimRecord | null>;
-  // For tests and cleanup
-  release(key: string): Promise<void>;
+  release(key: string, owner?: string): Promise<void>;
 }
 
 /** Simple in-memory claim store for tests and single-process usage. */
@@ -32,12 +31,6 @@ export class InMemoryClaimStore implements ClaimStore {
         this.map.set(key, { owner, expiresAt: now + ttlMs });
         return true;
       }
-      if (existing.owner === owner) {
-        // same owner may re-claim / refresh
-        existing.expiresAt = now + ttlMs;
-        this.map.set(key, existing);
-        return true;
-      }
       return false;
     }
     this.map.set(key, { owner, expiresAt: now + ttlMs });
@@ -51,15 +44,66 @@ export class InMemoryClaimStore implements ClaimStore {
     return r;
   }
 
-  async release(key: string): Promise<void> {
-    this.map.delete(key);
+  async release(key: string, owner?: string): Promise<void> {
+    const existing = this.map.get(key);
+    if (existing && (owner === undefined || existing.owner === owner)) {
+      this.map.delete(key);
+    }
+  }
+}
+
+export interface PgLike {
+  query: (text: string, params?: unknown[]) => Promise<{ rows: any[] }>;
+}
+
+/** PostgreSQL-backed claims shared by worker processes and restarts. */
+export class PostgresWorkerStateStore implements ClaimStore {
+  constructor(private readonly pg: PgLike) {}
+
+  async claim(key: string, owner: string, ttlMs: number): Promise<boolean> {
+    const result = await this.pg.query(
+      `INSERT INTO worker_fire_claims (fire_key, owner, expires_at)
+       VALUES ($1, $2, NOW() + ($3 * INTERVAL '1 millisecond'))
+       ON CONFLICT (fire_key) DO UPDATE
+       SET owner = EXCLUDED.owner, expires_at = EXCLUDED.expires_at
+       WHERE worker_fire_claims.expires_at <= NOW()
+       RETURNING fire_key`,
+      [key, owner, ttlMs],
+    );
+    return result.rows.length > 0;
+  }
+
+  async get(key: string): Promise<ClaimRecord | null> {
+    const result = await this.pg.query(
+      `SELECT owner, EXTRACT(EPOCH FROM expires_at) * 1000 AS expires_at
+       FROM worker_fire_claims
+       WHERE fire_key = $1 AND expires_at > NOW()`,
+      [key],
+    );
+    if (result.rows.length === 0) return null;
+    return {
+      owner: result.rows[0].owner as string,
+      expiresAt: Number(result.rows[0].expires_at),
+    };
+  }
+
+  async release(key: string, owner?: string): Promise<void> {
+    if (owner === undefined) {
+      await this.pg.query("DELETE FROM worker_fire_claims WHERE fire_key = $1", [key]);
+      return;
+    }
+    await this.pg.query("DELETE FROM worker_fire_claims WHERE fire_key = $1 AND owner = $2", [
+      key,
+      owner,
+    ]);
   }
 }
 
 /**
  * Manager that claims a fire key before running a submission.
  *
- * - `claimTtlMs` should exceed the worst-case confirmation time.
+ * - The default `claimTtlMs` is five minutes, deliberately exceeding a
+ *   worst-case confirmation window with a wide operational margin.
  * - `chainCheck` is called to see whether submission already reached chain
  *   and should be checked before re-submitting after a restart.
  */
@@ -67,8 +111,12 @@ export class IdempotencyManager {
   constructor(
     private readonly store: ClaimStore,
     private readonly chainCheck: (windowStartLedger: number) => Promise<boolean>,
-    private readonly claimTtlMs = 60_000,
-  ) {}
+    private readonly claimTtlMs = 5 * 60_000,
+  ) {
+    if (!Number.isFinite(claimTtlMs) || claimTtlMs <= 0) {
+      throw new Error(`claimTtlMs must be positive, got ${claimTtlMs}`);
+    }
+  }
 
   /** Attempt to claim and, if claimed, run `submitFn`. Returns true when a submit happened. */
   async claimThenSubmit(
@@ -89,16 +137,15 @@ export class IdempotencyManager {
     const executed = await this.chainCheck(key.windowStartLedger);
     if (executed) {
       // nothing to do; release claim
-      await this.store.release(ks);
+      await this.store.release(ks, ownerId);
       return false;
     }
 
     // Safe to submit.
     await submitFn();
 
-    // After successful submit, release the claim so others can observe chain state
-    // and not remain wedged by stale claims.
-    await this.store.release(ks);
+    // Keep the claim until its TTL covers the lag between submission and chain
+    // visibility. The next attempt checks chain state after the claim expires.
     return true;
   }
 }

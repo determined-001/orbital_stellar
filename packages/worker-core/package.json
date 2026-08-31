@@ -8,14 +8,19 @@
   "types": "./dist/index.d.ts",
   "files": [
     "dist",
+    "migrations",
     "README.md"
   ],
   "scripts": {
+    "build": "tsc -p tsconfig.json",
     "test": "vitest run",
+    "test:integration": "INTEGRATION_TESTS=true vitest run test/integration",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
     "test:watch": "vitest"
   },
   "devDependencies": {
-    "vitest": "^4.1.11",
-    "@types/node": "^20.0.0"
+    "@types/node": "^26.2.0",
+    "pg": "^8.22.0",
+    "vitest": "^4.1.11"
   }
 }
