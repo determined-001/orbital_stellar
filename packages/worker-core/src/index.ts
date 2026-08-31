@@ -395,3 +395,29 @@ export type {
   ScoredScore,
   OperatorScore as OperatorReputationScore,
 } from "./reputation/score.js";
+// Worker state store: core interface, types and schema version.
+export {
+  WorkerStateStore,
+  WORKER_STATE_SCHEMA_VERSION,
+  type WorkerStateSchemaVersion,
+  type WorkerState,
+  type WorkerFireRecord,
+  type WorkerClaimRecord,
+  type RegisterWorkerInput,
+  type AppendFireRecordInput,
+  type WriteClaimInput,
+  type ReleaseClaimInput,
+  type WorkerStateStoreLike,
+} from "./WorkerStateStore.js";
+
+// Worker state store backends.
+export { MemoryWorkerStateStore } from "./MemoryWorkerStateStore.js";
+export {
+  FileWorkerStateStore,
+  type Logger as FileWorkerStateStoreLogger,
+} from "./FileWorkerStateStore.js";
+export { PostgresWorkerStateStore, type PgLike } from "./PostgresWorkerStateStore.js";
+export { RedisWorkerStateStore, type RedisLike } from "./RedisWorkerStateStore.js";
+
+// Worker state store migration helper.
+export { migrateWorkerState, type MigrateWorkerStateResult } from "./migrateWorkerState.js";
