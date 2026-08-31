@@ -1,7 +1,7 @@
 {
   "name": "@orbital-stellar/worker-core",
   "version": "0.1.0",
-  "description": "Worker core: verification backfill and long-range replay over CDP / Galexie ledger exports. No Orbital-operated ledger store.",
+  "description": "The worker definition model for Orbital's worker layer - what a worker is, before anything runs one.",
   "license": "MIT",
   "engines": {
     "node": ">=20"
@@ -24,17 +24,17 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "test": "vitest run",
+    "test": "pnpm test:types && vitest run",
+    "test:types": "tsc --noEmit -p tsconfig.typetest.json",
+    "test:coverage": "vitest run --coverage",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
-    "@orbital-stellar/pulse-core": "workspace:*",
-    "@stellar/stellar-sdk": "^16.1.0"
+    "@orbital-stellar/pulse-core": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^26.2.0",
-    "tsx": "^4.23.12",
-    "typescript": "^6.0.3",
+    "@vitest/coverage-v8": "^4.1.11",
     "vitest": "^4.1.11"
   }
 }
