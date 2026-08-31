@@ -36,6 +36,8 @@ export {
   TierEnableWithoutMeasurementError,
   assertTierEnableDecisionIsValid,
 } from "./backstop/tiers.js";
+
+export type {
   PriceReading,
   StalenessBound,
   DeviationBound,
