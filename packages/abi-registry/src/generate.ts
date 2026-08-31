@@ -568,7 +568,11 @@ function generateReactHooks(events: ReadonlyArray<EventSpec>): string[] {
 }
 
 function generateFromContractSpec(spec: ContractSpec): GeneratedContractArtifacts {
-  const declarations: string[] = ['import { z } from "zod";', ""];
+  const declarations: string[] = [
+    'import type { ContractEmittedEvent } from "@orbital-stellar/pulse-core";',
+    'import { z } from "zod";',
+    "",
+  ];
   const schemas: string[] = [];
 
   const udts = generateUdtDeclarations(spec.types);
