@@ -66,6 +66,10 @@ export function latestStream(): FaultyStream {
 export class FaultyHorizonServer {
   operations() {
     return {
+      // The engine asks Horizon for join=transactions; the double mirrors that.
+      join() {
+        return this;
+      },
       cursor(cursor: string) {
         return {
           stream(handlers: StreamHandlers) {
