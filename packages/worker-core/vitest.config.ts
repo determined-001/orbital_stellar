@@ -20,6 +20,7 @@ export default defineConfig({
         "src/workers/index.ts",
       ],
       reporter: ["text", "html", "json-summary"],
+      exclude: ["node_modules/", "dist/", "test/", "**/*.test.ts", "**/*.config.*"],
     },
   },
 });
