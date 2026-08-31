@@ -426,6 +426,9 @@ importers:
 
   packages/worker-core:
     dependencies:
+      '@orbital-stellar/abi-registry':
+        specifier: workspace:*
+        version: link:../abi-registry
       '@orbital-stellar/pulse-core':
         specifier: workspace:*
         version: link:../pulse-core

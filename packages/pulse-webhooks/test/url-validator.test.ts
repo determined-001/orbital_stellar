@@ -1,23 +1,9 @@
-import { describe, expect, it, vi, afterEach } from "vitest";
+import { describe, expect, it } from "vitest";
 import { UrlValidator } from "../src/url-validator.js";
-
-const validator = new UrlValidator();
-
-afterEach(() => {
-  vi.restoreAllMocks();
-});
-
-/** ASN lookup is a network call; stub it so these tests stay offline. */
-function withoutAsnLookup(): void {
-  vi.spyOn(globalThis, "fetch").mockResolvedValue(
-    new Response("{}", { status: 200, headers: { "Content-Type": "application/json" } }),
-  );
-}
 
 describe("UrlValidator SSRF rules (#926)", () => {
   it("allows an ordinary public https URL", async () => {
-    withoutAsnLookup();
-    expect(await validator.validate("https://hooks.example.com/orbital")).toBeNull();
+    expect(await new UrlValidator().validate("https://hooks.example.com/orbital")).toBeNull();
   });
 
   it.each([
@@ -25,13 +11,13 @@ describe("UrlValidator SSRF rules (#926)", () => {
     ["gopher://example.com/", /scheme gopher: is not allowed/],
     ["data:text/plain,hello", /scheme data: is not allowed/],
   ])("rejects %s", async (url, expected) => {
-    await expect(validator.validate(url)).resolves.toMatch(expected);
+    await expect(new UrlValidator().validate(url)).resolves.toMatch(expected);
   });
 
   it("rejects credentials embedded in the URL", async () => {
-    await expect(validator.validate("https://user:pass@example.com/hook")).resolves.toMatch(
-      /must not contain credentials/,
-    );
+    await expect(
+      new UrlValidator().validate("https://user:pass@example.com/hook"),
+    ).resolves.toMatch(/must not contain credentials/);
   });
 
   it.each([
@@ -42,7 +28,7 @@ describe("UrlValidator SSRF rules (#926)", () => {
     "http://127.1.2.3/hook",
     "http://[::1]/hook",
   ])("rejects loopback target %s", async (url) => {
-    expect(await validator.validate(url)).not.toBeNull();
+    expect(await new UrlValidator().validate(url)).not.toBeNull();
   });
 
   it.each([
@@ -56,7 +42,7 @@ describe("UrlValidator SSRF rules (#926)", () => {
     ["http://192.0.0.1/hook", "IETF protocol assignments"],
     ["http://239.255.255.250/hook", "multicast"],
   ])("rejects %s (%s)", async (url) => {
-    await expect(validator.validate(url)).resolves.toMatch(/private IP address/);
+    await expect(new UrlValidator().validate(url)).resolves.toMatch(/private IP address/);
   });
 
   it.each([
@@ -66,36 +52,36 @@ describe("UrlValidator SSRF rules (#926)", () => {
     ["http://[::ffff:10.0.0.1]/hook", "IPv4-mapped private"],
     ["http://[::ffff:a9fe:a9fe]/hook", "IPv4-mapped metadata in hex"],
   ])("rejects IPv6 %s (%s)", async (url) => {
-    expect(await validator.validate(url)).not.toBeNull();
+    expect(await new UrlValidator().validate(url)).not.toBeNull();
   });
 
   it("does not reject a public address that merely starts with a blocked digit", async () => {
-    withoutAsnLookup();
     // 172.15 and 172.32 sit outside 172.16.0.0/12; 100.63 outside CGNAT.
-    expect(await validator.validate("http://172.15.0.1/hook")).toBeNull();
-    expect(await validator.validate("http://172.32.0.1/hook")).toBeNull();
-    expect(await validator.validate("http://100.63.0.1/hook")).toBeNull();
+    expect(await new UrlValidator().validate("http://172.15.0.1/hook")).toBeNull();
+    expect(await new UrlValidator().validate("http://172.32.0.1/hook")).toBeNull();
+    expect(await new UrlValidator().validate("http://100.63.0.1/hook")).toBeNull();
   });
 
   it("rejects a malformed URL", async () => {
-    await expect(validator.validate("not a url")).resolves.toBe("Invalid URL format");
+    await expect(new UrlValidator().validate("not a url")).resolves.toBe("Invalid URL format");
+  });
+});
+
+describe("UrlValidator ASN blocking (#1029)", () => {
+  it("throws when blockedAsns is supplied, so operators relying on the absent control find out immediately", () => {
+    expect(() => new UrlValidator(["AS64512"])).toThrow(/blockedAsns/);
+    expect(() => new UrlValidator(["AS64512", "AS15169"])).toThrow(/not.*enforced/i);
   });
 
-  it("blocks a configured ASN", async () => {
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      new Response(JSON.stringify({ asn: "AS64512" }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      }),
-    );
-
-    await expect(
-      new UrlValidator(["AS64512"]).validate("https://hooks.example.com/orbital"),
-    ).resolves.toMatch(/blocked ASN/);
+  it("constructs without error when no blockedAsns is supplied", () => {
+    expect(() => new UrlValidator()).not.toThrow();
+    expect(() => new UrlValidator([])).not.toThrow();
   });
 
-  it("allows the URL when the ASN lookup fails - it is advisory, not a gate", async () => {
-    vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("network down"));
-    expect(await new UrlValidator(["AS64512"]).validate("https://hooks.example.com/x")).toBeNull();
+  it("does not perform any network lookup and never fails open on ASN", async () => {
+    const validator = new UrlValidator();
+    // No fetch is attempted; a public URL is allowed, a private one is blocked.
+    await expect(validator.validate("https://hooks.example.com/orbital")).resolves.toBeNull();
+    await expect(validator.validate("http://10.0.0.1/hook")).resolves.toMatch(/private IP address/);
   });
 });

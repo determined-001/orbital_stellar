@@ -19,6 +19,10 @@ vi.mock("@stellar/stellar-sdk", () => {
     operations() {
       const url = this.url;
       return {
+        // The engine asks Horizon for join=transactions; the double mirrors that.
+        join() {
+          return this;
+        },
         cursor() {
           return {
             stream(handlers: StreamHandlers) {

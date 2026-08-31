@@ -85,6 +85,8 @@ Adversaries, assets, and mitigations. Each scenario describes the failure mode, 
 
 **Detection.** A `webhook.dropped` event is emitted when delivery is blocked. Surface this in your observability.
 
+**Note on ASN blocking.** This package does *not* provide autonomous-system-number (ASN) blocking. A prior implementation accepted a `blockedAsns` config and resolved it via a per-validation network call to RIPE's RDAP `autnum` endpoint, but that endpoint takes an ASN, not a hostname, so the lookup always succeeded-empty and every URL was silently allowed (issue #1029). That control was removed; `UrlValidator` now throws if you pass `blockedAsns`, so a missing control fails loud rather than open. If you need ASN-based egress restrictions, implement them against a *cached local* ASN dataset in your own `urlValidator` - never a network call per validation, which is its own denial-of-service lever.
+
 ### Malformed SSE input
 
 **Threat.** Horizon - or a man-in-the-middle proxy - emits a record with unexpected shape or missing fields, attempting to crash the engine or smuggle data.
