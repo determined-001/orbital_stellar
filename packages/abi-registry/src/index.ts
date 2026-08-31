@@ -176,5 +176,10 @@ export type { IssueReporter, MismatchReportParams } from "./issueReporter.js";
 export { ConsoleAlertManager, NoopAlertManager } from "./alertManager.js";
 export type { AlertManager } from "./alertManager.js";
 
+// Cache primitives, exported so sibling packages (worker-core's registry
+// client) reuse them instead of writing a second LRU.
+export { LruCache } from "./LruCache.js";
+export { TtlLruCache } from "./TtlLruCache.js";
+
 export { runVerificationJob } from "./verificationJob.js";
 export type { VerificationJobConfig, JobResult } from "./verificationJob.js";
