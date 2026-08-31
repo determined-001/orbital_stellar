@@ -17,7 +17,7 @@
     "@orbital-stellar/abi-registry": "workspace:*",
     "@orbital-stellar/pulse-core": "workspace:*",
     "@orbital-stellar/pulse-webhooks": "workspace:*",
-    "@stellar/stellar-sdk": "^16.1.0",
+    "@stellar/stellar-sdk": "^17.0.1",
     "@upstash/ratelimit": "^2.0.8",
     "@upstash/redis": "^1.38.2",
     "framer-motion": "^13.1.1",
