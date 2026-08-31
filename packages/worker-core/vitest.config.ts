@@ -21,6 +21,7 @@ export default defineConfig({
         "src/guards/index.ts",
       ],
       reporter: ["text", "html", "json-summary"],
+      exclude: ["node_modules/", "dist/", "test/", "**/*.test.ts", "**/*.config.*"],
     },
   },
 });
