@@ -1,6 +1,6 @@
-import { clientIp } from "@lib/demo-limits";
-import { checkFireEventRateLimit } from "@lib/fireEventRateLimit";
-import { fireDemoEvent, DemoEmitterNotConfiguredError } from "@lib/fireDemoEvent";
+import { clientIp } from "../../../../lib/demo-limits";
+import { checkFireEventRateLimit } from "../../../../lib/fireEventRateLimit";
+import { fireDemoEvent, DemoEmitterNotConfiguredError } from "../../../../lib/fireDemoEvent";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
