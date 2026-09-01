@@ -1,0 +1,147 @@
+name: Operator submission
+description: Register an external worker operator (and optionally a worker offering) in the worker registry
+title: '[operator] <operator name>'
+labels: ['area:workers']
+assignees: ''
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for submitting an operator to the worker registry. This mirrors the
+        semantic-layer submission flow: submission, automated validation, human review,
+        publication.
+
+        **Before submitting**, please check:
+        - You control the `stellarAddress` you claim (you will need to sign a key-ownership proof)
+        - Your operator record validates against `operator.schema.json`
+        - Any target contract in an offering is already registered in the registry
+
+        **Important:** listing in the registry is **not** an endorsement of reliability.
+        Orbital verifies identity and contract existence, not execution quality, uptime,
+        or the accuracy of declared terms.
+
+        ---
+
+  - type: input
+    id: operatorId
+    attributes:
+      label: Operator ID
+      description: Unique kebab-case slug (e.g. acme-settlement)
+      placeholder: e.g. acme-settlement
+    validations:
+      required: true
+
+  - type: input
+    id: operatorName
+    attributes:
+      label: Operator name
+      description: Human-readable operator name
+      placeholder: e.g. Acme Settlement
+    validations:
+      required: true
+
+  - type: input
+    id: stellarAddress
+    attributes:
+      label: Stellar address
+      description: The G-prefixed Stellar account you control (key-ownership proof required)
+      placeholder: 'G…'
+    validations:
+      required: true
+
+  - type: input
+    id: contact
+    attributes:
+      label: Contact
+      description: Contact email or URL for the operator
+      placeholder: e.g. ops@acme.example
+    validations:
+      required: true
+
+  - type: input
+    id: maintainer
+    attributes:
+      label: Maintainer
+      description: GitHub handle or other identifier for the operator maintainer
+      placeholder: e.g. @acme-ops
+    validations:
+      required: true
+
+  - type: dropdown
+    id: supportedTriggers
+    attributes:
+      label: Supported trigger classes
+      description: Which trigger classes this operator handles
+      multiple: true
+      options:
+        - event
+        - schedule
+        - http
+        - manual
+    validations:
+      required: true
+
+  - type: dropdown
+    id: networks
+    attributes:
+      label: Networks
+      description: Which networks this operator operates on
+      multiple: true
+      options:
+        - mainnet
+        - testnet
+        - futurenet
+    validations:
+      required: true
+
+  - type: textarea
+    id: terms
+    attributes:
+      label: Terms
+      description: Structured terms (price per invocation, denomination, daily cap, SLA)
+      placeholder: |
+        pricePerInvocation: 0.01
+        denomination: USD
+        dailyCap: 10000
+        slaMs: 500
+    validations:
+      required: true
+
+  - type: dropdown
+    id: latencyTier
+    attributes:
+      label: Latency tier
+      description: Self-declared latency tier
+      options:
+        - realtime
+        - low
+        - standard
+        - bulk
+    validations:
+      required: true
+
+  - type: textarea
+    id: offering
+    attributes:
+      label: Worker offering (optional)
+      description: If you are also registering an offering, describe the target contract and function
+      placeholder: |
+        contractId: C…
+        functionName: sweep
+        triggerClass: event
+    validations:
+      required: false
+
+  - type: markdown
+    attributes:
+      value: |
+        ---
+
+        **After filing this issue**, open a pull request containing:
+        - `data/operators/<operatorId>/operator.json`
+        - `data/operators/<operatorId>/proof.json` (key-ownership signature)
+        - `data/operators/<operatorId>/offering.json` (optional)
+
+        The automated gate (`scripts/validate-operator-submission.mjs`) will validate
+        schema conformance, key ownership, and contract resolution. A maintainer then
+        reviews per the rubric in `docs/workers/submitting.md`.
