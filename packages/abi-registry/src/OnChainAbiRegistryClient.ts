@@ -189,6 +189,17 @@ export class OnChainAbiRegistryClient {
     return this.resolveRecord(contractId, candidate);
   }
 
+  /**
+   * Resolves one specific published version of `contractId`'s spec, or
+   * `null` if that exact version was never published under
+   * {@link OnChainAbiRegistryClientConfig.publisher}.
+   */
+  async getSpecByVersion(contractId: string, version: string): Promise<ContractSpec | null> {
+    const record = await this.simulateGetVersion(contractId, version);
+    if (!record) return null;
+    return this.resolveRecord(contractId, record);
+  }
+
   private async getRecords(contractId: string): Promise<SpecRecord[]> {
     const cached = this.recordsCache.get(contractId);
     if (cached !== undefined) return cached;

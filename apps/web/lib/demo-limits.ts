@@ -20,6 +20,8 @@ export const DEMO_LIMITS = {
   streamDurationMs: 25_000,
   /** One webhook-sample signing call per IP every N ms. */
   webhookCooldownMs: 20_000,
+  /** One registry-data (taxonomy/labels/spec) lookup per IP every N ms. */
+  registryDataCooldownMs: 2_000,
   /**
    * One "fire test event" on-chain invocation per IP every N ms.
    * Enforced via shared Upstash Redis in `fireEventRateLimit.ts`.
@@ -28,6 +30,8 @@ export const DEMO_LIMITS = {
   /** Upgrade URL surfaced in 429 responses. */
   upgradeUrl: "/cloud",
 } as const;
+
+const lastRegistryDataAt = new Map<string, number>();
 
 type EnvelopeBase = { error: "demo_limit_reached"; upgradeUrl: string };
 
@@ -148,6 +152,39 @@ export async function checkWebhookCooldown(ip: string): Promise<CooldownResult> 
       retryAfterMs,
     },
   };
+}
+
+/**
+ * Registry-data endpoints (taxonomy/labels/spec). Keyed by `ip:endpoint`
+ * rather than `ip` alone: `/explore` fans out to two different endpoints
+ * (spec + labels) in one `Promise.all`, and a single shared per-IP cooldown
+ * would 429 whichever of the two loses the race every single search - one
+ * request always arrives within the same cooldown window as the other.
+ * Per-endpoint still stops a caller hammering one route repeatedly.
+ */
+export function checkRegistryDataCooldown(
+  ip: string,
+  endpoint: "taxonomy" | "labels" | "spec",
+): { ok: true } | { ok: false; body: RateLimitEnvelope } {
+  const key = `${ip}:${endpoint}`;
+  const now = Date.now();
+  const last = lastRegistryDataAt.get(key);
+  if (last !== undefined && now - last < DEMO_LIMITS.registryDataCooldownMs) {
+    const retryAfterMs = DEMO_LIMITS.registryDataCooldownMs - (now - last);
+    return {
+      ok: false,
+      body: {
+        error: "demo_limit_reached",
+        upgradeUrl: DEMO_LIMITS.upgradeUrl,
+        reason: "rate_limit",
+        message:
+          "Registry data lookups are rate-limited on the demo. Sign up for Orbital Cloud for production use.",
+        retryAfterMs,
+      },
+    };
+  }
+  lastRegistryDataAt.set(key, now);
+  return { ok: true };
 }
 
 /**
