@@ -23,6 +23,8 @@ import { decodeUnifiedBurn } from "./cap67/decodeBurn.js";
 import { decodeUnifiedSetAuthorized } from "./cap67/decodeSetAuthorized.js";
 import { normalizeUnifiedSetAuthorized } from "./cap67/normalizeSetAuthorized.js";
 import { issuerFromAsset, toPaymentAddress } from "./cap67/normalizeAssetEvent.js";
+import { DedupeWindow, deriveDedupeKey } from "./dedupe.js";
+import type { DedupeEventRef, DedupeTransport } from "./dedupe.js";
 import type {
   AccountCreatedEvent,
   AccountMergeEvent,
@@ -159,6 +161,15 @@ const HORIZON_OP_TYPE_TO_FAMILY: Readonly<Record<string, EventFamily>> = {
   set_trust_line_flags: "trustlineAuth",
 };
 
+/**
+ * Bounded capacity of the dedupe window (issue 6.13). Sized generously
+ * relative to the narrow routing-transition window it exists to cover -
+ * this is not meant to catch duplicates across the entire runtime, only
+ * ones observed close together while a mode switch or `"auto"` fallback
+ * resolves.
+ */
+const DEDUPE_WINDOW_CAPACITY = 1024;
+
 const noop: Logger = { info: () => {}, warn: () => {}, error: () => {} };
 
 /**
@@ -265,6 +276,32 @@ export class EventEngine {
    * by `dispatchUnifiedEvent()`'s unified-side dispatch gate.
    */
   private effectiveIngestion: "unified" | "horizon" = "horizon";
+  /**
+   * Recently-seen dedupe keys (issue 6.13), guarding against the same
+   * on-chain movement reaching a `Watcher` twice during a routing
+   * transition - once via Horizon, once via the unified transport. Checked
+   * once, at the top of {@link route}.
+   */
+  private readonly dedupeWindow = new DedupeWindow(DEDUPE_WINDOW_CAPACITY);
+  /**
+   * Associates a dedupe key - and the transport that observed it - with the
+   * exact event object it was derived for, without widening any public event
+   * type's shape. Set by the Horizon `onmessage` handler and by
+   * `dispatchUnifiedEvent()` for the two families with a unified equivalent
+   * (`payment`, `trustlineAuth`); every other event is never a duplication
+   * risk (only one transport ever produces it) and is never given an entry
+   * here. A `WeakMap` needs no manual cleanup - an entry disappears once the
+   * event object itself is no longer referenced.
+   *
+   * The transport travels with the key because suppression is cross-transport
+   * only: one operation can emit several unified events sharing a single
+   * (operation-granular) key, and those must not suppress each other. See
+   * {@link DedupeWindow.seenFrom}.
+   */
+  private readonly dedupeKeyByEvent = new WeakMap<
+    object,
+    { key: string; transport: DedupeTransport }
+  >();
   /**
    * Optional live Soroban subscriber. Wired only when the engine is configured
    * for live contract streaming; otherwise undefined, and the guarded calls
@@ -1104,6 +1141,64 @@ export class EventEngine {
     return HORIZON_OP_TYPE_TO_FAMILY[record.type];
   }
 
+  /**
+   * Derives a {@link DedupeEventRef} from a raw Horizon operation record
+   * (issue 6.13), for the two families - `payment`, `trustlineAuth` - that
+   * could also arrive via the unified transport.
+   *
+   * `index` uses the operation's own Horizon `id` as-is. Horizon's `id` is
+   * the operation-level TOID (total-order ID; ledger, transaction, and
+   * operation position packed into one value) - and Soroban RPC's unified
+   * event `id` carries that same TOID as its leading segment (see
+   * {@link deriveUnifiedDedupeRef}). Treating both as an opaque shared value
+   * this way means neither side needs to decode the TOID's internal bit
+   * layout to agree on it. It must stay a `BigInt`-derived string, never
+   * `Number(id)`: a TOID exceeds `Number.MAX_SAFE_INTEGER` past ledger
+   * ~2,097,152, which both testnet and pubnet are well past today, and
+   * `Number()` silently collapses distinct operations in the same
+   * transaction onto the same key rather than just losing precision benignly.
+   *
+   * Returns `undefined` when the record lacks either field, so the caller
+   * skips the dedupe check entirely for that event rather than guessing.
+   */
+  private deriveHorizonDedupeRef(record: unknown): DedupeEventRef | undefined {
+    if (!this.isRecord(record)) return undefined;
+    const txHash = record.transaction_hash;
+    const id = record.id;
+    if (typeof txHash !== "string" || typeof id !== "string") return undefined;
+    let index: string;
+    try {
+      index = BigInt(id).toString();
+    } catch {
+      return undefined;
+    }
+    return { txHash, index };
+  }
+
+  /**
+   * Derives a {@link DedupeEventRef} from a raw unified-transport event
+   * (issue 6.13). `index` is the leading segment of the event's own `id`
+   * (Soroban RPC's documented `<toid>-<eventIndex>` format) - the same
+   * operation-level TOID {@link deriveHorizonDedupeRef} reads directly off
+   * a Horizon record's `id`. See that method's doc for the shared-opaque-
+   * value reasoning and why it must round-trip through `BigInt`, not
+   * `Number`. `BigInt(...).toString()` also normalizes the unified stream's
+   * zero-padded TOID prefix against Horizon's unpadded form, so the two
+   * sides agree even though their wire representations differ.
+   */
+  private deriveUnifiedDedupeRef(raw: SorobanRpcEvent): DedupeEventRef | undefined {
+    if (typeof raw.txHash !== "string") return undefined;
+    const prefix = raw.id.split("-")[0];
+    if (prefix === undefined) return undefined;
+    let index: string;
+    try {
+      index = BigInt(prefix).toString();
+    } catch {
+      return undefined;
+    }
+    return { txHash: raw.txHash, index };
+  }
+
   async healthCheck(thresholdMs = 5 * 60 * 1000): Promise<HealthCheckResult> {
     if (this.networkSources) {
       const reasons: string[] = [];
@@ -1389,56 +1484,78 @@ export class EventEngine {
     }
 
     const makeError = (reason: string) => new Error(reason);
+    // Dedupe (issue 6.13): `payment`/`trustlineAuth` are the only families
+    // that could also arrive via Horizon, so this is the only ref worth
+    // deriving here - every symbol below produces one of those two.
+    const dedupeRef = this.deriveUnifiedDedupeRef(raw);
 
     try {
       switch (symbol) {
         case "transfer": {
           const transfer = decodeUnifiedTransfer(event);
           const asset = transfer.asset === "native" ? "XLM" : transfer.asset;
-          this.route(
-            withTimestampDate({
-              type: "unknown",
-              to: toPaymentAddress(transfer.to, makeError),
-              from: toPaymentAddress(transfer.from, makeError),
-              amount: fromBigInt(transfer.amount),
-              asset,
-              timestamp: ledgerClosedAt,
-              ...(transfer.memo !== undefined ? { memo: transfer.memo } : {}),
-            }),
-          );
+          const pending = withTimestampDate({
+            type: "unknown" as const,
+            to: toPaymentAddress(transfer.to, makeError),
+            from: toPaymentAddress(transfer.from, makeError),
+            amount: fromBigInt(transfer.amount),
+            asset,
+            timestamp: ledgerClosedAt,
+            ...(transfer.memo !== undefined ? { memo: transfer.memo } : {}),
+          });
+          if (dedupeRef)
+            this.dedupeKeyByEvent.set(pending, {
+              key: deriveDedupeKey(dedupeRef),
+              transport: "unified",
+            });
+          this.route(pending);
           return;
         }
         case "mint": {
           const mint = decodeUnifiedMint(event);
-          this.route(
-            withTimestampDate({
-              type: "unknown",
-              to: toPaymentAddress(mint.to, makeError),
-              from: issuerFromAsset(mint.asset, makeError),
-              amount: fromBigInt(mint.amount),
-              asset: mint.asset,
-              timestamp: ledgerClosedAt,
-            }),
-          );
+          const pending = withTimestampDate({
+            type: "unknown" as const,
+            to: toPaymentAddress(mint.to, makeError),
+            from: issuerFromAsset(mint.asset, makeError),
+            amount: fromBigInt(mint.amount),
+            asset: mint.asset,
+            timestamp: ledgerClosedAt,
+          });
+          if (dedupeRef)
+            this.dedupeKeyByEvent.set(pending, {
+              key: deriveDedupeKey(dedupeRef),
+              transport: "unified",
+            });
+          this.route(pending);
           return;
         }
         case "burn": {
           const burn = decodeUnifiedBurn(event);
-          this.route(
-            withTimestampDate({
-              type: "unknown",
-              to: issuerFromAsset(burn.asset, makeError),
-              from: toPaymentAddress(burn.from, makeError),
-              amount: fromBigInt(burn.amount),
-              asset: burn.asset,
-              timestamp: ledgerClosedAt,
-            }),
-          );
+          const pending = withTimestampDate({
+            type: "unknown" as const,
+            to: issuerFromAsset(burn.asset, makeError),
+            from: toPaymentAddress(burn.from, makeError),
+            amount: fromBigInt(burn.amount),
+            asset: burn.asset,
+            timestamp: ledgerClosedAt,
+          });
+          if (dedupeRef)
+            this.dedupeKeyByEvent.set(pending, {
+              key: deriveDedupeKey(dedupeRef),
+              transport: "unified",
+            });
+          this.route(pending);
           return;
         }
         case "set_authorized": {
           const setAuthorized = decodeUnifiedSetAuthorized(event);
-          this.route(normalizeUnifiedSetAuthorized(setAuthorized, ledgerClosedAt));
+          const normalized = normalizeUnifiedSetAuthorized(setAuthorized, ledgerClosedAt);
+          if (dedupeRef)
+            this.dedupeKeyByEvent.set(normalized, {
+              key: deriveDedupeKey(dedupeRef),
+              transport: "unified",
+            });
+          this.route(normalized);
           return;
         }
         default:
@@ -1682,6 +1799,18 @@ export class EventEngine {
         const family = this.horizonEventFamily(record);
         if (family && resolveFamilyTransport(family, this.effectiveIngestion) === "unified") {
           return;
+        }
+
+        // Dedupe (issue 6.13): only `payment`/`trustlineAuth` can arrive via
+        // either transport, so only those need a key at all.
+        if (family === "payment" || family === "trustlineAuth") {
+          const ref = this.deriveHorizonDedupeRef(record);
+          if (ref) {
+            this.dedupeKeyByEvent.set(event, {
+              key: deriveDedupeKey(ref),
+              transport: "horizon",
+            });
+          }
         }
 
         this.enqueueEvent(event);
@@ -2870,6 +2999,17 @@ export class EventEngine {
   }
 
   private route(event: Timestamped<NormalizedEventOrPending>): void {
+    // Dedupe (issue 6.13): suppress a second delivery of the same on-chain
+    // movement observed via both transports during a routing transition.
+    // Only `payment`/`trustlineAuth`-family events ever carry a key at all
+    // (see `dedupeKeyByEvent`'s doc) - every other event is a no-op here.
+    // Suppression is cross-transport only; a repeat key from the same
+    // transport is a distinct movement within one operation, not a duplicate.
+    const dedupe = this.dedupeKeyByEvent.get(event);
+    if (dedupe !== undefined && this.dedupeWindow.seenFrom(dedupe.key, dedupe.transport)) {
+      return;
+    }
+
     // Check if Soroban source is paused for contract events
     if (
       (event.type === "contract.invoked" || event.type === "contract.emitted") &&

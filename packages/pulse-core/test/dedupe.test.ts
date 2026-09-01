@@ -13,20 +13,20 @@ import type { DedupeEventRef } from "../src/dedupe.js";
 
 describe("deriveDedupeKey", () => {
   it("produces the same key for the same txHash + index", () => {
-    const a: DedupeEventRef = { txHash: "abc123", index: 0 };
-    const b: DedupeEventRef = { txHash: "abc123", index: 0 };
+    const a: DedupeEventRef = { txHash: "abc123", index: "0" };
+    const b: DedupeEventRef = { txHash: "abc123", index: "0" };
     expect(deriveDedupeKey(a)).toBe(deriveDedupeKey(b));
   });
 
   it("produces different keys for different indexes in the same transaction", () => {
-    const a = deriveDedupeKey({ txHash: "abc123", index: 0 });
-    const b = deriveDedupeKey({ txHash: "abc123", index: 1 });
+    const a = deriveDedupeKey({ txHash: "abc123", index: "0" });
+    const b = deriveDedupeKey({ txHash: "abc123", index: "1" });
     expect(a).not.toBe(b);
   });
 
   it("produces different keys for different transactions", () => {
-    const a = deriveDedupeKey({ txHash: "abc123", index: 0 });
-    const b = deriveDedupeKey({ txHash: "def456", index: 0 });
+    const a = deriveDedupeKey({ txHash: "abc123", index: "0" });
+    const b = deriveDedupeKey({ txHash: "def456", index: "0" });
     expect(a).not.toBe(b);
   });
 
@@ -37,11 +37,11 @@ describe("deriveDedupeKey", () => {
     // ordinal) - both transports must agree on one key for it.
     const fromHorizonOperation: DedupeEventRef = {
       txHash: "8893b6db51a5c6b3a1ee0a019cb0f11af45e3c41c34a10349ce4d2df7419d620",
-      index: 0,
+      index: "0",
     };
     const fromUnifiedEvent: DedupeEventRef = {
       txHash: "8893b6db51a5c6b3a1ee0a019cb0f11af45e3c41c34a10349ce4d2df7419d620",
-      index: 0,
+      index: "0",
     };
 
     expect(deriveDedupeKey(fromHorizonOperation)).toBe(deriveDedupeKey(fromUnifiedEvent));
@@ -57,7 +57,7 @@ describe("DedupeWindow", () => {
 
   it("returns false the first time a key is seen, true on repeats", () => {
     const window = new DedupeWindow(10);
-    const key = deriveDedupeKey({ txHash: "abc", index: 0 });
+    const key = deriveDedupeKey({ txHash: "abc", index: "0" });
 
     expect(window.seenBefore(key)).toBe(false);
     expect(window.seenBefore(key)).toBe(true);
@@ -66,8 +66,8 @@ describe("DedupeWindow", () => {
 
   it("delivers the same fixture event exactly once across both transports", () => {
     const window = new DedupeWindow(10);
-    const horizonRef: DedupeEventRef = { txHash: "tx-1", index: 0 };
-    const unifiedRef: DedupeEventRef = { txHash: "tx-1", index: 0 };
+    const horizonRef: DedupeEventRef = { txHash: "tx-1", index: "0" };
+    const unifiedRef: DedupeEventRef = { txHash: "tx-1", index: "0" };
 
     const delivered: string[] = [];
     for (const ref of [horizonRef, unifiedRef]) {
@@ -82,8 +82,8 @@ describe("DedupeWindow", () => {
 
   it("tracks independent keys separately", () => {
     const window = new DedupeWindow(10);
-    const keyA = deriveDedupeKey({ txHash: "tx-a", index: 0 });
-    const keyB = deriveDedupeKey({ txHash: "tx-b", index: 0 });
+    const keyA = deriveDedupeKey({ txHash: "tx-a", index: "0" });
+    const keyB = deriveDedupeKey({ txHash: "tx-b", index: "0" });
 
     expect(window.seenBefore(keyA)).toBe(false);
     expect(window.seenBefore(keyB)).toBe(false);
@@ -94,7 +94,7 @@ describe("DedupeWindow", () => {
   it("never grows the window past its capacity", () => {
     const window = new DedupeWindow(5);
     for (let i = 0; i < 100; i++) {
-      window.seenBefore(deriveDedupeKey({ txHash: "tx", index: i }));
+      window.seenBefore(deriveDedupeKey({ txHash: "tx", index: String(i) }));
       expect(window.size).toBeLessThanOrEqual(5);
     }
     expect(window.size).toBe(5);
@@ -102,9 +102,9 @@ describe("DedupeWindow", () => {
 
   it("evicts the oldest key once at capacity, so it is no longer suppressed", () => {
     const window = new DedupeWindow(2);
-    const keyA = deriveDedupeKey({ txHash: "tx-a", index: 0 });
-    const keyB = deriveDedupeKey({ txHash: "tx-b", index: 0 });
-    const keyC = deriveDedupeKey({ txHash: "tx-c", index: 0 });
+    const keyA = deriveDedupeKey({ txHash: "tx-a", index: "0" });
+    const keyB = deriveDedupeKey({ txHash: "tx-b", index: "0" });
+    const keyC = deriveDedupeKey({ txHash: "tx-c", index: "0" });
 
     expect(window.seenBefore(keyA)).toBe(false);
     expect(window.seenBefore(keyB)).toBe(false);
@@ -115,5 +115,48 @@ describe("DedupeWindow", () => {
     expect(window.seenBefore(keyA)).toBe(false);
     // keyB and keyC are still within the window.
     expect(window.size).toBe(2);
+  });
+
+  it("seenFrom suppresses a cross-transport repeat but not a same-transport one", () => {
+    const window = new DedupeWindow(10);
+    const key = deriveDedupeKey({ txHash: "tx-1", index: "0" });
+
+    // Three unified events emitted by one operation share a key.
+    expect(window.seenFrom(key, "unified")).toBe(false);
+    expect(window.seenFrom(key, "unified")).toBe(false);
+    expect(window.seenFrom(key, "unified")).toBe(false);
+
+    // The Horizon record for that same operation is the duplicate.
+    expect(window.seenFrom(key, "horizon")).toBe(true);
+
+    // ...and only once: a second Horizon observation is a distinct movement
+    // by the same-transport rule, so the counting property holds in both
+    // orderings.
+    expect(window.seenFrom(key, "horizon")).toBe(false);
+  });
+
+  it("seenFrom keeps distinct operations independent", () => {
+    const window = new DedupeWindow(10);
+    const keyA = deriveDedupeKey({ txHash: "tx-a", index: "0" });
+    const keyB = deriveDedupeKey({ txHash: "tx-a", index: "1" });
+
+    expect(window.seenFrom(keyA, "unified")).toBe(false);
+    expect(window.seenFrom(keyB, "horizon")).toBe(false);
+    expect(window.seenFrom(keyA, "horizon")).toBe(true);
+    expect(window.seenFrom(keyB, "unified")).toBe(true);
+  });
+
+  it("seenFrom respects the capacity bound", () => {
+    const window = new DedupeWindow(2);
+    const key = deriveDedupeKey({ txHash: "tx-1", index: "0" });
+
+    expect(window.seenFrom(key, "unified")).toBe(false);
+    window.seenFrom(deriveDedupeKey({ txHash: "tx-2", index: "0" }), "unified");
+    window.seenFrom(deriveDedupeKey({ txHash: "tx-3", index: "0" }), "unified");
+
+    expect(window.size).toBe(2);
+    // The first key was evicted, so its cross-transport pair is no longer
+    // recognised as a duplicate.
+    expect(window.seenFrom(key, "horizon")).toBe(false);
   });
 });
