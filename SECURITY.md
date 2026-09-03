@@ -12,6 +12,7 @@
 - [Reporting a vulnerability](#reporting-a-vulnerability)
 - [Scope](#scope)
 - [Threat model](#threat-model)
+- [Vault audit gate (Phase 4 worker layer)](#vault-audit-gate-phase-4-worker-layer)
 - [Secret rotation runbook](#secret-rotation-runbook)
 - [Repository secret inventory](#repository-secret-inventory)
 - [Dependency policy](#dependency-policy)
@@ -129,6 +130,52 @@ Adversaries, assets, and mitigations. Each scenario describes the failure mode, 
 
 ---
 
+## Vault audit gate (Phase 4 worker layer)
+
+The worker layer's vault contract (`contracts/vault`, issue #1068 / "22.1
+Soroban vault contract with hard constraints") holds user funds once it
+ships. This section states the audit gate as a policy now, before the
+contract exists, so the gate cannot be quietly skipped or forgotten once it
+does. See issue #1069 ("22.2 Vault security audit and property tests") for
+the full acceptance criteria this section tracks.
+
+**No audit has been commissioned or performed as of this writing.** This is
+not a summary of a completed audit - there is nothing to summarize, because
+the vault contract itself does not exist yet. Property-test and fuzz-test
+*specifications* for the four invariants below live in
+`contracts/vault/tests/property.rs` and `tests/fuzz.rs`, marked `#[ignore]`
+and documented as non-functional until #1068 lands - they are not audit
+results.
+
+**The gate, stated in advance:**
+
+1. `contracts/vault` **must not be deployed to mainnet** until all of the
+   following are true:
+   - The four invariants below hold under property testing:
+     - Funds only ever return to their depositor.
+     - The allow-list only narrows.
+     - Slippage bounds always hold.
+     - Worker authority never widens.
+   - Fuzzing has run over deposit/withdraw/action sequences, including
+     interleaved and reentrant orderings.
+   - An external security audit has been commissioned and completed.
+2. The audit report is published in `docs/audits/`, including every finding
+   - not a curated summary. A finding that was accepted rather than fixed
+   carries a written rationale in the same report.
+3. This section is updated with a link to the report and its landing commit
+   once that happens.
+4. Testnet deployment is not gated the same way - the worker layer's testnet
+   rollout can proceed with property/fuzz coverage in place, ahead of the
+   external audit, but mainnet cannot.
+
+Until all of the above is true, `contracts/vault` is testnet-only, and any
+deployment tooling for it must refuse to target mainnet by construction (the
+same pattern `assertRestrictedSecretNetwork` uses for `DEMO_EMITTER_SECRET`
+and the fire-event path today - see
+[Repository secret inventory](#repository-secret-inventory)).
+
+---
+
 ## Secret rotation runbook
 
 If you suspect a webhook secret has leaked, rotate immediately. The general procedure assumes you control both the sender (`WebhookDelivery`) and the receiver.
@@ -232,3 +279,4 @@ For high-severity issues we coordinate with downstream consumers (the named inte
 - [`docs/open-source-policy.md`](./docs/open-source-policy.md) - license commitments
 - [`docs/COOKBOOK.md` § 9 Route `webhook.failed` to a dead-letter queue](./docs/COOKBOOK.md#9-route-webhookfailed-to-a-dead-letter-queue)
 - [`packages/pulse-webhooks/README.md`](./packages/pulse-webhooks/README.md) - full delivery contract
+- [`docs/audits/`](./docs/audits/) - published external audit reports (none yet - see [Vault audit gate](#vault-audit-gate-phase-4-worker-layer))

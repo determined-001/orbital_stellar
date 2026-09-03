@@ -17,6 +17,15 @@ only globs `packages/*` and `apps/*`); it has its own toolchain and CI job.
   that emits a `Ping` event. Exists solely so the public `/demo/contracts` page
   can offer a "Fire test event" button without ever touching the registry
   contract's real publish path.
+- **`vault`** (`orbital-vault`) - **placeholder only, not a working contract.**
+  Empty crate (`src/lib.rs` is a doc comment, no `#[contract]`) that exists so
+  `tests/property.rs` and `tests/fuzz.rs` - `#[ignore]`d specifications of the
+  invariants the real vault must uphold (issue #1069) - compile and are
+  visible to `cargo test`. The actual vault contract is issue #1068 ("22.1
+  Soroban vault contract with hard constraints"), open and unstarted; it
+  replaces this crate entirely. See [`SECURITY.md`'s vault audit
+  gate](../SECURITY.md#vault-audit-gate-phase-4-worker-layer) for the
+  mainnet-deployment policy.
 
 ## Toolchain
 
