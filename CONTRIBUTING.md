@@ -11,6 +11,7 @@ Thank you for your interest in contributing. This guide covers everything you ne
 - [Coding standards](#coding-standards)
 - [Testing](#testing)
 - [Opening a pull request](#opening-a-pull-request)
+- [The custody gate](#the-custody-gate)
 - [Stellar Wave Program](#stellar-wave-program)
 - [Adding yourself to the contributors list](#adding-yourself-to-the-contributors-list)
 
@@ -158,6 +159,62 @@ CI runs tests on Node 20 and Node 22. Make sure your changes pass on both.
 6. **Respond to review feedback.** A maintainer will review within a few days.
 
 PRs that change public APIs require a description of the migration path. Breaking changes will not be merged until a major version is planned.
+
+---
+
+## The custody gate
+
+If your change touches `packages/worker-core/`, `contracts/vault/`,
+`contracts/payroll/`, `contracts/registry/`, `packages/pulse-core/` or
+`scripts/`, a CI job called **Custody gate** runs against it.
+
+It enforces one rule, **§C.2 rule 3**:
+
+> A design that requires a worker to hold signing authority over a user's
+> account is a design bug, not a feature.
+
+A worker's power is limited to "call a constrained function", never "decide
+where money goes". If a worker holds the key, what we are shipping is custody
+wearing a different name. The reasoning, and the vault pattern to use instead,
+are in [docs/design/workers.md](docs/design/workers.md#c2-no-user-custody).
+
+### Running it yourself
+
+Dependency-free, so it needs no install:
+
+```bash
+node scripts/check-no-user-custody.mjs                    # everything covered
+node scripts/check-no-user-custody.mjs --base origin/main # just your changes
+```
+
+It flags two things and nothing else: a **field declaration** whose name pairs a
+user-ish owner (`user`, `subscriber`, `depositor`, `customer`, `client`,
+`owner`) with key material (`secret`, `seed`, `keypair`, `private_key`,
+`signing_key`, `mnemonic`), and a **literal Stellar secret seed**. Comments,
+prose and text inside strings are not matched — writing "never store a user
+secret" in a doc comment does not fail anything.
+
+### It is advisory, and that is deliberate
+
+The gate is **not** a required check and must not be added to the required-checks
+set in branch protection. If it fires on something that is genuinely fine, a
+reviewer confirms it and applies the **`custody-reviewed`** label, which makes
+the job pass.
+
+That way a false positive can never wedge the repo, and clearing one always
+leaves a record of who decided it was fine — which is the part a `// eslint-
+disable`-style inline escape hatch would throw away.
+
+### Adding a covered path
+
+Two places, and both are needed:
+
+1. `COVERED` in `scripts/check-no-user-custody.mjs`
+2. `paths:` in `.github/workflows/custody-gate.yml`
+
+Miss the second and the gate simply never runs on that path — the exact failure
+[#1026](https://github.com/determined-001/orbital_stellar/issues/1026) records
+for `contracts/`, `data/` and `scripts/` in `ci.yml`.
 
 ---
 

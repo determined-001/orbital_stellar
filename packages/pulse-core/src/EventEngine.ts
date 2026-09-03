@@ -45,6 +45,7 @@ import type {
   OfferEvent,
   OfferEventType,
   PriceR,
+  ClassicEventIdentity,
   PaymentEvent,
   PaymentEventType,
   ReconnectConfig,
@@ -1468,7 +1469,11 @@ export class EventEngine {
 
     const streamEpoch = ++this.streamEpoch;
     if (!this.cursorStore) {
-      this.stopStream = this.server.operations().cursor("now").stream(callbacks);
+      this.stopStream = this.server
+        .operations()
+        .join("transactions")
+        .cursor("now")
+        .stream(callbacks);
       return;
     }
 
@@ -1478,7 +1483,11 @@ export class EventEngine {
       }
 
       this.horizonCursor = streamCursor;
-      this.stopStream = this.server.operations().cursor(streamCursor).stream(callbacks);
+      this.stopStream = this.server
+        .operations()
+        .join("transactions")
+        .cursor(streamCursor)
+        .stream(callbacks);
     });
   }
 
@@ -1844,6 +1853,38 @@ export class EventEngine {
     return name !== undefined ? `${name} (${key})` : `address ${key}`;
   }
 
+  /**
+   * Transaction-identity fields for a classic Horizon operation record.
+   *
+   * `transaction_hash` is on every operation record Horizon returns.
+   * `ledger` and `memo` live on the transaction, not the operation, so they
+   * are only present when the stream asked for `join=transactions` (see
+   * `openStream`). Each field is omitted rather than set to `undefined` so a
+   * normalized event never carries a key it has no value for.
+   */
+  private classicIdentity(r: Record<string, unknown>): ClassicEventIdentity {
+    const identity: ClassicEventIdentity = {};
+
+    if (typeof r.transaction_hash === "string" && r.transaction_hash !== "") {
+      identity.txHash = r.transaction_hash;
+    }
+
+    const tx = r.transaction;
+    if (typeof tx === "object" && tx !== null) {
+      const joined = tx as Record<string, unknown>;
+      if (typeof joined.ledger === "number") {
+        identity.ledger = joined.ledger;
+      }
+      // Horizon reports an absent memo as memo_type "none", with `memo` either
+      // null or missing - neither is a memo a consumer can correlate on.
+      if (joined.memo_type !== "none" && typeof joined.memo === "string" && joined.memo !== "") {
+        identity.memo = joined.memo;
+      }
+    }
+
+    return identity;
+  }
+
   private normalize(record: unknown): Timestamped<NormalizedEventOrPending> | null {
     const result = this._normalize(record);
     return result ? withTimestampDate(result) : null;
@@ -1876,6 +1917,7 @@ export class EventEngine {
         amount: toStellarAmount(r.amount as string),
         asset,
         timestamp: r.created_at as string,
+        ...this.classicIdentity(r),
         raw: record as RawHorizonPayment,
       };
     }
@@ -1910,6 +1952,7 @@ export class EventEngine {
         source: toAccountAddress(r.account as string),
         destination: toAccountAddress(r.into as string),
         timestamp: r.created_at as string,
+        ...this.classicIdentity(r),
         raw: record as RawHorizonAccountMerge,
       };
     }
@@ -1992,6 +2035,7 @@ export class EventEngine {
       price: r.price as string,
       price_r: r.price_r as PriceR,
       timestamp: r.created_at,
+      ...this.classicIdentity(r),
       raw: raw as RawHorizonManageSellOffer | RawHorizonManageBuyOffer,
     };
   }
@@ -2014,6 +2058,7 @@ export class EventEngine {
       account: toAccountAddress(r.account),
       starting_balance: r.starting_balance,
       timestamp: r.created_at,
+      ...this.classicIdentity(r),
       raw: raw as RawHorizonCreateAccount,
     };
   }
@@ -2030,6 +2075,7 @@ export class EventEngine {
       source: toAccountAddress(r.source_account),
       bump_to: r.bump_to as string,
       timestamp: r.created_at,
+      ...this.classicIdentity(r),
       raw: raw as RawHorizonBumpSequence,
     };
   }
@@ -2071,6 +2117,7 @@ export class EventEngine {
       value,
       decoded,
       timestamp: typeof r.created_at === "string" ? r.created_at : "",
+      ...this.classicIdentity(r),
       raw: raw as RawHorizonManageData,
     };
   }
@@ -2101,6 +2148,7 @@ export class EventEngine {
       asset,
       limit,
       timestamp: r.created_at,
+      ...this.classicIdentity(r),
       raw: raw as RawHorizonChangeTrust,
     };
   }
@@ -2156,6 +2204,7 @@ export class EventEngine {
       source: toAccountAddress(r.source_account as string),
       changes,
       timestamp: r.created_at as string,
+      ...this.classicIdentity(r),
       raw: raw as RawHorizonSetOptions,
     };
   }
@@ -2209,6 +2258,7 @@ export class EventEngine {
       asset,
       amount: toStellarAmount(r.amount as string),
       timestamp: r.created_at as string,
+      ...this.classicIdentity(r),
       raw: raw as RawHorizonCreateClaimableBalance,
     };
   }
@@ -2235,6 +2285,7 @@ export class EventEngine {
       claimant: toAccountAddress(r.source_account as string),
       balanceId: r.balance_id as string,
       timestamp: r.created_at as string,
+      ...this.classicIdentity(r),
       raw: raw as RawHorizonClaimClaimableBalance,
     };
   }
@@ -2277,6 +2328,7 @@ export class EventEngine {
       reserves_deposited: r.reserves_deposited as LiquidityPoolReserve[],
       shares_received: r.shares_received as string,
       timestamp: r.created_at as string,
+      ...this.classicIdentity(r),
       raw: raw as RawHorizonLiquidityPoolDeposit,
     };
   }
@@ -2314,6 +2366,7 @@ export class EventEngine {
       reserves_received: r.reserves_received as LiquidityPoolReserve[],
       shares_redeemed: r.shares as string,
       timestamp: r.created_at as string,
+      ...this.classicIdentity(r),
       raw: raw as RawHorizonLiquidityPoolWithdraw,
     };
   }
@@ -2342,6 +2395,7 @@ export class EventEngine {
       asset,
       timestamp: r.created_at,
       operation: "allow_trust",
+      ...this.classicIdentity(r),
       raw: raw as RawHorizonAllowTrust,
     };
   }
@@ -2378,6 +2432,7 @@ export class EventEngine {
       asset,
       timestamp: r.created_at,
       operation: "set_trust_line_flags",
+      ...this.classicIdentity(r),
       raw: raw as RawHorizonSetTrustLineFlags,
     };
   }

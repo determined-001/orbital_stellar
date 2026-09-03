@@ -17,7 +17,7 @@ Both interfaces enable reliable, durable delivery irrespective of process crashe
 
 | Interface | Implementation | Storage Backend | Typical Use‑Case |
 |-----------|----------------|----------------|-----------------|
-| `RetryQueue` | `RedisRetryQueue` | Redis (list + sorted set) | Low‑latency, in‑memory retry with persistence via Redis AOF/RDB |
+| `RetryQueue` | `RedisRetryQueue` | Redis (two sorted sets + an ID→member hash each) | Low‑latency, in‑memory retry with persistence via Redis AOF/RDB |
 | `RetryQueue` | `SqsRetryQueue` | AWS SQS (standard queue) | Cloud‑native, highly‑available retry with built‑in dead‑letter support |
 | `DeadLetterStore` | `RedisDeadLetterStore` | Redis hash | Simple DLQ for development / self‑hosted environments |
 | `DeadLetterStore` | `SqsDeadLetterStore` | AWS SQS (DLQ) | Production‑grade DLQ with visibility timeout & redrive policy |
