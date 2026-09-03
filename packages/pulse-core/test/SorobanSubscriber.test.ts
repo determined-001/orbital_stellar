@@ -194,6 +194,10 @@ describe("SorobanSubscriber startLedger to cursor polling", () => {
     });
     (engine as any).server = {
       operations: () => ({
+        // The engine asks Horizon for join=transactions; the double mirrors that.
+        join() {
+          return this;
+        },
         cursor: () => ({
           stream: () => () => {},
         }),

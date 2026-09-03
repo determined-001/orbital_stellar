@@ -17,6 +17,10 @@ vi.mock("@stellar/stellar-sdk", () => {
   class MockServer {
     operations() {
       return {
+        // The engine asks Horizon for join=transactions; the double mirrors that.
+        join() {
+          return this;
+        },
         cursor(value: string) {
           cursorCalls.push(value);
           return {
