@@ -16,11 +16,28 @@ The site runs on `http://localhost:3000`.
 | Variable | Required | Values | Purpose |
 |---|---|---|---|
 | `NEXT_PUBLIC_NETWORK` | yes | `testnet` \| `mainnet` | Stellar network the demo `EventEngine` subscribes to. Surfaced in the UI's network notice. Fails loudly at first request if missing or invalid. |
-| `DEMO_EMITTER_CONTRACT_ID` | for fire-event | contract ID | Demo-emitter contract; falls back to `contracts/deployed.testnet.json` when unset. |
+| `DEMO_EMITTER_CONTRACT_ID` | **yes in production**, for fire-event | contract ID | Demo-emitter contract. In local development only, falls back to `contracts/deployed.testnet.json`. |
 | `DEMO_EMITTER_SECRET` | for fire-event | Stellar secret | Server-only invoker for `ping()` — never exposed to the client. |
+| `DEMO_EMITTER_RPC_URL` | no | URL | Soroban RPC endpoint. Defaults to `https://soroban-testnet.stellar.org`. |
+| `DEMO_EMITTER_NETWORK_PASSPHRASE` | no | passphrase | Defaults to the testnet passphrase. The demo path refuses to sign on mainnet. |
 | `UPSTASH_REDIS_REST_URL` | for fire-event | URL | Shared Upstash Redis REST URL (serverless rate limit). |
 | `UPSTASH_REDIS_REST_TOKEN` | for fire-event | token | Shared Upstash Redis REST token. |
 | `TRUSTED_PROXY_HOPS` | non-Vercel only | positive integer | Number of reverse proxies in front of the app. See [Client identification](#client-identification). |
+
+### The manifest fallback is local-development only
+
+`contracts/deployed.testnet.json` lives outside `apps/web` and is not traced into the
+serverless bundle, so it is never present in a deployed build. Relying on it in production
+made the demo report itself unconfigured with nothing logged (#1030). In production
+`DEMO_EMITTER_CONTRACT_ID` is therefore required, and the fallback is skipped entirely.
+
+`GET /api/demo/config` returns `{ configured, status, reason? }`, where `status` is:
+
+| `status` | Meaning |
+|---|---|
+| `ok` | Contract ID and secret both resolved. |
+| `unconfigured` | Nothing is set — the feature is deliberately off in this environment. |
+| `unreadable` | A deployment manifest exists but could not be read or parsed. |
 
 ## Client identification
 

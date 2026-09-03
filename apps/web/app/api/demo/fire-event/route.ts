@@ -1,18 +1,26 @@
-import { clientIp } from "../../../../lib/demo-limits";
-import { checkFireEventRateLimit } from "../../../../lib/fireEventRateLimit";
-import { fireDemoEvent, DemoEmitterNotConfiguredError } from "../../../../lib/fireDemoEvent";
+import { clientIp } from "@/lib/demo-limits";
+import { checkFireEventRateLimit } from "@/lib/fireEventRateLimit";
+import {
+  fireDemoEvent,
+  DemoEmitterNotConfiguredError,
+  getDemoEmitterConfig,
+} from "@/lib/fireDemoEvent";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 export async function POST(req: Request) {
-  const isProduction = process.env.VERCEL_ENV === "production" ||
-    (process.env.VERCEL_ENV === undefined && process.env.NODE_ENV === "production");
-
-  if (isProduction && !process.env.DEMO_EMITTER_CONTRACT_ID) {
-    console.error("[fire-event] DEMO_EMITTER_CONTRACT_ID is required in production.");
+  // Fail before the rate-limit round trip, and log the reason: a deployed
+  // misconfiguration used to be silent and looked like "feature off" (#1030).
+  const config = getDemoEmitterConfig();
+  if (!config.configured) {
+    console.warn(`[fire-event] demo emitter ${config.status}: ${config.reason ?? "no detail"}`);
     return Response.json(
-      { error: "not_configured", message: "Demo emitter is not configured." },
+      {
+        error: "not_configured",
+        status: config.status,
+        message: "Demo emitter is not configured.",
+      },
       { status: 503 },
     );
   }
@@ -31,29 +39,18 @@ export async function POST(req: Request) {
 
   try {
     const result = await fireDemoEvent();
-    if (!result) {
-      console.warn("[fire-event] Demo emitter returned no result; it may not be configured.");
-      return Response.json(
-        { error: "not_configured", message: "Demo emitter is not configured." },
-        { status: 503 },
-      );
-    }
     return Response.json(result);
   } catch (err) {
     if (err instanceof DemoEmitterNotConfiguredError) {
-      console.warn("[fire-event] Demo emitter not configured:", err.message);
+      console.warn("[fire-event] demo emitter not configured:", err.message);
       return Response.json({ error: "not_configured", message: err.message }, { status: 503 });
     }
-
-    const errorMessage = err instanceof Error ? err.message : "Failed to invoke the demo-emitter contract.";
-    if (/manifest/i.test(errorMessage)) {
-      console.error("[fire-event] Demo emitter manifest error:", errorMessage);
-      return Response.json({ error: "manifest_error", message: errorMessage }, { status: 502 });
-    }
-
-    console.error("[fire-event] Unhandled error invoking demo emitter:", err);
+    console.error("[fire-event] failed to invoke the demo-emitter contract:", err);
     return Response.json(
-      { error: "fire_event_failed", message: errorMessage },
+      {
+        error: "fire_event_failed",
+        message: err instanceof Error ? err.message : "Failed to invoke the demo-emitter contract.",
+      },
       { status: 502 },
     );
   }

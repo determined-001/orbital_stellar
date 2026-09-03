@@ -27,8 +27,17 @@ jobs:
           filters: |
             # Root manifests + lockfile affect every workspace project - a
             # dependency-only change must not skip the test jobs.
+            # Rule: any path whose contents are read at build or test time must
+            # appear in a filter. contracts/** carries deployed.testnet.json and
+            # Rust source consumed by verify-provenance; data/** feeds the
+            # schema-validated publishing pipeline and integrity.json; scripts/**
+            # contains build-time helpers invoked by both packages and web jobs
+            # (generate-horizon-types.mjs, assert-no-secrets-in-bundle.mjs).
             packages:
               - 'packages/**'
+              - 'contracts/**'
+              - 'data/**'
+              - 'scripts/**'
               - 'tsconfig.base.json'
               - 'package.json'
               - 'pnpm-workspace.yaml'
@@ -37,6 +46,9 @@ jobs:
             web:
               - 'apps/web/**'
               - 'packages/**'
+              - 'contracts/**'
+              - 'data/**'
+              - 'scripts/**'
               - 'package.json'
               - 'pnpm-workspace.yaml'
               - 'pnpm-lock.yaml'
@@ -83,14 +95,23 @@ jobs:
         run: pnpm tsc -p packages/abi-registry/tsconfig.json
       - name: Build pulse-core
         run: pnpm tsc -p packages/pulse-core/tsconfig.json
+      # worker-core imports @orbital-stellar/pulse-webhooks, which resolves through
+      # the package's "types" entry -- so its declarations have to exist on disk
+      # before worker-core is typechecked.
+      - name: Build pulse-webhooks
+        run: pnpm tsc -p packages/pulse-webhooks/tsconfig.json
       - name: Typecheck abi-registry
         run: pnpm tsc --noEmit -p packages/abi-registry/tsconfig.json
+      - name: Typecheck worker-core
+        run: pnpm tsc --noEmit -p packages/worker-core/tsconfig.json
       - name: Typecheck pulse-webhooks
         run: pnpm tsc --noEmit -p packages/pulse-webhooks/tsconfig.json
       - name: Typecheck pulse-notify
         run: pnpm tsc --noEmit -p packages/pulse-notify/tsconfig.json
       - name: Typecheck anchor-sdk
         run: pnpm tsc --noEmit -p packages/anchor-sdk/tsconfig.json
+      - name: Typecheck worker-core
+        run: pnpm tsc --noEmit -p packages/worker-core/tsconfig.json
       - name: Validate ABI specs
         run: pnpm --filter @orbital-stellar/abi-registry validate
       - name: Generate Horizon types & check drift      
@@ -225,7 +246,6 @@ jobs:
         env:
           # Canary secrets for the post-build client-bundle assertion. None of
           # these may appear in .next/static (#892, #926).
-          DEMO_EMITTER_CONTRACT_ID: CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2Y6
           DEMO_EMITTER_SECRET: SDEMOSECRET_CANARY_DO_NOT_SHIP_000000000000000000000000000
           SOROBAN_INVOKER_SECRET: SINVOKER_CANARY_DO_NOT_SHIP_00000000000000000000000000000
           UPSTASH_REDIS_REST_TOKEN: UPSTASH_CANARY_DO_NOT_SHIP_000000000000000000000000000
@@ -234,11 +254,10 @@ jobs:
         env:
           # Canary values for every secret the web app can read; the assertion
           # greps .next/static for each. See SECURITY.md for the inventory.
-          DEMO_EMITTER_CONTRACT_ID: CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2Y6
           DEMO_EMITTER_SECRET: SDEMOSECRET_CANARY_DO_NOT_SHIP_000000000000000000000000000
           SOROBAN_INVOKER_SECRET: SINVOKER_CANARY_DO_NOT_SHIP_00000000000000000000000000000
           UPSTASH_REDIS_REST_TOKEN: UPSTASH_CANARY_DO_NOT_SHIP_000000000000000000000000000
-        run: node scripts/assert-no-secrets-in-bundle.mjs --log-manifest-errors
+        run: node scripts/assert-no-secrets-in-bundle.mjs
 
   cli-smoke-test:
     needs: changes
