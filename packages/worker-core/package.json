@@ -1,18 +1,14 @@
 {
-  "name": "@orbital-worker-core",
+  "name": "@orbital-stellar/worker-core",
   "version": "0.1.0",
-  "description": "Orbital worker CLI and core",
+  "description": "The worker definition model for Orbital's worker layer - what a worker is, before anything runs one.",
   "license": "MIT",
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=20"
   },
-  "type": "commonjs",
-  "main": "dist/cli/index.js",
-  "types": "dist/cli/index.d.ts",
-  "bin": {
-    "orbital": "./bin/orbital-worker",
-    "orbital-worker": "./bin/orbital-worker"
-  },
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "files": [
     "dist",
     "bin",
@@ -28,11 +24,8 @@
     "access": "public"
   },
   "scripts": {
-    "build": "tsc",
-    "prepack": "npm run build",
-    "pretest": "npm run build",
-    "test": "vitest run && npm run test:package",
-    "test:package": "npm pack --dry-run && npm exec --package=. -- orbital --help",
+    "build": "tsc -p tsconfig.json",
+    "test": "pnpm test:types && vitest run",
     "test:types": "tsc --noEmit -p tsconfig.typetest.json",
     "test:coverage": "vitest run --coverage",
     "typecheck": "tsc --noEmit -p tsconfig.json"
@@ -44,9 +37,12 @@
     "yargs": "^17.7.2"
   },
   "devDependencies": {
-    "@types/node": "^20.0.0",
+    "@types/node": "^26.2.0",
+    "@types/yargs": "^17.0.33",
     "@vitest/coverage-v8": "^4.1.11",
-    "typescript": "^5.0.0",
-    "vitest": "^0.34.0"
+    "vitest": "^4.1.11"
+  },
+  "bin": {
+    "orbital-worker": "./bin/orbital-worker"
   }
 }
