@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 const url = process.argv[2] ?? "http://localhost:3000/api/registry/specs";
 const durationSeconds = Number(process.argv[3] ?? 60);
 const concurrency = Number(process.argv[4] ?? 20);
@@ -8,7 +10,7 @@ let stale = 0;
 
 async function worker() {
   while (Date.now() < end) {
-    const response = await fetch(url, { headers: { "x-api-key": `load-${Math.random()}` } });
+    const response = await fetch(url, { headers: { "x-api-key": `load-${randomUUID()}` } });
     requests += 1;
     if (response.status === 429) responses429 += 1;
     const body = await response.json().catch(() => null);
