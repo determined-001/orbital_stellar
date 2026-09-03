@@ -4,6 +4,13 @@ on:
   push:
     branches: [main]
   pull_request:
+  # The provenance check only ran when a PR touched contracts/**, so a
+  # deployment that stopped matching its source stayed invisible on main for
+  # three weeks - it surfaced only because an unrelated PR added a file under
+  # contracts/. A weekly run catches that drift on its own.
+  schedule:
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -27,15 +34,20 @@ jobs:
 
   test:
     needs: changes
-    if: ${{ needs.changes.outputs.contracts == 'true' }}
+    if: ${{ needs.changes.outputs.contracts == 'true' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
     steps:
       - uses: actions/checkout@v7
 
-      - uses: dtolnay/rust-toolchain@stable
+      # Pinned, not @stable: the recorded WASM hashes are only reproducible on
+      # the compiler they were built with, and @stable ignores
+      # contracts/rust-toolchain.toml. Keep this in step with the `channel`
+      # there - contracts/build-wasm.sh fails loudly if the two drift.
+      - uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: "1.97.1"
           # wasm32-unknown-unknown is rejected by soroban-sdk's build script on
           # Rust 1.82+ (reference-types/multi-value are on by default there and
           # unsupported by the Soroban environment) - wasm32v1-none is the
@@ -50,9 +62,8 @@ jobs:
         working-directory: contracts
         run: cargo test
 
-      - name: cargo build (release, wasm32v1-none)
-        working-directory: contracts
-        run: cargo build --release --target wasm32v1-none
+      - name: Build contract WASM (pinned toolchain, paths remapped)
+        run: ./contracts/build-wasm.sh
 
   verify-provenance:
     needs: test
@@ -62,8 +73,10 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: dtolnay/rust-toolchain@stable
+      # Pinned for the same reason as the test job above.
+      - uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: "1.97.1"
           targets: wasm32v1-none
 
       - uses: Swatinem/rust-cache@v2
@@ -75,9 +88,8 @@ jobs:
       - name: Install stellar-cli
         run: cargo binstall -y stellar-cli@25.2.0
 
-      - name: cargo build (release, wasm32v1-none)
-        working-directory: contracts
-        run: cargo build --release --target wasm32v1-none
+      - name: Build contract WASM (pinned toolchain, paths remapped)
+        run: ./contracts/build-wasm.sh
 
       - name: Verify deployed provenance
         working-directory: contracts
