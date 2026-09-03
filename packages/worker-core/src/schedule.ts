@@ -8,6 +8,16 @@ export interface IntervalSchedule {
 export interface CronSchedule {
   type: "cron";
   expression: string;
+  /**
+   * IANA zone the expression is interpreted in; defaults to UTC.
+   *
+   * Across a spring-forward transition an expression can name a local time that
+   * does not exist (02:30 on a day the clock jumps 02:00 -> 03:00). Such a run
+   * is shifted forward to the first instant that does exist, not dropped, which
+   * matches vixie-cron: a worker firing an hour late is a smaller failure than
+   * one that silently skips a window. Across a fall-back transition the
+   * repeated local time still yields a single run.
+   */
   timezone?: string;
 }
 

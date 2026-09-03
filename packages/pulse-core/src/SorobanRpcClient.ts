@@ -572,14 +572,11 @@ export class SorobanRpcClient implements LedgerCloseTimeSource {
    * Host wall-clock time is only used to decide when to poll; due-ness must
    * always be evaluated against this ledger value.
    */
-  async getLatestLedgerCloseTime(
-    options?: SorobanRpcCallOptions,
-  ): Promise<number> {
+  async getLatestLedgerCloseTime(options?: SorobanRpcCallOptions): Promise<number> {
     const nowMs = this.now();
     if (
       this.latestLedgerCloseTime !== undefined &&
-      nowMs - this.lastLedgerCloseTimeFetchMs <
-        this.minLedgerCloseTimePollIntervalMs
+      nowMs - this.lastLedgerCloseTimeFetchMs < this.minLedgerCloseTimePollIntervalMs
     ) {
       return this.latestLedgerCloseTime;
     }

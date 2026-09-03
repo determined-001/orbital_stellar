@@ -39,14 +39,19 @@ describe("schedule", () => {
     expect(nextDue(schedule, after).toISOString()).toBe("2024-03-12T06:00:00.000Z");
   });
 
-  test("cron skips non-existent DST times", () => {
+  // On 2024-03-10 America/New_York jumps 02:00 EST -> 03:00 EDT, so "0 2 * * *"
+  // names a local time that does not exist that day. The run is shifted forward
+  // to the first instant that does exist (03:00 EDT = 07:00Z) rather than
+  // dropped: a payroll-class worker running an hour late is a far smaller
+  // failure than one that silently skips a day.
+  test("cron shifts a non-existent local time forward instead of dropping the run", () => {
     const schedule: Schedule = {
       type: "cron",
       expression: "0 2 * * *",
       timezone: "America/New_York",
     };
     const after = new Date("2024-03-09T07:00:00Z");
-    expect(nextDue(schedule, after).toISOString()).toBe("2024-03-11T06:00:00.000Z");
+    expect(nextDue(schedule, after).toISOString()).toBe("2024-03-10T07:00:00.000Z");
   });
 
   test("dueTimesBetween cron respects timezone across a DST boundary", () => {
@@ -59,10 +64,13 @@ describe("schedule", () => {
     const to = new Date("2024-03-12T00:00:00Z");
     const times = dueTimesBetween(schedule, from, to);
     expect(times.map((t) => t.toISOString())).toEqual([
+      // EST: 02:00 local = 07:00Z
       "2024-03-08T07:00:00.000Z",
       "2024-03-09T07:00:00.000Z",
+      // 02:00 does not exist on the 10th; shifted to 03:00 EDT, still 07:00Z
+      "2024-03-10T07:00:00.000Z",
+      // EDT: 02:00 local = 06:00Z
       "2024-03-11T06:00:00.000Z",
-      "2024-03-12T06:00:00.000Z",
     ]);
   });
 });
