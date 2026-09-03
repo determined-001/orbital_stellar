@@ -26,6 +26,10 @@ function buildEngine(): {
   let capturedOnMessage: ((record: unknown) => void) | null = null;
 
   vi.spyOn((engine as any).server, "operations").mockImplementation(() => ({
+    // The engine asks Horizon for join=transactions; the double mirrors that.
+    join() {
+      return this;
+    },
     cursor: () => ({
       stream: (callbacks: { onmessage: (r: unknown) => void }) => {
         capturedOnMessage = callbacks.onmessage;

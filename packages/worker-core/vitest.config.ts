@@ -1,27 +1,26 @@
 import { defineConfig } from "vitest/config";
-import { fileURLToPath } from "node:url";
 
 export default defineConfig({
   test: {
     environment: "node",
+    include: ["test/**/*.test.ts"],
     coverage: {
       provider: "v8",
       include: ["src/**/*.ts"],
-      exclude: ["node_modules/", "dist/", "test/", "**/*.test.ts", "**/*.config.*"],
+      exclude: [
+        "node_modules/",
+        "dist/",
+        "test/",
+        "**/*.test.ts",
+        "**/*.config.*",
+        // Pure type declarations / barrel re-exports - no runtime code to cover
+        "src/index.ts",
+        "src/hotPath/index.ts",
+        "src/vault/types.ts",
+        "src/workers/index.ts",
+        "src/guards/index.ts",
+      ],
       reporter: ["text", "html", "json-summary"],
-    },
-  },
-  resolve: {
-    alias: {
-      "@orbital-stellar/pulse-core": fileURLToPath(
-        new URL("../pulse-core/src/index.ts", import.meta.url),
-      ),
-      "@orbital-stellar/pulse-webhooks": fileURLToPath(
-        new URL("../pulse-webhooks/src/index.ts", import.meta.url),
-      ),
-      "@orbital-stellar/abi-registry": fileURLToPath(
-        new URL("../abi-registry/src/index.ts", import.meta.url),
-      ),
     },
   },
 });

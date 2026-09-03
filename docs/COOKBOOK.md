@@ -31,8 +31,9 @@
 17. [Inspect or replay dead-letter-queue entries](#17-inspect-or-replay-dead-letter-queue-entries)
 18. [Subscribe to contract-specific typed events in React](#18-subscribe-to-contract-specific-typed-events-in-react)
 19. [Migrate from Horizon-only to unified ingestion](#19-migrate-from-horizon-only-to-unified-ingestion)
-20. [Send webhook notifications when a worker fires](#20-send-webhook-notifications-when-a-worker-fires)
-21. [Notify subscribers when a worker misses](#21-notify-subscribers-when-a-worker-misses)
+20. [Deduplicate payments by `txHash`](#20-deduplicate-payments-by-txhash)
+21. [Send webhook notifications when a worker fires](#21-send-webhook-notifications-when-a-worker-fires)
+22. [Notify subscribers when a worker misses](#22-notify-subscribers-when-a-worker-misses)
 
 ---
 
@@ -899,7 +900,73 @@ The guarantee is **at-most-once delivery within the window**, not globally. `Ded
 
 ---
 
-## 20. Send webhook notifications when a worker fires
+## 20. Deduplicate payments by `txHash`
+
+Every classic event carries the identity of the transaction it came from:
+`txHash`, `ledger`, and `memo` (the last two from the transaction the engine
+joins onto each operation). `txHash` plus the operation's position is the key
+that survives a reconnect, a redelivery, or the same movement arriving over
+both transports. ✅
+
+```ts
+import { EventEngine, deriveDedupeKey, DedupeWindow } from "@orbital-stellar/pulse-core";
+
+const engine = new EventEngine({ network: "mainnet" });
+
+// Bounded by design: at capacity the oldest key is evicted, so memory stays
+// flat. Size it above the number of events you expect inside your longest
+// reconnect gap.
+const seen = new DedupeWindow(10_000);
+
+engine.subscribe("GDEST...").on("payment.received", async (event) => {
+  // A transport that cannot supply a hash still delivers the event - decide
+  // deliberately whether to process it or drop it.
+  if (!event.txHash) {
+    console.warn("payment without txHash, processing without dedupe", event);
+    await credit(event);
+    return;
+  }
+
+  if (seen.seenBefore(deriveDedupeKey({ txHash: event.txHash, index: 0 }))) {
+    return; // already credited
+  }
+
+  await credit(event);
+});
+
+engine.start();
+```
+
+`DedupeWindow` gives **at-most-once delivery within the window**, not globally:
+a duplicate separated by more than `capacity` intervening events is not caught,
+and the window dies with the process. For durable idempotency, key your own
+store on the same value:
+
+```ts
+engine.subscribe("GDEST...").on("payment.received", async (event) => {
+  if (!event.txHash) return;
+
+  // Unique index on (tx_hash, op_index) makes the second insert a no-op.
+  const inserted = await db.insertIfAbsent({
+    txHash: event.txHash,
+    opIndex: 0,
+    ledger: event.ledger, // audit trail without a second Horizon round-trip
+    memo: event.memo, // the invoice/order id, when the sender set one
+    amount: event.amount,
+  });
+
+  if (inserted) await credit(event);
+});
+```
+
+`memo` is how Stellar payments are conventionally matched to an order or
+invoice. It is present only when the sending transaction actually carried one -
+Horizon reports `memo_type: "none"` otherwise, and the field is then absent
+rather than empty.
+
+---
+
+## 21. Send webhook notifications when a worker fires
 
 Use `WorkerNotifier` to deliver signed webhook notifications when workers successfully execute. The delivery path uses the existing `pulse-webhooks` HMAC signing and retry infrastructure. ✅
 
@@ -926,7 +993,7 @@ The event is signed with HMAC-SHA256 and delivered with automatic retries. The p
 
 ---
 
-## 21. Notify subscribers when a worker misses
+## 22. Notify subscribers when a worker misses
 
 Miss notifications fire once per window (not once per retry attempt), using the worker's fire key (`workerId + window`) for deduplication. ✅
 

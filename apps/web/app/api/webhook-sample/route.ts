@@ -29,8 +29,13 @@ function generateSamplePayment(toAddress: string) {
 
 export async function POST(req: Request) {
   const ip = clientIp(req);
-  const cooldown = checkWebhookCooldown(ip);
+  const cooldown = await checkWebhookCooldown(ip);
   if (!cooldown.ok) {
+    // Fail closed, same posture as the faucet: an unconfigured Redis must not
+    // silently let cooldown-bypassing traffic through.
+    if (cooldown.status === 503) {
+      return Response.json(cooldown.body, { status: 503 });
+    }
     return Response.json(cooldown.body, {
       status: 429,
       headers: { "Retry-After": String(Math.ceil(cooldown.body.retryAfterMs / 1000)) },

@@ -1,0 +1,133 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://orbital-stellar.io/schema/operator.schema.json",
+  "title": "OperatorRecord",
+  "description": "Worker registry operator record (§C.4). Describes who offers worker services, which trigger types they handle, on what networks, and under what terms. Orbital is the registry and verification layer - not the guarantor of anyone's execution. No field in this record asserts or implies an Orbital guarantee of execution.",
+  "type": "object",
+  "required": [
+    "id",
+    "name",
+    "stellarAddress",
+    "contact",
+    "maintainer",
+    "supportedTriggers",
+    "networks",
+    "terms",
+    "latencyTier",
+    "version",
+    "createdAt",
+    "updatedAt"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Unique operator identifier (kebab-case slug).",
+      "pattern": "^[a-z0-9][a-z0-9-]*$",
+      "maxLength": 100
+    },
+    "name": {
+      "type": "string",
+      "description": "Human-readable operator name.",
+      "minLength": 1,
+      "maxLength": 100
+    },
+    "stellarAddress": {
+      "type": "string",
+      "description": "Operator's Stellar account address (G…) for on-chain identity.",
+      "pattern": "^G[A-Z2-7]{55}$"
+    },
+    "contact": {
+      "type": "string",
+      "description": "Contact email or URL for the operator.",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "maintainer": {
+      "type": "string",
+      "description": "GitHub handle or other identifier for the operator maintainer.",
+      "minLength": 1,
+      "maxLength": 100
+    },
+    "supportedTriggers": {
+      "type": "array",
+      "description": "Trigger classes this operator handles.",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "description": "The class of trigger a worker service responds to.",
+        "enum": ["event", "schedule", "http", "manual"]
+      }
+    },
+    "networks": {
+      "type": "array",
+      "description": "Networks this operator operates on.",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "enum": ["mainnet", "testnet", "futurenet"]
+      }
+    },
+    "terms": {
+      "$ref": "#/$defs/OperatorTerms"
+    },
+    "latencyTier": {
+      "type": "string",
+      "description": "Self-declared latency tier. Operators self-declare; this is not verified by Orbital.",
+      "enum": ["realtime", "low", "standard", "bulk"]
+    },
+    "version": {
+      "type": "string",
+      "description": "Semantic version of this record. Increments on any change.",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$"
+    },
+    "createdAt": {
+      "type": "string",
+      "description": "ISO 8601 timestamp of when this record was created.",
+      "format": "date-time"
+    },
+    "updatedAt": {
+      "type": "string",
+      "description": "ISO 8601 timestamp of the most recent update.",
+      "format": "date-time"
+    }
+  },
+  "$defs": {
+    "OperatorTerms": {
+      "type": "object",
+      "description": "Structured service terms offered by an operator. Comparable across operators because they are data, not prose.",
+      "required": ["pricePerInvocation", "denomination", "dailyCap", "slaMs"],
+      "additionalProperties": false,
+      "properties": {
+        "pricePerInvocation": {
+          "type": "number",
+          "description": "Price per invocation in the specified denomination.",
+          "minimum": 0
+        },
+        "denomination": {
+          "type": "string",
+          "description": "Denomination for the price (e.g. \"USD\", \"XLM\", \"USDC\").",
+          "minLength": 1,
+          "maxLength": 10
+        },
+        "dailyCap": {
+          "type": "integer",
+          "description": "Maximum number of invocations per day, or 0 for unlimited.",
+          "minimum": 0
+        },
+        "slaMs": {
+          "type": "integer",
+          "description": "SLA response time in milliseconds, or 0 if no SLA is offered.",
+          "minimum": 0
+        },
+        "notes": {
+          "type": "string",
+          "description": "Free-form notes about terms.",
+          "maxLength": 500
+        }
+      }
+    }
+  }
+}
