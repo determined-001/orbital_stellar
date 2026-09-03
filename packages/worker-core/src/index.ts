@@ -369,3 +369,29 @@ export type {
 } from "./events.js";
 export { WorkerNotifier } from "./notify.js";
 export type { WorkerNotifyConfig } from "./notify.js";
+
+// Operator reputation (issue #1051).
+// Named rather than star re-exports: `Verdict` and `OperatorScore` already exist
+// on this barrel (verification/verdict.js, backstop/slo.js), so a star export
+// would be silently shadowed. The reputation shapes are aliased instead.
+export { selectWindow, computeWindowMetrics, percentile } from "./reputation/window.js";
+export type {
+  VerdictOutcome,
+  WindowSelection,
+  WindowMetrics,
+  Verdict as ReputationVerdict,
+} from "./reputation/window.js";
+export {
+  SCORE_FORMULA_VERSION,
+  DEFAULT_WEIGHTS,
+  scoreOperator,
+  attributableDrop,
+} from "./reputation/score.js";
+export type {
+  ScoreConfig,
+  ScoreContributorReason,
+  ScoreContributor,
+  InsufficientDataScore,
+  ScoredScore,
+  OperatorScore as OperatorReputationScore,
+} from "./reputation/score.js";
