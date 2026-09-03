@@ -95,8 +95,6 @@ jobs:
         run: pnpm tsc -p packages/abi-registry/tsconfig.json
       - name: Build pulse-core
         run: pnpm tsc -p packages/pulse-core/tsconfig.json
-      - name: Build worker-core
-        run: pnpm tsc -p packages/worker-core/tsconfig.json
       - name: Typecheck abi-registry
         run: pnpm tsc --noEmit -p packages/abi-registry/tsconfig.json
       - name: Typecheck worker-core
@@ -139,8 +137,6 @@ jobs:
         run: pnpm tsc -p packages/abi-registry/tsconfig.json
       - name: Build pulse-core
         run: pnpm tsc -p packages/pulse-core/tsconfig.json
-      - name: Build worker-core
-        run: pnpm tsc -p packages/worker-core/tsconfig.json
       - name: Build pulse-notify
         run: pnpm tsc -p packages/pulse-notify/tsconfig.json
       - name: Check bundle size

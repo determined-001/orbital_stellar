@@ -1,8 +1,9 @@
 import { mkdirSync, writeFileSync, existsSync, rmSync } from "node:fs";
-import { resolve, join } from "node:path";
+import { resolve, join, dirname } from "node:path";
 import { tmpdir } from "node:os";
 import { randomBytes } from "node:crypto";
 import type { OrbitalConfig, ContractConfig } from "./config.js";
+import { validateConfig } from "./config.js";
 import type { ContractSpec } from "./spec.js";
 import { generateContractTypes } from "./generate.js";
 import { discoverContractSpec } from "./discovery/discoverContract.js";

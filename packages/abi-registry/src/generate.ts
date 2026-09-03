@@ -376,27 +376,7 @@ function generateUdtDeclarations(types: Readonly<Record<string, UserDefinedType>
       // union: a Rust enum-with-data, cases are either unit (void) or carry positional fields.
       const caseTypes = udt.cases.map((c) => {
         if (c.fields.length === 0) return `{ case: "${c.name}" }`;
-        const valueTypes = c.fields.map((f) => mapContractSpecTypeToTs(f.type));
-        return `{ case: "${c.name}", values: [${valueTypes.join(", ")}] }`;
-      });
-      declarations.push(`export type ${name} = ${caseTypes.join(" | ") || "never"};`);
-      declarations.push("");
-
-      schemas.push(`export const ${name}Schema = z.discriminatedUnion("case", [`);
-      schemas.push(
-        ...udt.cases.map((c) => {
-          if (c.fields.length === 0) return `z.object({ case: z.literal("${c.name}") })`;
-          const valueTypes = c.fields.map((f) => mapContractSpecTypeToZod(f.type));
-          return `z.object({ case: z.literal("${c.name}"), values: z.tuple([${valueTypes.join(", ")}]) })`;
-        }),
-      );
-      schemas.push("]);");
-      schemas.push("");
-    }
-  }
-
-  return { declarations, schemas };
-}SpecTypeToTs(f.type)).join(", ");
+        const valueTypes = c.fields.map((f) => mapContractSpecTypeToTs(f.type)).join(", ");
         return `{ case: "${c.name}"; values: [${valueTypes}] }`;
       });
       declarations.push(`export type ${name} = ${caseTypes.join(" | ") || "never"};`);
@@ -530,7 +510,7 @@ function generateEventDeclarations(events: ReadonlyArray<EventSpec>): {
   return { declarations, schemas, guards, testDts };
 }
 
-function generateReactHooks(events: ReadonlyArray<EventSpec>): string[] {
+function generateReactHooks(events: ReadonlyArray<EventSpec>, contractName?: string): string[] {
   if (events.length === 0) return [];
   const hooks: string[] = [];
   const usedNames = new Set<string>();
@@ -549,6 +529,7 @@ function generateReactHooks(events: ReadonlyArray<EventSpec>): string[] {
     const interfaceName = ensureUniqueName(`${baseName}Event`, usedNames);
     const schemaName = `${interfaceName}Schema`;
     const hookName = `use${baseName}`;
+    const fieldName = event.data.length > 0 ? toCamelCase(event.data[0]?.name ?? "data") : "data";
 
     hooks.push("/**");
     hooks.push(` * React hook that subscribes to \`${event.name}\` events.`);
@@ -588,11 +569,7 @@ function generateReactHooks(events: ReadonlyArray<EventSpec>): string[] {
 }
 
 function generateFromContractSpec(spec: ContractSpec): GeneratedContractArtifacts {
-  const declarations: string[] = [
-    'import type { ContractEmittedEvent } from "@orbital-stellar/pulse-core";',
-    'import { z } from "zod";',
-    "",
-  ];
+  const declarations: string[] = ['import { z } from "zod";', ""];
   const schemas: string[] = [];
 
   const udts = generateUdtDeclarations(spec.types);
@@ -605,7 +582,7 @@ function generateFromContractSpec(spec: ContractSpec): GeneratedContractArtifact
   declarations.push(...events.declarations);
   schemas.push(...events.schemas);
 
-  const hooks = generateReactHooks(spec.events);
+  const hooks = generateReactHooks(spec.events, spec.name);
 
   return {
     declarations: declarations.join("\n"),
@@ -636,6 +613,6 @@ export function generateContractTypes(spec: XdrContractSpec | ContractSpec): str
  */
 export function generateContractHooks(spec: XdrContractSpec | ContractSpec): string {
   if (isXdrContractSpec(spec)) return "";
-  const hooks = generateReactHooks(spec.events);
+  const hooks = generateReactHooks(spec.events, spec.name);
   return hooks.join("\n");
 }

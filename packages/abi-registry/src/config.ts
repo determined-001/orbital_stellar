@@ -39,22 +39,6 @@ export function defineConfig(config: OrbitalConfig): OrbitalConfig {
   return config;
 }
 
-/**
- * Evaluates whether a time-based trigger should fire based on the last run time.
- */
-export function evaluateTimeTrigger(
-  lastRunAt: string | number | null | undefined,
-  intervalMs: number,
-  now: number = Date.now(),
-): boolean {
-  if (lastRunAt === null || lastRunAt === undefined || lastRunAt === "") {
-    return true;
-  }
-  const lastRunTimestamp =
-    typeof lastRunAt === "number" ? lastRunAt : Date.parse(lastRunAt);
-  return now - lastRunTimestamp >= intervalMs;
-}
-
 export interface LockFileContract {
   /** Contract ID */
   contractId: string;
