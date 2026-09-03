@@ -13,7 +13,6 @@ export default defineConfig({
         "test/",
         "**/*.test.ts",
         "**/*.config.*",
-        // Pure type declarations / barrel re-exports - no runtime code to cover
         "src/index.ts",
         "src/hotPath/index.ts",
         "src/vault/types.ts",
@@ -21,7 +20,6 @@ export default defineConfig({
         "src/guards/index.ts",
       ],
       reporter: ["text", "html", "json-summary"],
-      exclude: ["node_modules/", "dist/", "test/", "**/*.test.ts", "**/*.config.*"],
     },
   },
 });
