@@ -32,6 +32,8 @@
 18. [Subscribe to contract-specific typed events in React](#18-subscribe-to-contract-specific-typed-events-in-react)
 19. [Migrate from Horizon-only to unified ingestion](#19-migrate-from-horizon-only-to-unified-ingestion)
 20. [Deduplicate payments by `txHash`](#20-deduplicate-payments-by-txhash)
+21. [Send webhook notifications when a worker fires](#21-send-webhook-notifications-when-a-worker-fires)
+22. [Notify subscribers when a worker misses](#22-notify-subscribers-when-a-worker-misses)
 
 ---
 
@@ -961,6 +963,66 @@ engine.subscribe("GDEST...").on("payment.received", async (event) => {
 invoice. It is present only when the sending transaction actually carried one -
 Horizon reports `memo_type: "none"` otherwise, and the field is then absent
 rather than empty.
+
+---
+
+## 21. Send webhook notifications when a worker fires
+
+Use `WorkerNotifier` to deliver signed webhook notifications when workers successfully execute. The delivery path uses the existing `pulse-webhooks` HMAC signing and retry infrastructure. ✅
+
+```ts
+import { WorkerNotifier } from "@orbital-stellar/worker-core";
+
+const notifier = new WorkerNotifier({
+  webhook: {
+    url: "https://api.example.com/webhooks/workers",
+    secret: process.env.WEBHOOK_SECRET!,
+  },
+});
+
+// When a worker fires successfully
+notifier.notifyFired({
+  workerId: "price-feed-1",
+  window: "2026-04-27T00:00:00Z/PT1H",
+  txHash: "abc123def456...",
+  ledger: 12345,
+});
+```
+
+The event is signed with HMAC-SHA256 and delivered with automatic retries. The payload includes the worker ID, time window, transaction hash, and ledger.
+
+---
+
+## 22. Notify subscribers when a worker misses
+
+Miss notifications fire once per window (not once per retry attempt), using the worker's fire key (`workerId + window`) for deduplication. ✅
+
+```ts
+import { WorkerNotifier } from "@orbital-stellar/worker-core";
+
+const notifier = new WorkerNotifier({
+  webhook: {
+    url: "https://api.example.com/webhooks/workers",
+    secret: process.env.WEBHOOK_SECRET!,
+  },
+});
+
+// When a worker misses (fails to execute within its window)
+const wasSent = notifier.notifyMissed({
+  workerId: "price-feed-1",
+  window: "2026-04-27T00:00:00Z/PT1H",
+  ledger: 12345,
+  failures: [
+    { error: "Connection timeout", timestamp: "2026-04-27T00:00:30.000Z", attempt: 1 },
+    { error: "Service unavailable", timestamp: "2026-04-27T00:01:00.000Z", attempt: 2 },
+  ],
+});
+
+// wasSent is false if this window was already notified
+console.log(`Miss notification sent: ${wasSent}`);
+```
+
+The failures array captures the full failure chain. Subsequent misses for the same `(workerId, window)` pair are deduplicated automatically.
 
 ---
 

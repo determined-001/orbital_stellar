@@ -95,6 +95,11 @@ jobs:
         run: pnpm tsc -p packages/abi-registry/tsconfig.json
       - name: Build pulse-core
         run: pnpm tsc -p packages/pulse-core/tsconfig.json
+      # worker-core imports @orbital-stellar/pulse-webhooks, which resolves through
+      # the package's "types" entry -- so its declarations have to exist on disk
+      # before worker-core is typechecked.
+      - name: Build pulse-webhooks
+        run: pnpm tsc -p packages/pulse-webhooks/tsconfig.json
       - name: Typecheck abi-registry
         run: pnpm tsc --noEmit -p packages/abi-registry/tsconfig.json
       - name: Typecheck worker-core

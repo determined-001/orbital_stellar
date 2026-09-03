@@ -432,6 +432,9 @@ importers:
       '@orbital-stellar/pulse-core':
         specifier: workspace:*
         version: link:../pulse-core
+      '@orbital-stellar/pulse-webhooks':
+        specifier: workspace:*
+        version: link:../pulse-webhooks
       cron-parser:
         specifier: ^4.9.0
         version: 4.9.0
