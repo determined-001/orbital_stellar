@@ -11,6 +11,7 @@
   "types": "./dist/index.d.ts",
   "files": [
     "dist",
+    "bin",
     "README.md",
     "LICENSE"
   ],
@@ -32,11 +33,17 @@
   "dependencies": {
     "@orbital-stellar/abi-registry": "workspace:*",
     "@orbital-stellar/pulse-core": "workspace:*",
-    "@orbital-stellar/pulse-webhooks": "workspace:*"
+    "@orbital-stellar/pulse-webhooks": "workspace:*",
+    "pino": "^8.15.0",
+    "yargs": "^17.7.2"
   },
   "devDependencies": {
     "@types/node": "^26.2.0",
+    "@types/yargs": "^17.0.33",
     "@vitest/coverage-v8": "^4.1.11",
     "vitest": "^4.1.11"
+  },
+  "bin": {
+    "orbital-worker": "./bin/orbital-worker"
   }
 }

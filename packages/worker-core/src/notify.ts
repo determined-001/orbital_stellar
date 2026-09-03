@@ -54,6 +54,16 @@ class MissDedupStore {
  * Creates a NormalizedEvent-compatible wrapper around a WorkerEvent
  * so it can be delivered through the pulse-webhooks signing and retry path.
  * Includes a `raw` field so WebhookDelivery picks it up.
+ *
+ * `NormalizedEvent` is a closed union of pulse-core's own chain-derived event
+ * types, and `worker.fired` / `worker.missed` are deliberately not members of
+ * it: they describe this package's scheduler, not anything Horizon or Soroban
+ * emitted. The two-step cast is the seam between those vocabularies. It is safe
+ * because WebhookDelivery only reads the structural fields every branch of the
+ * union shares -- `type`, `timestamp`, `timestampDate` and `raw` -- all of which
+ * are populated below. Widening the union in pulse-core to admit worker events
+ * would make every consumer of `NormalizedEvent` handle cases that can never
+ * reach them from a chain source.
  */
 function workerEventToNormalized(event: WorkerEvent): NormalizedEvent {
   const base = {
@@ -61,7 +71,7 @@ function workerEventToNormalized(event: WorkerEvent): NormalizedEvent {
     timestampDate: new Date(event.timestamp),
     raw: { source: "worker-core", ...event },
   };
-  return base as NormalizedEvent;
+  return base as unknown as NormalizedEvent;
 }
 
 /**
