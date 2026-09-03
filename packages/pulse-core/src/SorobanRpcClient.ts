@@ -8,6 +8,9 @@ import { fullJitterBackoffMs } from "./backoff.js";
 
 const DEFAULT_TIMEOUT_MS = 10_000;
 
+/** Minimum interval between getLatestLedgerCloseTime RPC calls. */
+const MIN_LEDGER_CLOSE_TIME_POLL_INTERVAL_MS = 1_000;
+
 /** CAP-67 (SEP-41) standard event topic names for Stellar asset contracts. */
 export const CAP_67_EVENT_TOPICS = ["transfer", "mint", "burn", "clawback"] as const;
 
@@ -57,6 +60,17 @@ export interface SorobanRpcClientOptions {
   timeoutMs?: number;
   /** Optional logger. Per-request diagnostics go to `logger.debug` (header values redacted). */
   logger?: Logger;
+  /**
+   * Minimum interval between getLatestLedgerCloseTime RPC calls.
+   * Defaults to 1 second, which prevents idle fleets from hammering RPC.
+   */
+  minLedgerCloseTimePollIntervalMs?: number;
+  /**
+   * Injectable clock for poll-cadence decisions. Defaults to `Date.now`.
+   * Ledger close time remains the authority for due-ness; this clock is only
+   * used to bound how often the RPC endpoint is polled.
+   */
+  now?: () => number;
   /**
    * Default XDR format for `getEvents` requests.
    * - `"json"` (default): the RPC decodes XDR values into JSON objects, and
@@ -162,7 +176,20 @@ export type SorobanLatestLedgerResult = {
   id?: string;
   protocolVersion?: number;
   sequence: number;
+  ledgerCloseTime?: number;
 };
+
+/**
+ * Minimal ledger close-time source used by the time-based trigger evaluator.
+ *
+ * The evaluator depends on this interface rather than on `SorobanRpcClient`
+ * directly, which keeps it pure and lets unit tests inject a fake ledger
+ * source. Implementations must return the latest ledger's close time in Unix
+ * seconds, never host wall-clock time.
+ */
+export interface LedgerCloseTimeSource {
+  getLatestLedgerCloseTime(options?: SorobanRpcCallOptions): Promise<number>;
+}
 
 export type JsonRpcSuccess<T> = {
   jsonrpc: "2.0";
@@ -275,7 +302,7 @@ function sleep(ms: number, signal?: AbortSignal): Promise<void> {
  * const { events } = await client.getEvents();
  * ```
  */
-export class SorobanRpcClient {
+export class SorobanRpcClient implements LedgerCloseTimeSource {
   private static cachedNetwork: SorobanNetworkInfo | null = null;
 
   static setCachedNetwork(info: SorobanNetworkInfo | null): void {
@@ -308,6 +335,10 @@ export class SorobanRpcClient {
   private readonly timeoutMs: number;
   private readonly logger?: Logger;
   private readonly xdrFormat: "base64" | "json";
+  private latestLedgerCloseTime?: number;
+  private lastLedgerCloseTimeFetchMs = 0;
+  private readonly now: () => number;
+  private readonly minLedgerCloseTimePollIntervalMs: number;
 
   /**
    * @param options - Configuration for the RPC client.
@@ -324,6 +355,9 @@ export class SorobanRpcClient {
       throw new TypeError("SorobanRpcClient requires a fetch implementation.");
     }
     this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+    this.minLedgerCloseTimePollIntervalMs =
+      options.minLedgerCloseTimePollIntervalMs ?? MIN_LEDGER_CLOSE_TIME_POLL_INTERVAL_MS;
+    this.now = options.now ?? Date.now;
     this.logger = options.logger;
     this.xdrFormat = options.xdrFormat ?? "json";
   }
@@ -529,6 +563,38 @@ export class SorobanRpcClient {
       options,
     );
     return result.sequence;
+  }
+
+  /**
+   * Returns the latest ledger close time as a Unix timestamp in seconds.
+   *
+   * Ledger close time is the authoritative clock for time-based workers.
+   * Host wall-clock time is only used to decide when to poll; due-ness must
+   * always be evaluated against this ledger value.
+   */
+  async getLatestLedgerCloseTime(options?: SorobanRpcCallOptions): Promise<number> {
+    const nowMs = this.now();
+    if (
+      this.latestLedgerCloseTime !== undefined &&
+      nowMs - this.lastLedgerCloseTimeFetchMs < this.minLedgerCloseTimePollIntervalMs
+    ) {
+      return this.latestLedgerCloseTime;
+    }
+
+    const result = await this.requestResult<SorobanLatestLedgerResult>(
+      "getLatestLedger",
+      undefined,
+      options,
+    );
+    if (typeof result.ledgerCloseTime !== "number") {
+      throw new SorobanRpcError(
+        "Soroban RPC getLatestLedger response did not include ledgerCloseTime",
+        { code: "invalid_request", retryable: false },
+      );
+    }
+    this.latestLedgerCloseTime = result.ledgerCloseTime;
+    this.lastLedgerCloseTimeFetchMs = this.now();
+    return result.ledgerCloseTime;
   }
 
   async getNetwork(options?: SorobanRpcCallOptions): Promise<SorobanNetworkInfo> {

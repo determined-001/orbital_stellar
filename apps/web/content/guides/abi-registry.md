@@ -286,3 +286,21 @@ const abiRegistry = new AbiRegistryClient({
 - [`packages/abi-registry/specs/well-known/`](../../../../packages/abi-registry/specs/well-known/) - bundled specs index and individual contract JSON files
 - [`packages/abi-registry/specs/well-known/schema.json`](../../../../packages/abi-registry/specs/well-known/schema.json) - spec JSON schema
 - [Real-time events guide](./real-time-events.md) - how `EventEngine` and `subscribeContract` work
+## Hosted registry read limits
+
+Public registry reads are protected per source IP and, when supplied, per
+`x-api-key`. A rejected request returns `429` and `Retry-After`. Responses are
+edge-cacheable for 30 seconds with `ETag` and `stale-while-revalidate=300`.
+Requests exceeding the chain-read ceiling are served from the last cached
+value with `servedFrom: "stale"` rather than issuing another RPC read.
+
+The list endpoints reject URLs over 2048 characters, more than 10 query
+parameters, query values over 256 characters, and `limit` values outside
+1-100. Run the sustained load test against a local or deployed instance:
+
+```sh
+node apps/web/scripts/registry-load-test.mjs http://localhost:3000/api/registry/specs 60 20
+```
+
+The JSON result records sustained RPS, `429` responses, stale responses, and
+the behavior observed at the read ceiling.

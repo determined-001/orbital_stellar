@@ -12,6 +12,7 @@
   "files": [
     "dist",
     "bin",
+    "migrations",
     "README.md",
     "LICENSE"
   ],
@@ -27,6 +28,7 @@
     "build": "tsc -p tsconfig.json",
     "test": "pnpm test:types && vitest run",
     "test:types": "tsc --noEmit -p tsconfig.typetest.json",
+    "test:integration": "INTEGRATION_TESTS=true vitest run test/integration",
     "test:coverage": "vitest run --coverage",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
@@ -34,6 +36,7 @@
     "@orbital-stellar/abi-registry": "workspace:*",
     "@orbital-stellar/pulse-core": "workspace:*",
     "@orbital-stellar/pulse-webhooks": "workspace:*",
+    "cron-parser": "^4.9.0",
     "pino": "^8.15.0",
     "yargs": "^17.7.2"
   },
@@ -41,6 +44,7 @@
     "@types/node": "^26.2.0",
     "@types/yargs": "^17.0.33",
     "@vitest/coverage-v8": "^4.1.11",
+    "pg": "^8.22.0",
     "vitest": "^4.1.11"
   },
   "bin": {
