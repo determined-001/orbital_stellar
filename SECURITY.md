@@ -12,6 +12,7 @@
 - [Reporting a vulnerability](#reporting-a-vulnerability)
 - [Scope](#scope)
 - [Threat model](#threat-model)
+- [Vault audit gate (Phase 4 worker layer)](#vault-audit-gate-phase-4-worker-layer)
 - [Secret rotation runbook](#secret-rotation-runbook)
 - [Repository secret inventory](#repository-secret-inventory)
 - [Dependency policy](#dependency-policy)
@@ -81,9 +82,11 @@ Adversaries, assets, and mitigations. Each scenario describes the failure mode, 
 
 **Threat.** A misconfigured or malicious operator points a `WebhookDelivery` at a loopback address, a private RFC 1918 IP, or a metadata service like `169.254.169.254` to exfiltrate cloud credentials.
 
-**Mitigation.** `WebhookDelivery` validates the target URL at construction time and re-validates against DNS resolution before each request. Loopback (`127.0.0.0/8`, `::1`), private (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`), and link-local (`169.254.0.0/16`) ranges are blocked unless `allowPrivateNetworks: true` is explicitly set. The DNS revalidation defends against DNS-rebinding attacks where an attacker-controlled hostname resolves to a public IP at validation time and a private IP at request time.
+**Mitigation.** `WebhookDelivery` validates the target URL before each request. Loopback (`127.0.0.0/8`, `::1`), private (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`), link-local (`169.254.0.0/16`, `fe80::/10`), CGNAT (`100.64.0.0/10`), multicast/reserved IPv4 ranges, and `.localhost` names are blocked. For hostname targets in the Node delivery path, every A and AAAA DNS answer is checked and the request's first hop is pinned to the checked address through a custom resolver; TLS still verifies the certificate against the original hostname. Redirects are not followed because redirect targets have not passed the same URL and DNS checks.
 
 **Detection.** A `webhook.dropped` event is emitted when delivery is blocked. Surface this in your observability.
+
+**Note on ASN blocking.** This package does *not* provide autonomous-system-number (ASN) blocking. A prior implementation accepted a `blockedAsns` config and resolved it via a per-validation network call to RIPE's RDAP `autnum` endpoint, but that endpoint takes an ASN, not a hostname, so the lookup always succeeded-empty and every URL was silently allowed (issue #1029). That control was removed; `UrlValidator` now throws if you pass `blockedAsns`, so a missing control fails loud rather than open. If you need ASN-based egress restrictions, implement them against a *cached local* ASN dataset in your own `urlValidator` - never a network call per validation, which is its own denial-of-service lever.
 
 ### Malformed SSE input
 
@@ -124,6 +127,52 @@ Adversaries, assets, and mitigations. Each scenario describes the failure mode, 
 **Mitigation.** Per-IP and per-session limits enforced in `apps/web/lib/demo-limits.ts`. Behind Vercel, the connection limit on the function tier provides a hard ceiling. The demo is intentionally sandboxed and not a production deployment.
 
 **Detection.** Vercel function metrics. If the limit ceiling is reached, the marketing demo degrades; it does not propagate to consumers of the SDKs.
+
+---
+
+## Vault audit gate (Phase 4 worker layer)
+
+The worker layer's vault contract (`contracts/vault`, issue #1068 / "22.1
+Soroban vault contract with hard constraints") holds user funds once it
+ships. This section states the audit gate as a policy now, before the
+contract exists, so the gate cannot be quietly skipped or forgotten once it
+does. See issue #1069 ("22.2 Vault security audit and property tests") for
+the full acceptance criteria this section tracks.
+
+**No audit has been commissioned or performed as of this writing.** This is
+not a summary of a completed audit - there is nothing to summarize, because
+the vault contract itself does not exist yet. Property-test and fuzz-test
+*specifications* for the four invariants below live in
+`contracts/vault/tests/property.rs` and `tests/fuzz.rs`, marked `#[ignore]`
+and documented as non-functional until #1068 lands - they are not audit
+results.
+
+**The gate, stated in advance:**
+
+1. `contracts/vault` **must not be deployed to mainnet** until all of the
+   following are true:
+   - The four invariants below hold under property testing:
+     - Funds only ever return to their depositor.
+     - The allow-list only narrows.
+     - Slippage bounds always hold.
+     - Worker authority never widens.
+   - Fuzzing has run over deposit/withdraw/action sequences, including
+     interleaved and reentrant orderings.
+   - An external security audit has been commissioned and completed.
+2. The audit report is published in `docs/audits/`, including every finding
+   - not a curated summary. A finding that was accepted rather than fixed
+   carries a written rationale in the same report.
+3. This section is updated with a link to the report and its landing commit
+   once that happens.
+4. Testnet deployment is not gated the same way - the worker layer's testnet
+   rollout can proceed with property/fuzz coverage in place, ahead of the
+   external audit, but mainnet cannot.
+
+Until all of the above is true, `contracts/vault` is testnet-only, and any
+deployment tooling for it must refuse to target mainnet by construction (the
+same pattern `assertRestrictedSecretNetwork` uses for `DEMO_EMITTER_SECRET`
+and the fire-event path today - see
+[Repository secret inventory](#repository-secret-inventory)).
 
 ---
 
@@ -197,7 +246,7 @@ A short checklist if you are building on top of Orbital.
 
 ### `pulse-webhooks`
 
-- **Never deploy with `allowPrivateNetworks: true`** in production. It is a developer convenience for `localhost` testing only.
+- **Do not bypass the built-in URL checks** in production. `WebhookDelivery` does not expose an `allowPrivateNetworks` escape hatch; localhost and private-network endpoints should be tested with a separate development-only delivery path.
 - **Enforce HTTPS at every layer where users supply a webhook URL.** The SDK enforces it; your registration UI should too.
 - **Reject signatures older than 5 minutes** in your receiver - bound replay window:
   ```ts
@@ -230,3 +279,4 @@ For high-severity issues we coordinate with downstream consumers (the named inte
 - [`docs/open-source-policy.md`](./docs/open-source-policy.md) - license commitments
 - [`docs/COOKBOOK.md` § 9 Route `webhook.failed` to a dead-letter queue](./docs/COOKBOOK.md#9-route-webhookfailed-to-a-dead-letter-queue)
 - [`packages/pulse-webhooks/README.md`](./packages/pulse-webhooks/README.md) - full delivery contract
+- [`docs/audits/`](./docs/audits/) - published external audit reports (none yet - see [Vault audit gate](#vault-audit-gate-phase-4-worker-layer))

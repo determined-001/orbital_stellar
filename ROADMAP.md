@@ -47,6 +47,7 @@ section below, not on the active roadmap.
 | **Phase 1 - Production SDK** | Soroban + cursor persistence + stability pledge | `v1.0.0` | `pnpm publish -r --filter "./packages/*"` succeeds; STABILITY.md merged; Soroban e2e test green | 🟡 **In progress** - STABILITY.md merged (this PR); starter boilerplates + `v1.0.0` tag outstanding |
 | **Phase 2 - The Decoding Standard** | SEP draft, `orbital codegen`, semantic layer, hosted registry | `v1.x` | SEP draft submitted; `orbital codegen` published and used in all three starter boilerplates; ≥25 contracts with registered verified schemas; hosted registry serving reads in production | ⚪ 2026 H2 |
 | **Phase 3 - Anchor Events** | SEP-24/31 lifecycle events, `@orbital-stellar/anchor-sdk` | `v2.0.0` | `@orbital-stellar/anchor-sdk` on npm; SEP-24 + SEP-31 lifecycle events normalized into the standard taxonomy; ≥1 named anchor consuming it in production | ⚪ 2027 H1 |
+| **Phase 4 - Workers entry gate** | Worker layer — trigger-without-custody standard + runtime | `v3.x` | W0–W4 each reach their gate; §C.2 no-custody constraint enforced on every stage; build order hard constraint (W4 lands last) | ⚪ 2026 H2 → 2027 |
 
 The former "Trust & Agent Layer" and "Protocol Permanence" phases are not
 gone - they are preserved verbatim in the
@@ -282,10 +283,89 @@ semantic layer above raw schemas.
 
 ---
 
+## Phase 4 - Workers entry gate (`v3.x`, 2026 H2 → 2027)
+
+**Goal:** open the worker layer — an open standard plus a runtime that lets
+off-chain workers *trigger* on-chain settlement and other Orbital events
+**without ever taking custody** of the funds they move. This phase was
+unfrozen in writing by issue #1036 / the 2026-08-30
+[`CHANGELOG.md`](./CHANGELOG.md) unfreeze entry, which is the maintainer-signed
+rationale the [Frozen](#frozen--out-of-scope-until-the-core-thesis-is-proven)
+procedure requires. The counterparty that motivated it is named in the
+[`CHANGELOG.md`](./CHANGELOG.md) unfreeze entry (gate `W3`).
+
+**Release gate (overall):** every one of the five stages `W0`–`W4` reaches its
+individual gate below, the §C.2 trigger-≠-custodian constraint is enforced as a
+review gate on every stage, and the build order is honored as a hard
+constraint (W4 lands last — see below). No stage ships partial.
+
+### The §C.2 constraint (quoted verbatim, not paraphrased)
+
+> "The worker layer may trigger settlement but is never the custodian of the
+> funds it moves. Triggering is not custody: a worker that signs a release
+> instruction is exercising authority delegated by the vault contract, not
+> holding the underlying asset. A design that lets a worker unilaterally custody
+> user funds is out of scope and must be rejected at review."
+
+This is quoted verbatim from `ORBITAL_PRD.md` §C.2 and is the immutable design
+rule for the whole layer. It is cross-linked to
+[`ORBITAL_PRD.md` §C.9](./ORBITAL_PRD.md#c9) — the gate definition — so the gate
+survives even if the PRD doc itself goes stale. The gate's text is replicated
+here on purpose rather than referenced only, because the PRD can drift.
+
+### Build order is a hard constraint, not a suggestion
+
+`W4` (backstop) **lands last**. No PR may merge `W4` work before `W0`–`W3` are
+gated green. The backstop exists to *contain* a worker layer that is already
+proven not to custody funds, so it cannot ship before the no-custody property
+is demonstrated end-to-end. This ordering is enforced as a hard constraint in
+the release process, not a scheduling preference.
+
+### Staging W0–W4 (five stages, each with a gate)
+
+- **`W0` — Worker standard (MIT).**
+  *Gate:* the open standard (event-worker spec, trigger/attestation envelope)
+  published and reviewed; reference types land in `packages/worker-core` as
+  types only. No execution path, no funds path. This is the canonical surface
+  other tools emit against.
+- **`W1` — `worker-core` runtime (MIT).**
+  *Gate:* `@orbital-stellar/worker-core` published to npm; trigger-execution
+  e2e test green against testnet, **with a custody assertion test** that fails
+  if the worker ever holds a signing key for user funds.
+- **`W2` — vault contract (MIT).**
+  *Gate:* `contracts/worker-vault` code complete, third-party audited, deployed
+  to testnet; emits a release-event; unit tests green. The vault is the *only*
+  contract with custodial authority — workers call into it, they never parallel
+  it. This is what makes the §C.2 constraint true rather than aspirational.
+- **`W3` — counterparty integration gate.**
+  *Gate:* the named counterparty (see the [`CHANGELOG.md`](./CHANGELOG.md)
+  unfreeze entry — name to be supplied by maintainer) signs off that the
+  worker layer's trigger-without-custody primitive satisfies their
+  settlement-desk automation need; at least one production settlement flow runs
+  worker-triggered and vault-custodied. This gate is what motivated the
+  unfreeze — see the [`CHANGELOG.md`](./CHANGELOG.md) unfreeze entry. Until
+  `W3` is met, the worker layer stays staging-only.
+- **`W4` — backstop (operated service, lands last).**
+  *Gate:* Orbital-operated backstop in staging with a met SLO (time-to-contain
+  on a worker fault) and a documented incident runbook. Ships only after
+  `W0`–`W3` are green, per the hard build-order constraint above.
+
+Workers are **not** implicitly frozen by the blanket scope rule below — they
+are explicitly carved out here. Everything else in the Frozen section stays
+frozen.
+
+---
+
 ## Frozen - out of scope until the core thesis is proven
 
 These items are **frozen, not deferred.** No issues, no waves, no partial
 implementations accepted against any row below while Phases 1–3 are open.
+
+**Carve-out (explicit, in writing):** the **worker layer (Part C)** is **not**
+implicitly frozen by this blanket rule. It was unfrozen by issue #1036 / the
+dated 2026-08-30 [`CHANGELOG.md`](./CHANGELOG.md) entry and now lives in
+[Phase 4 — Workers entry gate](#phase-4--workers-entry-gate) above, not here.
+Workers are removed from the implicit freeze; the rows below remain frozen.
 
 | Frozen item | Why frozen |
 |---|---|
@@ -297,6 +377,13 @@ implementations accepted against any row below while Phases 1–3 are open.
 
 Unfreezing any row requires the Phase 2 gate met **and** the Phase 3 gate met
 **and** a maintainer-signed rationale recorded in [`CHANGELOG.md`](./CHANGELOG.md).
+
+The worker-layer carve-out above is the maintainer-signed rationale required by
+this procedure, recorded in the dated 2026-08-30 `CHANGELOG.md` unfreeze entry.
+Workers were never an enumerated frozen row — they were only caught by the
+blanket scope rule — so the unfreeze is the explicit, written lift of that
+implicit freeze, tracked in [Phase 4](#phase-4--workers-entry-gate), not a new
+procedure.
 
 ---
 

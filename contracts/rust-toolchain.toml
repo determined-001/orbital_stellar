@@ -1,5 +1,18 @@
 [toolchain]
-channel = "stable"
+# Pinned, not "stable", on purpose. `deployed.testnet.json` records the sha256
+# of the built WASM and CI re-derives it, so a compiler upgrade that changes
+# codegen changes the hash and fails `verify-provenance` on a source tree
+# nobody touched. That is exactly what happened between 2026-08-11 (deployed
+# and verified on 1.97.1) and 2026-08-18 (1.98.0 released): every contracts
+# job went red without a single line of Rust changing.
+#
+# Raising this is a deliberate act: bump the channel, run
+# `contracts/deploy/deploy_testnet.sh` to rebuild, redeploy and regenerate the
+# manifest, and commit the two together. Never bump it on its own.
+channel = "1.97.1"
+# Nothing here needs rustdoc or the source component; minimal keeps the pinned
+# toolchain a small install for contributors and CI alike.
+profile = "minimal"
 # soroban-sdk 27's build script rejects wasm32-unknown-unknown under Rust
 # 1.82+ (reference-types/multi-value are on by default and unsupported by the
 # Soroban environment) - wasm32v1-none is the supported target as of Rust 1.84+.

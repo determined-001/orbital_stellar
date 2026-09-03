@@ -1,8 +1,17 @@
-// In-memory rate / concurrency tracking for the public marketing demo.
-// Sized to keep Vercel costs bounded - this is a sandbox, not a service.
+import "server-only";
+
+import { getUpstashRedis } from "@/lib/upstashRedis";
+
+// Rate / concurrency tracking for the public marketing demo, backed by the
+// same shared Upstash Redis as fireEventRateLimit.ts. Sized to keep Vercel
+// costs bounded - this is a sandbox, not a service.
 //
-// Fire-event limiting is NOT here — see fireEventRateLimit.ts (Upstash Redis).
-// In-memory Maps are per-instance on serverless and cannot protect the faucet.
+// apps/web runs on serverless: an in-memory Map is per-instance and the
+// effective ceiling becomes (configured limit) x (live instances). Both
+// limiters below fail closed (503) when Redis is unconfigured, same as
+// fireEventRateLimit.ts — a misconfigured deploy must not silently wave
+// requests through. Callers decide per endpoint whether "unavailable" should
+// block the request or be treated as best-effort; see the route handlers.
 
 export const DEMO_LIMITS = {
   /** One concurrent SSE stream per IP. */
@@ -20,9 +29,6 @@ export const DEMO_LIMITS = {
   upgradeUrl: "/cloud",
 } as const;
 
-const activeStreams = new Map<string, number>();
-const lastWebhookAt = new Map<string, number>();
-
 type EnvelopeBase = { error: "demo_limit_reached"; upgradeUrl: string };
 
 export type StreamLimitEnvelope = EnvelopeBase & {
@@ -38,13 +44,58 @@ export type RateLimitEnvelope = EnvelopeBase & {
 
 export type LimitEnvelope = StreamLimitEnvelope | RateLimitEnvelope;
 
-export function acquireStream(
-  ip: string,
-): { ok: true; release: () => void } | { ok: false; body: StreamLimitEnvelope } {
-  const count = activeStreams.get(ip) ?? 0;
-  if (count >= DEMO_LIMITS.perIpStreams) {
+/** Returned by both limiters below when Redis is unconfigured. */
+export type RateLimiterUnavailableEnvelope = {
+  error: "rate_limiter_not_configured";
+  message: string;
+};
+
+export type StreamAcquireResult =
+  | { ok: true; release: () => Promise<void> }
+  | { ok: false; status: 429; body: StreamLimitEnvelope }
+  | { ok: false; status: 503; body: RateLimiterUnavailableEnvelope };
+
+export type CooldownResult =
+  | { ok: true }
+  | { ok: false; status: 429; body: RateLimitEnvelope }
+  | { ok: false; status: 503; body: RateLimiterUnavailableEnvelope };
+
+function unavailableBody(feature: string): RateLimiterUnavailableEnvelope {
+  return {
+    error: "rate_limiter_not_configured",
+    message: `${feature} is not configured (UPSTASH_REDIS_REST_URL / UPSTASH_REDIS_REST_TOKEN).`,
+  };
+}
+
+/**
+ * Per-IP SSE concurrency, enforced via a shared Redis counter so the limit
+ * holds across serverless instances instead of resetting per instance.
+ *
+ * Not a `Ratelimit.slidingWindow` — this tracks *concurrently open* streams,
+ * not a request rate, so it needs an increment/decrement pair rather than a
+ * window. The counter carries a TTL slightly longer than the max stream
+ * duration so a crashed instance (release() never called) cannot leak a slot
+ * forever.
+ */
+export async function acquireStream(ip: string): Promise<StreamAcquireResult> {
+  const redis = getUpstashRedis();
+  if (!redis) {
+    return { ok: false, status: 503, body: unavailableBody("SSE stream concurrency limiting") };
+  }
+
+  const key = `orbital:demo:stream:${ip}`;
+  const ttlSeconds = Math.ceil(DEMO_LIMITS.streamDurationMs / 1000) + 10;
+
+  const count = await redis.incr(key);
+  if (count === 1) {
+    await redis.expire(key, ttlSeconds);
+  }
+  if (count > DEMO_LIMITS.perIpStreams) {
+    // Undo the increment we just made — this request is not getting a slot.
+    await redis.decr(key);
     return {
       ok: false,
+      status: 429,
       body: {
         error: "demo_limit_reached",
         upgradeUrl: DEMO_LIMITS.upgradeUrl,
@@ -54,41 +105,49 @@ export function acquireStream(
       },
     };
   }
-  activeStreams.set(ip, count + 1);
+
   let released = false;
   return {
     ok: true,
-    release: () => {
+    release: async () => {
       if (released) return;
       released = true;
-      const next = (activeStreams.get(ip) ?? 1) - 1;
-      if (next <= 0) activeStreams.delete(ip);
-      else activeStreams.set(ip, next);
+      const next = await redis.decr(key);
+      if (next <= 0) await redis.del(key);
     },
   };
 }
 
-export function checkWebhookCooldown(
-  ip: string,
-): { ok: true } | { ok: false; body: RateLimitEnvelope } {
-  const now = Date.now();
-  const last = lastWebhookAt.get(ip);
-  if (last !== undefined && now - last < DEMO_LIMITS.webhookCooldownMs) {
-    const retryAfterMs = DEMO_LIMITS.webhookCooldownMs - (now - last);
-    return {
-      ok: false,
-      body: {
-        error: "demo_limit_reached",
-        upgradeUrl: DEMO_LIMITS.upgradeUrl,
-        reason: "rate_limit",
-        message:
-          "Webhook signing is rate-limited on the demo. Sign up for Orbital Cloud for production use.",
-        retryAfterMs,
-      },
-    };
+/**
+ * Hard per-IP cooldown (not a sliding window): the first call within the
+ * window wins, backed by a Redis `SET ... NX PX` so only one instance can
+ * "win" the cooldown regardless of which instance serves a given request.
+ */
+export async function checkWebhookCooldown(ip: string): Promise<CooldownResult> {
+  const redis = getUpstashRedis();
+  if (!redis) {
+    return { ok: false, status: 503, body: unavailableBody("Webhook cooldown limiting") };
   }
-  lastWebhookAt.set(ip, now);
-  return { ok: true };
+
+  const key = `orbital:demo:webhook-cooldown:${ip}`;
+  const acquired = await redis.set(key, "1", { nx: true, px: DEMO_LIMITS.webhookCooldownMs });
+  if (acquired === "OK") {
+    return { ok: true };
+  }
+
+  const retryAfterMs = Math.max(1, await redis.pttl(key));
+  return {
+    ok: false,
+    status: 429,
+    body: {
+      error: "demo_limit_reached",
+      upgradeUrl: DEMO_LIMITS.upgradeUrl,
+      reason: "rate_limit",
+      message:
+        "Webhook signing is rate-limited on the demo. Sign up for Orbital Cloud for production use.",
+      retryAfterMs,
+    },
+  };
 }
 
 /**

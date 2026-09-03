@@ -1,20 +1,18 @@
 import { getSpecStore, getVerdictStore } from "@/lib/registry";
 import type { RegisteredSpec } from "@orbital-stellar/abi-registry";
 import { validateSpec } from "@orbital-stellar/abi-registry";
+import { registryRead } from "@/lib/registryReadPolicy";
 
-export const dynamic = "force-dynamic";
-
-export async function GET() {
-  const specs = await getSpecStore().getAll();
-  const verdicts = await getVerdictStore().getAll();
-  const verdictMap = new Map(verdicts.map((v) => [v.contractId, v]));
-
-  const result = specs.map((spec) => ({
-    ...spec,
-    latestVerdict: verdictMap.get(spec.contractId) ?? null,
-  }));
-
-  return Response.json(result);
+export async function GET(req: Request) {
+  return registryRead(req, "registry:specs", async () => {
+    const specs = await getSpecStore().getAll();
+    const verdicts = await getVerdictStore().getAll();
+    const verdictMap = new Map(verdicts.map((v) => [v.contractId, v]));
+    return specs.map((spec) => ({
+      ...spec,
+      latestVerdict: verdictMap.get(spec.contractId) ?? null,
+    }));
+  });
 }
 
 export async function POST(req: Request) {

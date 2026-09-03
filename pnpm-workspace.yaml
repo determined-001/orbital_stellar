@@ -20,8 +20,14 @@ allowBuilds:
 # sharp <0.35.0 inherits the libvips advisories; reached via next's image optimizer.
 # nanoid <3.3.17 loops indefinitely on a non-integer size (GHSA-mwcw-c2x4-8c55);
 # reached via next > postcss.
-# fast-uri <3.1.5 has the host-confusion advisories (literal and backslash
-# variants); reached via ajv in abi-registry. Held on 3.x - ajv expects that line.
+# fast-uri <3.1.6 has the host-confusion advisories (literal and backslash
+# variants), the skipped-IDN variant and the SSRF advisory
+# (GHSA-5jgf-p345-68v8, GHSA-f65p-4m7j-42xc, GHSA-fph4-wmhf-6fwf,
+# GHSA-jqff-g426-hqxp); reached via ajv in abi-registry. Held on 3.x - ajv
+# expects that line, and 4.x is a major it does not accept.
+# qs <6.16.0 has the array-limit bypass and the attacker-controlled isBuffer DoS;
+# reached via express. Both are moderate, so neither trips the audit gate at
+# --audit-level=high, but the fix is same-major.
 # path-to-regexp 0.x has the backtracking-ReDoS advisory (GHSA-9wv6-86v2-598j);
 # scoped to @0 so express 5 - which requires 8.x - is not dragged back to a
 # version whose router API it cannot use.
@@ -32,7 +38,8 @@ overrides:
   postcss: ^8.5.16
   "js-yaml@3": ^3.15.1
   "js-yaml@4": ^4.3.1
-  fast-uri: ^3.1.5
+  fast-uri: ^3.1.6
+  qs: ^6.16.0
   nanoid: ^3.3.17
   sharp: ^0.35.0
   undici: ^7.28.0

@@ -79,9 +79,49 @@ The hosted verification / publishing service remains a separate Cloud product. T
 
 - `@orbital-stellar/anchor-sdk` - typed client for SEP-24 / SEP-31 lifecycle events
 
+### Worker layer (Phase 4 — unfrozen)
+
+The worker layer (Part C) was unfrozen in writing by issue #1036 / the dated
+2026-08-30 [`CHANGELOG.md`](../CHANGELOG.md) entry and is tracked in
+[ROADMAP.md's Phase 4](../ROADMAP.md#phase-4--workers-entry-gate). It is split
+down the same open-code / operated-service line as the rest of Orbital:
+
+**MIT (open, in this repository):**
+
+- `worker-core` — the `@orbital-stellar/worker-core` runtime package: the
+  open-source standard, types, and execution surface that lets off-chain
+  workers *trigger* on-chain settlement and other Orbital events.
+- **The standard** — the event-worker spec, trigger/attestation envelope, and
+  reference types. Published as open data / open spec, the canonical surface
+  other tools emit against (mirrors the ABI Registry's open-standard model).
+- **The vault contract** — `contracts/worker-vault`, the *only* contract with
+  custodial authority. MIT-licensed, audited, and deployed by Orbital; workers
+  call into it, they never parallel it. This is what makes the §C.2
+  trigger-≠-custodian constraint (`ORBITAL_PRD.md` §C.2) true rather than
+  aspirational.
+
+**Operated service (closed, separate Cloud repository — never folded back):**
+
+- **Backstop** — the Orbital-operated containment service that limits blast
+  radius if a worker faults. Operated at scale; not open-sourced.
+- **Hosted verification** — the Orbital-operated verification service that
+  attests worker proofs/envelopes (the worker *standard* and *client* are MIT;
+  only the hosted verification service is closed, exactly like the Hosted ABI
+  Registry model above).
+
+Per [`ROADMAP.md` Phase 4](../ROADMAP.md#phase-4--workers-entry-gate), the build
+order is a hard constraint: the backstop (`W4`) lands last, only after the
+no-custody property is demonstrated across `W0`–`W3`.
+
 ### Frozen - not scheduled while Phases 1–3 are open
 
 These were previously listed as future MIT packages. They remain MIT-eligible in principle (the rule of thumb below still applies if they are ever unfrozen), but they are not on the active roadmap - see [ROADMAP.md's Frozen section](../ROADMAP.md#frozen--out-of-scope-until-the-core-thesis-is-proven) for the rationale and the unfreeze procedure.
+
+**Carve-out:** the **worker layer (Part C)** is **not** in this Frozen list. It
+was unfrozen in writing (issue #1036 / the 2026-08-30 [`CHANGELOG.md`](../CHANGELOG.md)
+entry) and is now tracked in [ROADMAP.md's Phase 4](../ROADMAP.md#phase-4--workers-entry-gate).
+Payments SDK, auth/identity, x402, agent-sdk, intent compiler, shadow-fork
+simulator, and analytics dashboards stay frozen.
 
 - `@orbital-stellar/payments` - send, receive, path-payment, payroll-batch primitives *(frozen - see ROADMAP.md)*
 - `@orbital-stellar/auth` - WebAuthn / passkey embedded wallet SDK *(frozen - see ROADMAP.md)*
@@ -169,6 +209,12 @@ A short decision aid before you open a PR.
 - Reactor contract reference library
 - `@orbital-stellar/payments`, `@orbital-stellar/auth`, identity layer, `@orbital-stellar/x402`, `@orbital-stellar/agent-sdk`, `@orbital-stellar/analytics`
 
+**Carve-out:** the **worker layer (Part C)** is *not* frozen — it was unfrozen
+in writing (issue #1036 / the 2026-08-30 [`CHANGELOG.md`](../CHANGELOG.md)
+entry) and lives in [ROADMAP.md's Phase 4](../ROADMAP.md#phase-4--workers-entry-gate).
+PRs against the worker layer are reviewed per that phase's gates, not closed as
+frozen.
+
 These are frozen per [ROADMAP.md](../ROADMAP.md#frozen--out-of-scope-until-the-core-thesis-is-proven), not merely deprioritized - PRs against them will be closed with a pointer to that section rather than reviewed.
 
 If you are not sure where a PR falls, open an issue with the `policy-question` label before investing time. We will tell you in 48 hours.
@@ -193,6 +239,27 @@ These are honest uncertainties as of `v0.1.0`. They will be resolved in writing 
 | Question | Status |
 |---|---|
 | Will the Soroban ABI Registry **data** (schemas, taxonomy, labels) be a public good or a paid dataset? | The **data** (event taxonomy and entity labels) is published as **open data** under Creative Commons Zero (CC0 1.0) on every release, fetchable over plain HTTP (`/data/taxonomy.json`, `/data/labels.json`) with no JS SDK dependency. The **client** and **schema** are MIT. The **hosted read API** is currently planned as a free-tier public good, with a paid tier for high-volume integrators. Final structure TBD by Phase 2 close. |
+
+### Verifying the open data (integrity manifest)
+
+The repository publishes an integrity manifest at `data/integrity.json` (mirrored to `apps/web/public/data/integrity.json`) alongside `taxonomy.json`, `labels.json`, and `LICENSE`. The manifest records, for each published file:
+
+- a **SHA-256 digest** of the file's exact bytes,
+- its **byte length**, and
+- for `taxonomy.json` and `labels.json`, the **record count**.
+
+**What it guarantees.** The digest is computed over the exact committed bytes of each file, so a third party can confirm that the artifact they downloaded is byte-for-byte identical to what Orbital published. It does **not** assert anything about the *content* of the records (schema conformance is validated separately in CI); it is a claim of *integrity and provenance*, not of correctness.
+
+**How a third party verifies it.**
+
+1. Download the artifact and its manifest (e.g. `curl -O https://<host>/data/taxonomy.json` and `curl -O https://<host>/data/integrity.json`).
+2. Compute the digest over the exact downloaded bytes:
+   `shasum -a 256 taxonomy.json` (or `Get-FileHash` on Windows).
+3. Compare with the `files.taxonomy.json.sha256` value in the manifest. A match means the file is exactly what Orbital published; a mismatch means the file was altered in transit or on disk.
+4. Repeat for `labels.json` and `LICENSE`. Optionally compare `recordCount` with the parsed record array length as a sanity check.
+
+**How the manifest stays honest.** The open data is machine-generated from a single source (`scripts/generate-open-data.mjs`) into both `data/` and `apps/web/public/data/` in the same step. CI regenerates it on every relevant change and **fails if the committed output differs** from the generator's output (`validate-data.yml`), so the published hashes always describe what the repository actually contains — drift is prevented, not merely discouraged.
+
 | Will the intent compiler ship as runnable-locally OSS at maturity? | Frozen - not scheduled. See [ROADMAP.md's Frozen section](../ROADMAP.md#frozen--out-of-scope-until-the-core-thesis-is-proven). Revisit only if unfrozen per that section's procedure. |
 | Will the reactor-contract certification service be Orbital-operated or community-governed? | Frozen - not scheduled. See [ROADMAP.md's Frozen section](../ROADMAP.md#frozen--out-of-scope-until-the-core-thesis-is-proven). |
 
