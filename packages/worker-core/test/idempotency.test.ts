@@ -4,7 +4,7 @@ import { InMemoryClaimStore, IdempotencyManager, fireKeyToString } from "../src/
 describe("IdempotencyManager basic behavior", () => {
   it("allows a single owner to claim, submit, and release", async () => {
     const store = new InMemoryClaimStore();
-    let chainSeen = false;
+    const chainSeen = false;
     const mgr = new IdempotencyManager(store, async () => chainSeen, 1000);
 
     const key = { workerId: "w1", windowStartLedger: 10 };
@@ -22,7 +22,7 @@ describe("IdempotencyManager basic behavior", () => {
 
   it("skips submit if chain already shows execution", async () => {
     const store = new InMemoryClaimStore();
-    let chainSeen = true;
+    const chainSeen = true;
     const mgr = new IdempotencyManager(store, async () => chainSeen, 1000);
 
     const key = { workerId: "w2", windowStartLedger: 20 };
