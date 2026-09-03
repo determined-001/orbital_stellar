@@ -31,7 +31,8 @@
   },
   "dependencies": {
     "@orbital-stellar/abi-registry": "workspace:*",
-    "@orbital-stellar/pulse-core": "workspace:*"
+    "@orbital-stellar/pulse-core": "workspace:*",
+    "cron-parser": "^4.9.0"
   },
   "devDependencies": {
     "@types/node": "^26.2.0",

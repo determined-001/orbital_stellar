@@ -1,12 +1,12 @@
-import { parseExpression } from 'cron-parser';
+import { parseExpression } from "cron-parser";
 
 export interface IntervalSchedule {
-  type: 'interval';
+  type: "interval";
   intervalMs: number;
 }
 
 export interface CronSchedule {
-  type: 'cron';
+  type: "cron";
   expression: string;
   timezone?: string;
 }
@@ -27,7 +27,7 @@ export function nextDue(
   nextLedgerCloseTime?: NextLedgerCloseTime,
 ): Date {
   let due: Date;
-  if (schedule.type === 'interval') {
+  if (schedule.type === "interval") {
     due = new Date(after.getTime() + schedule.intervalMs);
   } else {
     const interval = parseExpression(schedule.expression, {
@@ -52,7 +52,7 @@ export function dueTimesBetween(
 
   const seen = new Set<number>();
 
-  if (schedule.type === 'interval') {
+  if (schedule.type === "interval") {
     let current = new Date(after.getTime() + schedule.intervalMs);
     while (current.getTime() <= to.getTime()) {
       const due = nextLedgerCloseTime ? nextLedgerCloseTime(current) : current;

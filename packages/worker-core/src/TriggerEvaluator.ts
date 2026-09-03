@@ -1,4 +1,4 @@
-import { Schedule, dueTimesBetween } from './schedule';
+import { Schedule, dueTimesBetween } from "./schedule.js";
 
 export interface LedgerSource {
   getLatestLedgerCloseTime(): Promise<Date>;
@@ -8,7 +8,7 @@ export interface Clock {
   now(): Date;
 }
 
-export type CatchUpPolicy = 'fire-once' | 'fire-all';
+export type CatchUpPolicy = "fire-once" | "fire-all";
 
 export interface WorkerState {
   id: string;
@@ -75,8 +75,8 @@ export class TriggerEvaluator {
       return null;
     }
 
-    const policy = worker.catchUpPolicy ?? 'fire-once';
-    if (policy === 'fire-once') {
+    const policy = worker.catchUpPolicy ?? "fire-once";
+    if (policy === "fire-once") {
       return { workerId: worker.id, fireTimes: [ledgerCloseTime] };
     }
     return { workerId: worker.id, fireTimes: dueTimes };
