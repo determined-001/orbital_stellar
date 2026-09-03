@@ -187,6 +187,46 @@ never silently dropped. Skip reasons: `asset_not_allow_listed`,
 miss), `subscriber_revoked`, `latency_budget_exceeded`. Checks run cheapest
 and most decisive first: the latency budget and subscriber revocation are
 checked before the vault is consulted for a trade at all.
+## Price and slippage guard rails (`guards/`)
+
+Trade automation reads prices, and a price source is an attack surface. These
+guards run before a worker builds a transaction - they sit in front of the
+vault's on-chain slippage bound, not in place of it. The full on-chain/
+off-chain split is documented in
+[`docs/design/worker-guard-rails.md`](../../docs/design/worker-guard-rails.md);
+the short version is: **on-chain where the contract can check it itself,
+off-chain as a pre-filter everywhere, and off-chain only for the circuit
+breaker**, which is inherently worker-process state.
+
+### `checkStaleness(reading, bound, nowUnix)` / `checkDeviation(a, b, bound)` / `checkPriceGuard(primary, secondary, config, nowUnix)`
+
+`PriceReading` is fixed-point (`price: bigint`, `decimals: number`), not a
+`number` - float arithmetic has no place in a check meant to catch a
+manipulated price. `checkStaleness` rejects a reading older than
+`bound.maxAgeSeconds`, and rejects a future-timestamped reading rather than
+treating it as fresher-than-fresh. `checkDeviation` compares two
+independently-sourced readings and rejects the pair past
+`bound.maxDivergenceBps` - symmetric regardless of argument order, and there
+is no single-reading code path, by design (avoiding a single-source
+dependency, §C.8). `checkPriceGuard` runs both: staleness on both readings,
+then deviation, so a stale reading is rejected before its value is compared
+to anything.
+
+### `CircuitBreaker`
+
+Tracks consecutive guard trips per worker. Trips `open` after
+`maxConsecutiveTrips` consecutive `recordTrip` calls; a clean
+`recordSuccess()` resets the counter while closed. Once open, it stays open -
+`manualReenable(reenabledBy, reenabledAtUnix, rationale)` is the only way to
+close it, deliberately: an automatic reset would re-enter the exact condition
+that tripped it. Every trip (`getTrips()`) and every re-enable
+(`getReenables()`) is recorded for the scorecard, and an optional `onTrip`
+callback is the seam a real deployment uses to notify an operator.
+
+> **On-chain half not yet built.** Issue 22.5 depends on 22.3 (the
+> copy-trade/vault worker), and `contracts/vault` does not exist in this repo
+> yet - see `docs/design/worker-guard-rails.md` for what that contract must
+> enforce once it does.
 
 ## Stability
 

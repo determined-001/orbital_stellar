@@ -1,0 +1,90 @@
+# Custody review gate - §C.2 rule 3.
+#
+# A design that requires a worker to hold signing authority over a user's
+# account is a design bug, not a feature. This makes that rule mechanical, so it
+# survives contributor turnover and the maintainer being busy.
+#
+# ADVISORY, NOT A HARD BLOCK. This job must NOT be added to the required-checks
+# set in branch protection. A genuine false positive is cleared by a reviewer
+# applying the `custody-reviewed` label, which makes this job pass - so a bad
+# heuristic can never wedge the repo, and clearing it always leaves a record of
+# who decided it was fine.
+name: Custody gate
+
+on:
+  pull_request:
+    # #1026: CI path filters here have silently missed contracts/, data/ and
+    # scripts/ before, and a skipped required check reports as success. Any path
+    # added to COVERED in scripts/check-no-user-custody.mjs must be added here
+    # too, or the gate never runs on the code it most needs to cover.
+    paths:
+      - "contracts/**"
+      - "packages/worker-core/**"
+      - "packages/pulse-core/**"
+      - "scripts/**"
+      - ".github/workflows/custody-gate.yml"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  custody:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # The gate flags NEW code, so it needs the merge base to diff against.
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 20
+
+      # No install step: the check is dependency-free by design, so it cannot be
+      # skipped by an install failure in an unrelated package.
+      - name: Check for user custody
+        id: check
+        continue-on-error: true
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+        run: |
+          # Make sure the base is present to diff against; a shallow or missing
+          # base would otherwise make the gate silently check nothing.
+          git fetch --no-tags --depth=0 origin "$BASE_REF" || git fetch --no-tags origin "$BASE_REF"
+          set +e
+          node scripts/check-no-user-custody.mjs --base "origin/$BASE_REF" \
+            > "$RUNNER_TEMP/custody.log" 2>&1
+          status=$?
+          cat "$RUNNER_TEMP/custody.log"
+          # Exit with the script's own status so this step's `outcome` is the
+          # gate's verdict; continue-on-error keeps the Report step running.
+          exit "$status"
+
+      - name: Report
+        env:
+          FAILED: ${{ steps.check.outcome == 'failure' }}
+          REVIEWED: ${{ contains(github.event.pull_request.labels.*.name, 'custody-reviewed') }}
+        run: |
+          if [ "$FAILED" != "true" ]; then
+            echo "✅ No worker-custody fields introduced." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          {
+            echo "## Custody gate — §C.2 rule 3"
+            echo
+            echo '```'
+            cat "$RUNNER_TEMP/custody.log" 2>/dev/null || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$REVIEWED" = "true" ]; then
+            echo "::warning::Custody gate found matches, but a reviewer applied the 'custody-reviewed' label. Passing."
+            echo >> "$GITHUB_STEP_SUMMARY"
+            echo "A reviewer applied \`custody-reviewed\`, so this is not blocking." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          echo "::error::A worker must never hold a user's key (§C.2 rule 3). See docs/design/workers.md#c2-no-user-custody. If this is a false positive, a reviewer can apply the 'custody-reviewed' label."
+          exit 1

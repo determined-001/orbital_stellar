@@ -40,8 +40,10 @@ fi
 
 DEPLOYER_PUBLIC_KEY="$(stellar keys address "$DEPLOYER_IDENTITY")"
 
-echo "==> Building contracts (release, wasm32v1-none)"
-(cd "$CONTRACTS_DIR" && cargo build --release --target wasm32v1-none)
+# Build through the shared wrapper, not cargo directly: it asserts the pinned
+# toolchain and remaps build paths, which is what makes the hashes recorded
+# below reproducible on CI and on anyone else's machine.
+"$CONTRACTS_DIR/build-wasm.sh"
 
 REGISTRY_WASM="$CONTRACTS_DIR/target/wasm32v1-none/release/orbital_abi_registry.wasm"
 DEMO_EMITTER_WASM="$CONTRACTS_DIR/target/wasm32v1-none/release/orbital_demo_emitter.wasm"
