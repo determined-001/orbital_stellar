@@ -35,10 +35,21 @@ export const WORKER_SCORE_CONFIG: ScoreConfig = {
   latencyTargetMs: 2000,
 };
 
-const STELLAR_EXPERT_TX = "https://stellar.expert/explorer/public/tx/";
+/**
+ * stellar.expert names mainnet "public" in its path, so the network has to be
+ * mapped rather than interpolated. `ORBITAL_NETWORK` is the same switch
+ * `lib/registry.ts` reads, and it defaults to testnet the same way — this
+ * deployment is testnet, and a verdict linked to the mainnet explorer 404s.
+ */
+const STELLAR_EXPERT_NETWORK_PATH = { testnet: "testnet", mainnet: "public" } as const;
+
+function stellarExpertNetwork(): string {
+  const network = (process.env.ORBITAL_NETWORK as "mainnet" | "testnet" | undefined) ?? "testnet";
+  return STELLAR_EXPERT_NETWORK_PATH[network] ?? "testnet";
+}
 
 export function stellarExpertTxUrl(txHash: string): string {
-  return `${STELLAR_EXPERT_TX}${txHash}`;
+  return `https://stellar.expert/explorer/${stellarExpertNetwork()}/tx/${txHash}`;
 }
 
 /** Stable 64-char hex from a seed string (FNV-1a + xorshift mixing). */
