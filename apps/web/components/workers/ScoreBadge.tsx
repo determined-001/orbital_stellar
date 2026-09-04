@@ -1,4 +1,4 @@
-import type { OperatorScore } from "@orbital-stellar/worker-core";
+import type { OperatorReputationScore as OperatorScore } from "@orbital-stellar/worker-core";
 
 function scoreColor(s: number): string {
   if (s >= 800) return "#4ade80";

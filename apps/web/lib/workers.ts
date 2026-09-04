@@ -1,5 +1,5 @@
 import {
-  type Verdict,
+  type ReputationVerdict as Verdict,
   type ScoreConfig,
   SCORE_FORMULA_VERSION,
   scoreOperator,

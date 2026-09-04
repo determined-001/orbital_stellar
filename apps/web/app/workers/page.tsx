@@ -1,5 +1,5 @@
 import Link from "next/link";
-import type { OperatorScore } from "@orbital-stellar/worker-core";
+import type { OperatorReputationScore as OperatorScore } from "@orbital-stellar/worker-core";
 import { getOperatorStore, scoreOperatorView, WORKER_SCORE_CONFIG } from "@/lib/workers";
 import { ScoreBadge } from "@/components/workers/ScoreBadge";
 
