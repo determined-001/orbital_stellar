@@ -493,3 +493,24 @@ export type {
 } from "./triggers/eventTrigger.js";
 export { TRADE_SIGNAL_REJECTION, compileEventCondition } from "./triggers/predicate.js";
 export type { CompileResult, EventConditionSpec, EventPredicate } from "./triggers/predicate.js";
+// Backstop readiness cost metering (issue #1063).
+export type {
+  CostBreakdown,
+  CostMeter,
+  CostWindow,
+  CostMeterErrorCode,
+  MarginalCostEstimate,
+  MarginalCostReport,
+  SubscriptionArrival,
+} from "./backstop/costMeter.js";
+export {
+  NOOP_COST_METER,
+  InMemoryCostMeter,
+  CostMeterError,
+  emptyCostBreakdown,
+} from "./backstop/costMeter.js";
+export { PrometheusCostMeter, OtelCostMeter, CompositeCostMeter } from "./metrics.js";
+export type {
+  Meter as CostMeterOtelMeter,
+  OtelCounter as CostMeterOtelCounter,
+} from "./metrics.js";
