@@ -421,3 +421,24 @@ export { RedisWorkerStateStore, type RedisLike } from "./RedisWorkerStateStore.j
 
 // Worker state store migration helper.
 export { migrateWorkerState, type MigrateWorkerStateResult } from "./migrateWorkerState.js";
+export type {
+  CronTrigger,
+  TriggerSpec,
+  ParamSpec,
+  TargetSpec,
+  LatencyBound,
+  TopicMatcher,
+  DataFieldSpec,
+  FireEventSpec,
+  WorkerManifest,
+  ManifestSchemaVersion,
+  ManifestValidationIssue,
+  ValidationResult,
+} from "./manifest.js";
+export {
+  MANIFEST_SCHEMA_VERSION,
+  WorkerManifestBuilder,
+  ManifestValidationError,
+  validateManifest,
+  parseManifest,
+} from "./manifest.js";
