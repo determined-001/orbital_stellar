@@ -543,3 +543,13 @@ export {
   isCoveredState,
   isLegalTransition,
 } from "./subscription/index.js";
+// Fee-bump paymaster (issue #1044).
+export { Paymaster, SelfWrapError, InvalidInnerTransactionError } from "./Paymaster.js";
+export type { PaymasterConfig, BumpInput, BumpResult } from "./Paymaster.js";
+export {
+  SponsorshipPolicy,
+  RateLimitedError,
+  FeeTooHighError,
+  FloatExhaustedError,
+} from "./sponsorshipPolicy.js";
+export type { SponsorshipPolicyConfig } from "./sponsorshipPolicy.js";
