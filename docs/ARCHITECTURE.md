@@ -607,6 +607,8 @@ orbital_stellar/
 - [`docs/semantic-layer.md`](./semantic-layer.md) - Semantic taxonomy, labels, precedence, honesty rule
 - [`docs/proposal.md`](./proposal.md) - SCF grant proposal
 - [`docs/design/cap67-mapping.md`](./design/cap67-mapping.md) - CAP-67 → `NormalizedEvent` mapping design doc (§4.1)
+- [`docs/design/workers.md`](./design/workers.md) - Worker layer ADR: the trigger is not the custodian (Phase 4)
+- [`docs/design/prior-art-workers.md`](./design/prior-art-workers.md) - Prior art behind the worker design
 - [`docs/design/worker-verification-verdicts.md`](./design/worker-verification-verdicts.md) - Verdict taxonomy for chain-derived worker verification (19.1, §C.3/§C.6)
 - [`docs/design/worker-offchain-triggers.md`](./design/worker-offchain-triggers.md) - Attestation model for off-chain-computation triggers (20.7, §C.1/§C.8)
 - [`docs/CAP-67-Event-Mapping.md`](./CAP-67-Event-Mapping.md) - CAP-67 event taxonomy rationale (§4.1)
