@@ -442,3 +442,20 @@ export {
   validateManifest,
   parseManifest,
 } from "./manifest.js";
+
+// Subscription model and subscriber webhooks (issue #1059).
+// Named rather than a star re-export, matching the convention above: a star
+// export here would silently shadow if a name is ever added on both sides.
+export { SubscriptionService } from "./subscription/index.js";
+export type { CreateSubscriptionInput, SubscriptionServiceOptions } from "./subscription/index.js";
+export { SubscriptionError } from "./subscription/index.js";
+export type { SubscriptionErrorCode } from "./subscription/index.js";
+export { MemorySubscriptionStore } from "./subscription/index.js";
+export type { SubscriptionStore } from "./subscription/index.js";
+export type {
+  SubscriptionAction,
+  SubscriptionAuditEntry,
+  SubscriptionRecord,
+  SubscriptionStatus,
+  SubscriptionTier,
+} from "./subscription/index.js";
