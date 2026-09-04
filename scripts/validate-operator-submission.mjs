@@ -36,7 +36,6 @@ import {
 } from "@orbital-stellar/abi-registry";
 
 const ACCOUNT_ID_RE = /^G[0-9A-Z]{55}$/;
-const CONTRACT_ID_RE = /^C[0-9A-Z]{55}$/;
 
 function fail(reasons) {
   for (const reason of reasons) {
@@ -71,7 +70,7 @@ function readJson(file) {
  * from the claimed address using the `@stellar/stellar-sdk` package when
  * available. If the SDK is not installed the check fails closed (never skips).
  */
-function verifyKeyOwnership(operator, proof) {
+async function verifyKeyOwnership(operator, proof) {
   if (!proof) {
     return ["proof.json is required: key-ownership proof must not be skipped"];
   }
@@ -148,7 +147,7 @@ function contractsResolve(offering, wellKnown, labels) {
   return [];
 }
 
-function main() {
+async function main() {
   const dir = resolve(process.argv[2] ?? ".");
   const reasons = [];
 
@@ -167,7 +166,7 @@ function main() {
   }
 
   // 2. Key-ownership proof (must not be skipped).
-  reasons.push(...verifyKeyOwnership(operator, proof));
+  reasons.push(...(await verifyKeyOwnership(operator, proof)));
 
   // 3. Schema-valid offering (if present).
   if (offering) {
@@ -199,4 +198,7 @@ function main() {
   process.exit(0);
 }
 
-main();
+main().catch((err) => {
+  console.error(`validator failed: ${err?.stack ?? err}`);
+  process.exit(1);
+});

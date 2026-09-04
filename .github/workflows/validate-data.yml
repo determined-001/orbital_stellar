@@ -130,6 +130,32 @@ jobs:
             echo "errors=0" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Validate operator submissions
+        id: validate-operators
+        # data/operators/<id>/ holds one operator submission: operator.json, an
+        # optional offering.json, and the required key-ownership proof.json.
+        # Only the directories this PR touches are validated, so an unrelated
+        # data/ change never re-litigates the whole registry.
+        run: |
+          base="${{ github.event.pull_request.base.sha }}"
+          if [ -z "$base" ]; then
+            base="$(git rev-parse HEAD~1 2>/dev/null || echo HEAD)"
+          fi
+          dirs="$(git diff --name-only "$base" HEAD -- 'data/operators/**' \
+                    | awk -F/ 'NF>=3 {print $1"/"$2"/"$3}' | sort -u)"
+          if [ -z "$dirs" ]; then
+            echo "No operator submissions changed; skipping."
+            echo "operators_ok=0" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          status=0
+          for dir in $dirs; do
+            [ -d "$dir" ] || continue
+            echo "--- Validating operator submission: $dir ---"
+            node scripts/validate-operator-submission.mjs "$dir" || status=1
+          done
+          echo "operators_ok=$status" >> "$GITHUB_OUTPUT"
+
       - name: Dedupe check — detect duplicate contract IDs in labels
         id: dedupe
         working-directory: packages/abi-registry
@@ -255,6 +281,7 @@ jobs:
             const dedupeResult = '${{ steps.dedupe.outputs.dedupe_ok }}';
             const urlResult = '${{ steps.source-urls.outputs.url_check_ok }}';
             const coiResult = '${{ steps.coi-check.outputs.coi_ok }}';
+            const operatorResult = '${{ steps.validate-operators.outputs.operators_ok }}';
 
             let body = '## Semantic data validation report\\n\\n';
             let allPassed = true;
@@ -265,6 +292,7 @@ jobs:
               { name: 'Duplicate detection', pass: dedupeResult === '0' },
               { name: 'Source URL well-formedness', pass: urlResult === '0' },
               { name: 'Conflict-of-interest check', pass: coiResult === '0' },
+              { name: 'Operator submission validation', pass: operatorResult === '0' },
             ];
 
             for (const check of checks) {
@@ -322,4 +350,5 @@ jobs:
           check "Duplicate detection" "${{ steps.dedupe.outputs.dedupe_ok }}"
           check "Source URL well-formedness" "${{ steps.source-urls.outputs.url_check_ok }}"
           check "Conflict-of-interest check" "${{ steps.coi-check.outputs.coi_ok }}"
+          check "Operator submission validation" "${{ steps.validate-operators.outputs.operators_ok }}"
           exit $fail
