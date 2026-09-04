@@ -514,3 +514,32 @@ export type {
   Meter as CostMeterOtelMeter,
   OtelCounter as CostMeterOtelCounter,
 } from "./metrics.js";
+// Backstop subscription lifecycle, coverage ledger and billing hooks (issue #1067).
+export type {
+  CoverageReason,
+  CoverageWindow,
+  CoverageLedger,
+  CoverageLedgerErrorCode,
+  BillingHooks,
+  SubscriptionEvent,
+  ExpiringSubscriptionEvent,
+  RecordedBillingCall,
+  SubscriptionState,
+  SubscriptionLifecycleErrorCode,
+  BackstopSubscriptionConfig,
+} from "./subscription/index.js";
+export {
+  CoverageLedgerError,
+  InMemoryCoverageLedger,
+  assertValidCoverageWindow,
+  isCoveredReason,
+  wasCovered,
+  coverageForWindow,
+  NOOP_BILLING_HOOKS,
+  RecordingBillingHooks,
+  BackstopSubscription,
+  SubscriptionLifecycleError,
+  LEGAL_TRANSITIONS,
+  isCoveredState,
+  isLegalTransition,
+} from "./subscription/index.js";

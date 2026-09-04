@@ -1,4 +1,13 @@
-import type { Trigger, Schedule, WorkerDefinition } from "../src/index.js";
+import type {
+  Trigger,
+  Schedule,
+  WorkerDefinition,
+  CoverageReason,
+  CoverageWindow,
+  ExpiringSubscriptionEvent,
+  SubscriptionEvent,
+  SubscriptionState,
+} from "../src/index.js";
 import { TriggerNotImplementedError, assertImplementedTrigger } from "../src/index.js";
 
 type Assert<T extends true> = T;
@@ -102,3 +111,38 @@ export function scheduleTimezoneIsRequired(schedule: Schedule): string {
 type ForbiddenSecretKeys =
   "secret" | "secretKey" | "privateKey" | "signingKey" | "signer" | "seed" | "mnemonic";
 type _NoSecretField = Assert<Equal<Extract<keyof WorkerDefinition, ForbiddenSecretKeys>, never>>;
+
+// Neither a billing signal nor a coverage record may carry a payment
+// credential (issue #1067, acceptance criterion "No payment credentials pass
+// through worker-core"). The operated adapter resolves its own customer
+// mapping on its own side; there must be nowhere in these types to put a card
+// token, a customer secret or an API key. Extending the forbidden-key list
+// below and having it stay `never` is itself the enforcement.
+type ForbiddenPaymentKeys =
+  | "card"
+  | "cardToken"
+  | "paymentMethod"
+  | "paymentToken"
+  | "customerSecret"
+  | "apiKey"
+  | "credential"
+  | "credentials"
+  | "secret"
+  | "token";
+type _NoCredentialOnEvent = Assert<
+  Equal<Extract<keyof SubscriptionEvent, ForbiddenPaymentKeys>, never>
+>;
+type _NoCredentialOnExpiringEvent = Assert<
+  Equal<Extract<keyof ExpiringSubscriptionEvent, ForbiddenPaymentKeys>, never>
+>;
+type _NoCredentialOnCoverageWindow = Assert<
+  Equal<Extract<keyof CoverageWindow, ForbiddenPaymentKeys>, never>
+>;
+
+// Coverage is a closed set of reasons, and grace is one of them - a lapse
+// cannot be recorded as anything other than uncovered because the reason and
+// the flag are validated together at write time (see coverage.ts).
+type _CoverageReasons = Assert<Equal<CoverageReason, "active" | "grace" | "lapsed" | "cancelled">>;
+type _SubscriptionStates = Assert<
+  Equal<SubscriptionState, "active" | "expiring" | "lapsed" | "cancelled">
+>;

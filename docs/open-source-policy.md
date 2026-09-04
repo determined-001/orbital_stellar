@@ -45,6 +45,7 @@ Everything below is in `packages/` or `apps/` today, or will be added to one of 
 - `@orbital-stellar/pulse-webhooks` - `WebhookDelivery`, `verifyWebhook`, `verifyWebhookEdge`, durable retry queues (`RetryQueue` interface + memory/Redis/SQS adapters)
 - `@orbital-stellar/pulse-notify` - `useStellarEvent`, `useContractEvent`, `useStellarPayment`, `useStellarActivity`, `useStellarAddresses`, `useStellarHistory`
 - `@orbital-stellar/abi-registry` - ABI Registry client library, schema, and `RegistryPublisher` interface
+- `@orbital-stellar/worker-core` - the worker definition model, trigger evaluation, fire-once idempotency, retry/dead-letter, and the backstop subscription lifecycle with its `BillingHooks` interface (see [the backstop subscriptions boundary](#backstop-subscriptions) below)
 - Event schemas - the `NormalizedEvent` discriminated union and per-event TypeScript shapes, including `contract.invoked` / `contract.emitted`
 - Webhook delivery contract - header format, signing scheme, retry rules
 - Reference composition - the Next.js route handlers in `apps/web/app/api/*` that wire the packages together end-to-end
@@ -173,8 +174,26 @@ Examples of the boundary:
 | `WebhookDelivery.retryQueue` | Managed Redis / Postgres queue with manual replay UI |
 | `WebhookDelivery` event handlers (`webhook.failed`, `webhook.dropped`) | Hosted dead-letter explorer and forensics console |
 | `EventEngine.subscribe(address, { filter })` | Hosted address-and-event-type RBAC scopes |
+| `BillingHooks`, `SubscriptionState`, `CoverageWindow`, `CoverageLedger` in `worker-core` | The backstop billing implementation - payment processor, invoicing, dunning |
 
 This split lets us ship enterprise features without forking `pulse-core`, and lets self-hosters keep parity with Cloud for the parts that matter (correctness, security, performance).
+
+### Backstop subscriptions
+
+The backstop subscription lifecycle (issue 21.6) is the newest place this line is drawn, and it is drawn the same way as for the hosted registry.
+
+The [Worker layer](#worker-layer-phase-4--unfrozen) section above puts the **backstop service itself** on the operated side, and that does not change here: what Orbital sells is running the containment service. What is MIT is the *subscription vocabulary* the service and a self-hoster both speak - the states, the coverage record, and the hook interface - so that a self-hosted backstop is a complete product rather than a demo with the interesting parts removed.
+
+**MIT, in `@orbital-stellar/worker-core`:** the lifecycle state machine (`BackstopSubscription`, `LEGAL_TRANSITIONS`), the append-only coverage record (`CoverageLedger`, `CoverageWindow`, `InMemoryCoverageLedger`, `wasCovered`, `coverageForWindow`), and the billing **hook interface** (`BillingHooks`) with a working no-op default. A self-hoster gets a complete, unbilled backstop out of the box.
+
+**Closed, in the operated service:** the billing adapter that implements `BillingHooks` - the payment processor integration, invoicing, dunning, and the customer mapping - alongside the operated backstop service itself.
+
+Two consequences are deliberate:
+
+- **No vendor SDK is a dependency of `worker-core`.** The hooks are five async methods; the adapter lives on the other side of them.
+- **No payment credentials pass through `worker-core`.** The hook events carry a subscription id, a tier, a ledger and a coverage window - there is nowhere in the types to put a card token, a customer secret or an API key, and `packages/worker-core/test/types.exhaustive.test-d.ts` fails the build if a credential-shaped field is ever added. The adapter resolves its own customer mapping on its own side.
+
+Design record: [`docs/design/backstop-subscription-lifecycle.md`](./design/backstop-subscription-lifecycle.md).
 
 ---
 
