@@ -18,6 +18,7 @@ export default defineConfig({
         "src/vault/types.ts",
         "src/workers/index.ts",
         "src/guards/index.ts",
+        "src/subscription/index.ts",
       ],
       reporter: ["text", "html", "json-summary"],
     },

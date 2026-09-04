@@ -11,3 +11,38 @@ export type {
   SubscriptionStatus,
   SubscriptionTier,
 } from "./types.js";
+export type {
+  CoverageReason,
+  CoverageWindow,
+  CoverageLedger,
+  CoverageLedgerErrorCode,
+} from "./coverage.js";
+export {
+  CoverageLedgerError,
+  InMemoryCoverageLedger,
+  assertValidCoverageWindow,
+  isCoveredReason,
+  wasCovered,
+  coverageForWindow,
+} from "./coverage.js";
+
+export type {
+  BillingHooks,
+  SubscriptionEvent,
+  ExpiringSubscriptionEvent,
+  RecordedBillingCall,
+} from "./billing.js";
+export { NOOP_BILLING_HOOKS, RecordingBillingHooks } from "./billing.js";
+
+export type {
+  SubscriptionState,
+  SubscriptionLifecycleErrorCode,
+  BackstopSubscriptionConfig,
+} from "./lifecycle.js";
+export {
+  BackstopSubscription,
+  SubscriptionLifecycleError,
+  LEGAL_TRANSITIONS,
+  isCoveredState,
+  isLegalTransition,
+} from "./lifecycle.js";
