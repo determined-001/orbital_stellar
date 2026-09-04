@@ -199,6 +199,8 @@ jobs:
         run: pnpm tsc -p packages/pulse-core/tsconfig.json
       - name: Build pulse-webhooks
         run: pnpm tsc -p packages/pulse-webhooks/tsconfig.json
+      - name: Build worker-core
+        run: pnpm tsc -p packages/worker-core/tsconfig.json
       - name: Typecheck apps/web
         run: pnpm tsc --noEmit -p apps/web/tsconfig.json
 
