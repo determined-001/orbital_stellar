@@ -1,15 +1,18 @@
 # Backstop readiness cost model
 
-**Status: proposed, and blocked on measurement.** Issue
-[#1063](https://github.com/determined-001/orbital_stellar/issues/1063) depends on
-21.1 ([#1062](https://github.com/determined-001/orbital_stellar/issues/1062)),
-which is open, and `packages/worker-core` does not exist in this repository yet
-— it has no tracked files.
+**Status: implemented, except the numbers.** `packages/worker-core` landed with
+18.3 ([#1038](https://github.com/determined-001/orbital_stellar/issues/1038)),
+which was one of the two blockers; the meter, the aggregation and the export
+surfaces now ship in `packages/worker-core/src/backstop/costMeter.ts` and
+`packages/worker-core/src/metrics.ts`.
 
-This document is the **model and the measurement plan**. The numbers are
-deliberately absent: §C.7's whole point is that readiness cost must be measured
-rather than assumed, and there is no backstop running to measure. Filling this
-table with plausible estimates would defeat the criterion it is meant to satisfy.
+The other blocker stands. 21.1
+([#1062](https://github.com/determined-001/orbital_stellar/issues/1062)) is still
+open, so no backstop watcher has run and **[the numbers table](#the-measured-numbers)
+is still empty on purpose.** §C.7's whole point is that readiness cost must be
+measured rather than assumed; filling that table with plausible estimates would
+defeat the criterion it exists to satisfy. Everything needed to fill it is now
+built and tested — see [How to fill it](#how-to-fill-it).
 
 ## Why readiness cost is the number that matters
 
@@ -74,8 +77,8 @@ no-op default, adapters per backend. One idiom across the project, per note 1.
 
 ```ts
 export interface CostMeter {
-  recordRpcCall(subscriptionIds: string[], method: string, durationMs: number): void;
-  recordExportScan(subscriptionIds: string[], bytesScanned: number): void;
+  recordRpcCall(subscriptionIds: readonly string[], method: string, durationMs: number): void;
+  recordExportScan(subscriptionIds: readonly string[], bytesScanned: number): void;
   recordCompute(subscriptionId: string, durationMs: number): void;
   recordStorage(subscriptionId: string, bytes: number): void;
 }
@@ -90,6 +93,39 @@ export interface CostWindow {
   standaloneCost: CostBreakdown;
 }
 ```
+
+### One addition the sketch above did not have
+
+`InMemoryCostMeter` also carries `track(subscriptionId, condition)` and
+`untrack(subscriptionId)`, and this is not bookkeeping — it is what makes the
+marginal split possible at all.
+
+Whether a new subscription **joined a cohort already being watched** or **opened
+a condition nobody was watching** cannot be recovered afterwards from cost
+numbers: those two arrivals are the two figures being compared, so the meter has
+to be told which one happened at the time it happens. `track()` returns the
+arrival it recorded, so a caller can assert on it.
+
+### What ships
+
+| Symbol | What it is |
+| --- | --- |
+| `CostMeter`, `CostBreakdown`, `CostWindow` | The interface and its shapes |
+| `NOOP_COST_METER` | The default — metering is opt-in and costs nothing when off |
+| `InMemoryCostMeter` | Attribution, per-window sealing, history, sharing factor, marginal cost |
+| `PrometheusCostMeter` | `orbital_backstop_cost_{attributed,standalone}_total`, labels `subscription` / `driver` |
+| `OtelCostMeter` | `orbital.backstop.cost.{attributed,standalone}`, same attributes |
+| `CompositeCostMeter` | Aggregator plus exporter behind one call site |
+
+`closeWindow(endLedger)` seals the open window and opens the next, so cost
+buckets line up exactly with the watcher's coverage windows. A subscription that
+is tracked but cost nothing measurable in a window still gets a record — omitting
+it would bias every per-subscription mean upwards.
+
+`marginalCost()` returns `null` for a figure it has no clean sample for, rather
+than a number. "Measured numbers, not estimates" applies to the code as much as
+to the table below: a window that added both kinds of subscription at once is
+counted in `transitionsSkippedMixed` and contributes to neither figure.
 
 `subscriptionIds` is a **list** on the shared drivers rather than a single id.
 That is the design decision that makes sharing measurable at all: a
@@ -121,10 +157,12 @@ Files: `packages/worker-core/src/backstop/costMeter.ts`,
 acceptance criterion says "the measured numbers, not estimates" — so it stays
 empty rather than being filled with numbers that would read as measurements.
 
-### How to fill it
+### <a id="how-to-fill-it"></a>How to fill it
 
 1. Land 21.1 so a backstop watcher exists.
-2. Wire `CostMeter` into it at the four drivers above.
+2. Wire a `CompositeCostMeter(new InMemoryCostMeter(startLedger), new PrometheusCostMeter())`
+   into it at the four drivers above, and call `track()` as subscriptions
+   activate and `closeWindow()` at each window boundary.
 3. Run against testnet for at least one full retention period with a subscription
    count that **changes during the window** — a static count cannot yield a
    marginal cost.
@@ -150,9 +188,14 @@ sum(rate(orbital_backstop_cost_attributed_total[1h]))
 
 | Acceptance criterion | Status |
 | --- | --- |
-| Per-subscription attribution for RPC, scans, compute, storage | Designed; needs `worker-core` |
-| Aggregated per subscription per window, queryable over time | Designed; needs `worker-core` |
-| Marginal cost reported explicitly | Designed; needs `worker-core` |
-| Exported through existing Prometheus and OTel surfaces | Designed; idiom already exists in `pulse-webhooks` |
+| Per-subscription attribution for RPC, scans, compute, storage | **Done** — `InMemoryCostMeter`, four drivers |
+| Aggregated per subscription per window, queryable over time | **Done** — `closeWindow`, `history`, `windows`, `totalForWindow` |
+| Marginal cost reported explicitly | **Done** — `marginalCost()`, split shared vs new condition |
+| Exported through existing Prometheus and OTel surfaces | **Done** — `PrometheusCostMeter`, `OtelCostMeter` |
 | Dashboard or documented query | **Done** — above |
-| Written cost model with **measured numbers, not estimates** | **Blocked.** Needs 21.1 running. |
+| Written cost model with **measured numbers, not estimates** | **Blocked.** Needs 21.1 (#1062) running. Everything to produce them is built. |
+
+Five of six are shipped and tested. The sixth is not a coding task: it needs a
+backstop that has actually run, which is 21.1's deliverable. Landing it as
+estimates would be worse than landing it empty, because a table of numbers is
+read as measurements no matter what the caption says.
