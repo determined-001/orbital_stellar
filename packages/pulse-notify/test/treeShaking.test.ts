@@ -6,7 +6,12 @@ import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-const SRC_INDEX = fileURLToPath(new URL("../src/index.ts", import.meta.url));
+// Vite/Rollup resolve ids with POSIX separators. On Windows the native paths
+// produced by fileURLToPath/join carry backslashes, which never match and the
+// entry fails to resolve - so every path handed to Vite is normalized first.
+const toPosix = (p: string): string => p.replace(/\\/g, "/");
+
+const SRC_INDEX = toPosix(fileURLToPath(new URL("../src/index.ts", import.meta.url)));
 
 /**
  * Bundles `source` against the package entry point and returns the emitted
@@ -24,8 +29,16 @@ async function bundle(source: string): Promise<string> {
       build: {
         write: false,
         minify: false,
-        lib: { entry, formats: ["es"], fileName: "out" },
-        rollupOptions: { external: ["react", "react-dom"] },
+        lib: { entry: toPosix(entry), formats: ["es"], fileName: "out" },
+        rollupOptions: {
+          external: ["react", "react-dom"],
+          // The package ships "use client" banners; Rollup warns on every one
+          // and they are irrelevant to what this file asserts.
+          onwarn(warning, warn) {
+            if (warning.code === "MODULE_LEVEL_DIRECTIVE") return;
+            warn(warning);
+          },
+        },
       },
     })) as { output: { type: string; code?: string }[] }[];
 
