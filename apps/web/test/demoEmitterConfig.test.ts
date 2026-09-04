@@ -8,7 +8,11 @@ import { readFileSync, existsSync } from "node:fs";
 // rather than the rule they name.
 vi.mock("node:fs", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:fs")>();
-  return { ...actual, existsSync: vi.fn(actual.existsSync) };
+  return {
+    ...actual,
+    existsSync: vi.fn(actual.existsSync),
+    readFileSync: vi.fn(actual.readFileSync),
+  };
 });
 
 /** Runs `fn` as if the deployment manifest were absent (pre-deployment state). */
@@ -18,9 +22,9 @@ function withoutDeploymentManifest<T>(fn: () => T): T {
 }
 import { resolve } from "node:path";
 import { assertRestrictedSecretNetwork } from "@orbital-stellar/pulse-core";
-import { isDemoEmitterConfigured } from "@/lib/fireDemoEvent";
+import { isDemoEmitterConfigured, getDemoEmitterConfig } from "@/lib/fireDemoEvent";
 
-const VARS = ["DEMO_EMITTER_CONTRACT_ID", "DEMO_EMITTER_SECRET"] as const;
+const VARS = ["DEMO_EMITTER_CONTRACT_ID", "DEMO_EMITTER_SECRET", "VERCEL_ENV"] as const;
 const saved: Record<string, string | undefined> = {};
 
 beforeEach(() => {
@@ -112,5 +116,64 @@ describe("assertRestrictedSecretNetwork", () => {
         context: "demo",
       }),
     ).toThrow();
+  });
+});
+
+describe("getDemoEmitterConfig", () => {
+  const REAL_ID = "CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75";
+
+  // `mockReset` restores the implementation `vi.fn(actual.readFileSync)` was
+  // created with, so the real reader is back for the next test.
+  beforeEach(() => {
+    vi.mocked(readFileSync).mockClear();
+  });
+
+  afterEach(() => {
+    vi.mocked(readFileSync).mockReset();
+  });
+
+  it("requires DEMO_EMITTER_CONTRACT_ID in production instead of reading the manifest", () => {
+    // The manifest lives outside apps/web and is never traced into the
+    // serverless bundle, so trusting it in production is works-on-my-machine.
+    process.env.VERCEL_ENV = "production";
+    process.env.DEMO_EMITTER_SECRET = "SDEMOSECRET";
+
+    const config = getDemoEmitterConfig();
+
+    expect(config.configured).toBe(false);
+    expect(config.status).toBe("unconfigured");
+    expect(config.reason).toMatch(/required in production/i);
+    expect(vi.mocked(readFileSync)).not.toHaveBeenCalled();
+  });
+
+  it("reports `unreadable`, not `unconfigured`, when the manifest cannot be parsed", () => {
+    // The two are diagnosed differently: one is a deliberate off switch, the
+    // other is a broken deployment that used to fail silently (#1030).
+    process.env.DEMO_EMITTER_SECRET = "SDEMOSECRET";
+    vi.mocked(readFileSync).mockImplementationOnce(() => {
+      throw new Error("EACCES");
+    });
+
+    const config = getDemoEmitterConfig();
+
+    expect(config.configured).toBe(false);
+    expect(config.status).toBe("unreadable");
+  });
+
+  it("reports `unconfigured` when the contract ID resolves but the secret does not", () => {
+    process.env.DEMO_EMITTER_CONTRACT_ID = REAL_ID;
+
+    const config = getDemoEmitterConfig();
+
+    expect(config.configured).toBe(false);
+    expect(config.status).toBe("unconfigured");
+    expect(config.reason).toMatch(/DEMO_EMITTER_SECRET/);
+  });
+
+  it("reports ok when both the contract ID and the secret are set", () => {
+    process.env.DEMO_EMITTER_CONTRACT_ID = REAL_ID;
+    process.env.DEMO_EMITTER_SECRET = "SDEMOSECRET";
+
+    expect(getDemoEmitterConfig()).toEqual({ configured: true, status: "ok" });
   });
 });

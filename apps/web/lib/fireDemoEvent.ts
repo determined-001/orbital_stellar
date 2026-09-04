@@ -32,30 +32,98 @@ export class DemoEmitterNotConfiguredError extends Error {
   }
 }
 
-/** Returns the demo-emitter contract ID from env var or deployed.testnet.json, or null. */
-function resolveDemoEmitterContractId(): string | null {
-  const fromEnv = process.env.DEMO_EMITTER_CONTRACT_ID;
-  if (fromEnv && !isPlaceholderContractId(fromEnv)) return fromEnv;
+/**
+ * The manifest fallback is a local-development convenience: `deployed.testnet.json`
+ * lives outside `apps/web` and is not traced into the serverless bundle, so it is
+ * never present in a deployed build (#1030). In production the env var is required.
+ */
+function isProductionRuntime(): boolean {
+  if (process.env.VERCEL_ENV) return process.env.VERCEL_ENV === "production";
+  return process.env.NODE_ENV === "production";
+}
+
+export type DemoEmitterConfigStatus =
+  /** Contract ID resolved (env var, or manifest fallback in local development). */
+  | "ok"
+  /** Nothing is configured: the feature is deliberately off in this environment. */
+  | "unconfigured"
+  /** A source of configuration exists but could not be read or parsed. */
+  | "unreadable";
+
+export type DemoEmitterResolution = {
+  contractId: string | null;
+  status: DemoEmitterConfigStatus;
+  /** Operator-facing detail for `unconfigured` / `unreadable`. Never a secret. */
+  reason?: string;
+};
+
+/**
+ * Resolves the demo-emitter contract ID and reports *why* it could not be
+ * resolved, so a deployed failure is diagnosable from the outside instead of
+ * silently reporting itself unconfigured (#1030).
+ */
+export function resolveDemoEmitter(): DemoEmitterResolution {
+  const fromEnv = process.env.DEMO_EMITTER_CONTRACT_ID?.trim();
+  if (fromEnv && !isPlaceholderContractId(fromEnv)) {
+    return { contractId: fromEnv, status: "ok" };
+  }
+
+  if (isProductionRuntime()) {
+    return {
+      contractId: null,
+      status: "unconfigured",
+      reason:
+        "DEMO_EMITTER_CONTRACT_ID is required in production - the deployment manifest fallback is local-development only.",
+    };
+  }
+
+  const deployManifestPath = resolve(
+    process.cwd(),
+    "..",
+    "..",
+    "contracts",
+    "deployed.testnet.json",
+  );
+
+  if (!existsSync(deployManifestPath)) {
+    return {
+      contractId: null,
+      status: "unconfigured",
+      reason: `DEMO_EMITTER_CONTRACT_ID is unset and no deployment manifest at ${deployManifestPath}.`,
+    };
+  }
 
   try {
-    const deployManifestPath = resolve(
-      process.cwd(),
-      "..",
-      "..",
-      "contracts",
-      "deployed.testnet.json",
-    );
-    if (existsSync(deployManifestPath)) {
-      const manifest = JSON.parse(readFileSync(deployManifestPath, "utf-8")) as {
-        contracts?: { demoEmitter?: { contractId?: string } };
-      };
-      const id = manifest.contracts?.demoEmitter?.contractId ?? null;
-      if (id && !isPlaceholderContractId(id)) return id;
+    const manifest = JSON.parse(readFileSync(deployManifestPath, "utf-8")) as {
+      contracts?: { demoEmitter?: { contractId?: string } };
+    };
+    const id = manifest.contracts?.demoEmitter?.contractId ?? null;
+    if (id && !isPlaceholderContractId(id)) {
+      return { contractId: id, status: "ok" };
     }
-  } catch {
-    // File may not exist (pre-deployment)
+    return {
+      contractId: null,
+      status: "unconfigured",
+      reason: `Deployment manifest at ${deployManifestPath} has no usable contracts.demoEmitter.contractId.`,
+    };
+  } catch (error) {
+    // Do not swallow: an unreadable manifest is a configuration failure, not an
+    // absence of configuration, and the two are diagnosed differently.
+    console.warn(
+      `fireDemoEvent: failed to read demo-emitter manifest at ${deployManifestPath}:`,
+      error,
+    );
+    return {
+      contractId: null,
+      status: "unreadable",
+      reason: `Deployment manifest at ${deployManifestPath} could not be read or parsed.`,
+    };
   }
-  return null;
+}
+
+/** Returns the demo-emitter contract ID from env var or deployed.testnet.json, or null. */
+function resolveDemoEmitterContractId(): string | null {
+  return resolveDemoEmitter().contractId;
 }
 
 /** Honest placeholders from deploy_testnet.sh must not count as configured. */
@@ -67,9 +135,32 @@ function isPlaceholderContractId(id: string): boolean {
  * Returns whether the demo-emitter contract is configured for use.
  */
 export function isDemoEmitterConfigured(): boolean {
-  const contractId = resolveDemoEmitterContractId();
+  return getDemoEmitterConfig().configured;
+}
+
+/**
+ * Configuration report for `/api/demo/config`. Distinguishes "not configured"
+ * (feature deliberately off) from "configuration could not be read" (#1030).
+ */
+export function getDemoEmitterConfig(): {
+  configured: boolean;
+  status: DemoEmitterConfigStatus;
+  reason?: string;
+} {
+  const resolution = resolveDemoEmitter();
   const secret = process.env.DEMO_EMITTER_SECRET;
-  return !!(contractId && secret);
+
+  if (resolution.status !== "ok") {
+    return { configured: false, status: resolution.status, reason: resolution.reason };
+  }
+  if (!secret) {
+    return {
+      configured: false,
+      status: "unconfigured",
+      reason: "DEMO_EMITTER_SECRET is not set.",
+    };
+  }
+  return { configured: true, status: "ok" };
 }
 
 /**
