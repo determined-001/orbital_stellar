@@ -1,5 +1,6 @@
 import { UrlValidator } from "@orbital-stellar/pulse-webhooks";
 
+import { registrableTiers, tierDefinition } from "../backstop/tiers.js";
 import { SubscriptionError } from "./errors.js";
 import type { SubscriptionStore } from "./store.js";
 import type {
@@ -9,16 +10,6 @@ import type {
   SubscriptionStatus,
   SubscriptionTier,
 } from "./types.js";
-
-/**
- * Tiers a subscription may actually be registered against.
- *
- * `latency-sensitive` is defined in the type but absent here on purpose: W3
- * ships the cheap tier only, so the expensive promise cannot be sold before
- * the infrastructure exists to keep it (21.3, which owns the tier definitions
- * themselves and the flag that gates them).
- */
-const REGISTRABLE_TIERS: readonly SubscriptionTier[] = ["time-insensitive"];
 
 export interface SubscriptionServiceOptions {
   store: SubscriptionStore;
@@ -42,6 +33,23 @@ export interface CreateSubscriptionInput {
   offering: string;
   webhookTarget: string;
   tier: SubscriptionTier;
+}
+
+/**
+ * Refuse a tier that is defined but disabled.
+ *
+ * The message names the issue that enables it, so the answer to "why can I not
+ * register this" is in the error rather than in someone's memory — and so the
+ * flag is visibly a safety device rather than something to flip for a demo.
+ */
+function assertRegistrable(tier: SubscriptionTier): void {
+  if (registrableTiers().includes(tier)) return;
+  const definition = tierDefinition(tier);
+  throw new SubscriptionError(
+    "TIER_NOT_REGISTRABLE",
+    `tier "${tier}" is defined but not registrable: it is enabled by ${definition.enabledBy}, ` +
+      `once the infrastructure exists to keep the guarantee it sells`,
+  );
 }
 
 function requireNonEmpty(value: string, field: string): string {
@@ -81,13 +89,7 @@ export class SubscriptionService {
     const offering = requireNonEmpty(input.offering, "offering");
     const webhookTarget = requireNonEmpty(input.webhookTarget, "webhookTarget");
 
-    if (!REGISTRABLE_TIERS.includes(input.tier)) {
-      throw new SubscriptionError(
-        "TIER_NOT_REGISTRABLE",
-        `tier "${input.tier}" is not registrable yet — the latency-sensitive tier lands with 22.4, ` +
-          `once the infrastructure exists to keep the guarantee it sells`,
-      );
-    }
+    assertRegistrable(input.tier);
 
     // Validated before anything is stored, not on delivery: a target that
     // fails the guard must never reach the retry queue in the first place.
@@ -110,7 +112,8 @@ export class SubscriptionService {
       createdAt: at,
       updatedAt: at,
       cancelEffectiveWindow: null,
-      audit: [this.entry("create", null, "active", at)],
+      version: 1,
+      audit: [this.entry("create", null, "active", at, 1, input.tier)],
     };
     await this.store.put(record);
     return record;
@@ -146,15 +149,65 @@ export class SubscriptionService {
     return record;
   }
 
+  /**
+   * Change the tier in force.
+   *
+   * A **new subscription version**, not an edit: the tier is the guarantee, and
+   * what was promised over windows 10–40 has to stay answerable once the tier
+   * moves, or an SLO dispute becomes an argument about what the record used to
+   * say. The audit trail carries the version and tier of every entry, so the
+   * terms in force at any past window can be replayed from the record alone.
+   */
+  async changeTier(
+    id: string,
+    tier: SubscriptionTier,
+    reason?: string,
+  ): Promise<SubscriptionRecord> {
+    const current = await this.get(id);
+    if (current.status === "cancelled") {
+      throw new SubscriptionError(
+        "ALREADY_CANCELLED",
+        `subscription ${id} is cancelled; cancellation is terminal`,
+      );
+    }
+    assertRegistrable(tier);
+
+    if (tier === current.tier) {
+      throw new SubscriptionError(
+        "INVALID_TRANSITION",
+        `subscription ${id} is already on tier "${tier}"`,
+      );
+    }
+
+    const at = this.now();
+    const version = current.version + 1;
+    const updated: SubscriptionRecord = {
+      ...current,
+      tier,
+      version,
+      updatedAt: at,
+      audit: [
+        ...current.audit,
+        this.entry("change-tier", current.status, current.status, at, version, tier, reason),
+      ],
+    };
+    await this.store.put(updated);
+    return updated;
+  }
+
   private entry(
     action: SubscriptionAction,
     from: SubscriptionStatus | null,
     to: SubscriptionStatus,
     at: number,
+    version: number,
+    tier: SubscriptionTier,
     reason?: string,
   ): SubscriptionAuditEntry {
     return {
       action,
+      version,
+      tier,
       at,
       from,
       to,
@@ -193,7 +246,10 @@ export class SubscriptionService {
       cancelEffectiveWindow:
         to === "cancelled" ? this.currentWindow() + 1 : current.cancelEffectiveWindow,
       // Appended, never rewritten.
-      audit: [...current.audit, this.entry(action, current.status, to, at, reason)],
+      audit: [
+        ...current.audit,
+        this.entry(action, current.status, to, at, current.version, current.tier, reason),
+      ],
     };
     await this.store.put(updated);
     return updated;
