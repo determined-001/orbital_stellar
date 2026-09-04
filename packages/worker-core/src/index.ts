@@ -2,9 +2,9 @@ export {
   fireKeyToString,
   InMemoryClaimStore,
   IdempotencyManager,
-  PostgresWorkerStateStore,
+  PostgresClaimStore,
 } from "./idempotency.js";
-export type { ClaimRecord, ClaimStore, FireKey, PgLike } from "./idempotency.js";
+export type { ClaimRecord, ClaimStore, FireKey } from "./idempotency.js";
 export type {
   Network,
   ChainState,

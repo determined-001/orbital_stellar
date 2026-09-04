@@ -2,11 +2,11 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { IdempotencyManager, PostgresWorkerStateStore, fireKeyToString } from "../../src/index.js";
+import { IdempotencyManager, PostgresClaimStore, fireKeyToString } from "../../src/index.js";
 
 const enabled = process.env.INTEGRATION_TESTS === "true";
 
-describe("PostgresWorkerStateStore restart recovery", () => {
+describe("PostgresClaimStore restart recovery", () => {
   if (!enabled) {
     it("skipping Postgres integration test (INTEGRATION_TESTS is not true)", () => {
       expect(true).toBe(true);
@@ -39,7 +39,7 @@ describe("PostgresWorkerStateStore restart recovery", () => {
   it("survives a process restart and checks chain before retrying", async () => {
     const key = { workerId: "restart-test", windowStartLedger: 99 };
     let chainExecuted = false;
-    const firstStore = new PostgresWorkerStateStore(pool);
+    const firstStore = new PostgresClaimStore(pool);
     const firstWorker = new IdempotencyManager(firstStore, async () => chainExecuted, 10);
 
     await expect(
@@ -48,7 +48,7 @@ describe("PostgresWorkerStateStore restart recovery", () => {
       }),
     ).rejects.toThrow("simulated crash before confirmation");
 
-    const restartedStore = new PostgresWorkerStateStore(pool);
+    const restartedStore = new PostgresClaimStore(pool);
     const restartedWorker = new IdempotencyManager(restartedStore, async () => chainExecuted, 10);
     expect(await restartedWorker.claimThenSubmit(key, "process-b", async () => undefined)).toBe(
       false,

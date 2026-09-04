@@ -1,3 +1,5 @@
+import type { PgLike } from "./PostgresWorkerStateStore.js";
+
 export type FireKey = {
   workerId: string;
   windowStartLedger: number;
@@ -52,12 +54,8 @@ export class InMemoryClaimStore implements ClaimStore {
   }
 }
 
-export interface PgLike {
-  query: (text: string, params?: unknown[]) => Promise<{ rows: any[] }>;
-}
-
 /** PostgreSQL-backed claims shared by worker processes and restarts. */
-export class PostgresWorkerStateStore implements ClaimStore {
+export class PostgresClaimStore implements ClaimStore {
   constructor(private readonly pg: PgLike) {}
 
   async claim(key: string, owner: string, ttlMs: number): Promise<boolean> {
@@ -80,10 +78,11 @@ export class PostgresWorkerStateStore implements ClaimStore {
        WHERE fire_key = $1 AND expires_at > NOW()`,
       [key],
     );
-    if (result.rows.length === 0) return null;
+    const row = result.rows[0];
+    if (row === undefined) return null;
     return {
-      owner: result.rows[0].owner as string,
-      expiresAt: Number(result.rows[0].expires_at),
+      owner: row.owner as string,
+      expiresAt: Number(row.expires_at),
     };
   }
 
