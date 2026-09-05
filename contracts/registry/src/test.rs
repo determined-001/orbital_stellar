@@ -507,3 +507,330 @@ fn touch_rejects_more_versions_than_a_page() {
         Err(Ok(Error::TooManyVersions))
     );
 }
+
+fn vec_str(env: &Env, vals: &[&str]) -> soroban_sdk::Vec<String> {
+    let mut v = soroban_sdk::Vec::new(env);
+    for s in vals {
+        v.push_back(String::from_str(env, s));
+    }
+    v
+}
+
+#[test]
+fn operator_register_then_get_and_latest() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let client = setup(&env);
+
+    let operator = Address::generate(&env);
+    let v1 = String::from_str(&env, "1.0.0");
+    let v2 = String::from_str(&env, "2.0.0");
+    let display_name = String::from_str(&env, "Acme Operators");
+    let contact = String::from_str(&env, "https://acme.example.com");
+    let trigger_classes = vec_str(&env, &["cron", "event"]);
+    let networks = vec_str(&env, &["testnet"]);
+    let denomination = String::from_str(&env, "XLM");
+    let latency_tier = String::from_str(&env, "standard");
+    let pointer = String::from_str(&env, "https://acme.example.com/operator.json");
+
+    client.register_operator(
+        &operator,
+        &v1,
+        &display_name,
+        &contact,
+        &trigger_classes,
+        &networks,
+        &100i128,
+        &denomination,
+        &latency_tier,
+        &pointer,
+    );
+
+    let latest = client.latest_operator(&operator).unwrap();
+    assert_eq!(latest.version, v1);
+    assert_eq!(latest.display_name, display_name);
+    assert_eq!(latest.operator, operator);
+
+    // publish second version
+    client.register_operator(
+        &operator,
+        &v2,
+        &display_name,
+        &contact,
+        &trigger_classes,
+        &networks,
+        &200i128,
+        &denomination,
+        &latency_tier,
+        &pointer,
+    );
+
+    // version lookup returns correct version
+    let fetched_v1 = client.get_operator(&operator, &v1).unwrap();
+    assert_eq!(fetched_v1.version, v1);
+    assert_eq!(fetched_v1.price, 100i128);
+
+    let fetched_v2 = client.get_operator(&operator, &v2).unwrap();
+    assert_eq!(fetched_v2.version, v2);
+    assert_eq!(fetched_v2.price, 200i128);
+
+    // latest tracks most recent
+    let latest = client.latest_operator(&operator).unwrap();
+    assert_eq!(latest.version, v2);
+
+    // per-version lookup list
+    let versions = client.list_operator_versions(&operator);
+    assert_eq!(versions.len(), 2);
+    assert_eq!(versions.get(0).unwrap(), v1);
+    assert_eq!(versions.get(1).unwrap(), v2);
+
+    // paged
+    let (page, next) = client.list_operator_versions_paged(&operator, &0u32, &1u32);
+    assert_eq!(page.len(), 1);
+    assert_eq!(page.get(0).unwrap(), v1);
+    assert_eq!(next, Some(1));
+}
+
+#[test]
+fn operator_reregistration_same_version_fails() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let client = setup(&env);
+
+    let operator = Address::generate(&env);
+    let version = String::from_str(&env, "1.0.0");
+    let display_name = String::from_str(&env, "Acme");
+    let contact = String::from_str(&env, "https://acme.example.com");
+    let trigger_classes = vec_str(&env, &["cron"]);
+    let networks = vec_str(&env, &["testnet"]);
+    let denomination = String::from_str(&env, "XLM");
+    let latency_tier = String::from_str(&env, "standard");
+    let pointer = String::from_str(&env, "https://acme.example.com/o.json");
+
+    client.register_operator(
+        &operator,
+        &version,
+        &display_name,
+        &contact,
+        &trigger_classes,
+        &networks,
+        &100i128,
+        &denomination,
+        &latency_tier,
+        &pointer,
+    );
+    let res = client.try_register_operator(
+        &operator,
+        &version,
+        &display_name,
+        &contact,
+        &trigger_classes,
+        &networks,
+        &100i128,
+        &denomination,
+        &latency_tier,
+        &pointer,
+    );
+    assert_eq!(res, Err(Ok(Error::AlreadyPublished)));
+}
+
+#[test]
+#[should_panic]
+fn operator_publish_requires_operator_auth() {
+    let env = Env::default();
+    // no mock_all_auths
+    let client = setup(&env);
+    let operator = Address::generate(&env);
+    let version = String::from_str(&env, "1.0.0");
+    let display_name = String::from_str(&env, "Acme");
+    let contact = String::from_str(&env, "https://acme.example.com");
+    let trigger_classes = vec_str(&env, &["cron"]);
+    let networks = vec_str(&env, &["testnet"]);
+    let denomination = String::from_str(&env, "XLM");
+    let latency_tier = String::from_str(&env, "standard");
+    let pointer = String::from_str(&env, "https://acme.example.com/o.json");
+    client.register_operator(
+        &operator,
+        &version,
+        &display_name,
+        &contact,
+        &trigger_classes,
+        &networks,
+        &100i128,
+        &denomination,
+        &latency_tier,
+        &pointer,
+    );
+}
+
+#[test]
+fn offering_version_lookup_and_latest() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let client = setup(&env);
+
+    let operator = Address::generate(&env);
+    let target = Address::generate(&env);
+    let v1 = String::from_str(&env, "1.0.0");
+    let v2 = String::from_str(&env, "2.0.0");
+    let function = String::from_str(&env, "ping");
+    let trigger_class = String::from_str(&env, "cron");
+    let denomination = String::from_str(&env, "XLM");
+    let pointer = String::from_str(&env, "https://acme.example.com/offering.json");
+
+    client.register_offering(
+        &operator,
+        &v1,
+        &target,
+        &function,
+        &trigger_class,
+        &50i128,
+        &denomination,
+        &pointer,
+    );
+    client.register_offering(
+        &operator,
+        &v2,
+        &target,
+        &function,
+        &trigger_class,
+        &60i128,
+        &denomination,
+        &pointer,
+    );
+
+    let fetched = client.get_offering(&operator, &v1).unwrap();
+    assert_eq!(fetched.version, v1);
+    assert_eq!(fetched.price, 50i128);
+    assert_eq!(fetched.target_contract, target);
+
+    let latest = client.latest_offering(&operator).unwrap();
+    assert_eq!(latest.version, v2);
+    assert_eq!(latest.price, 60i128);
+
+    let versions = client.list_offering_versions(&operator);
+    assert_eq!(versions.len(), 2);
+    assert_eq!(versions.get(0).unwrap(), v1);
+    assert_eq!(versions.get(1).unwrap(), v2);
+
+    let (page, next) = client.list_offering_versions_paged(&operator, &1u32, &1u32);
+    assert_eq!(page.len(), 1);
+    assert_eq!(page.get(0).unwrap(), v2);
+    assert_eq!(next, None);
+}
+
+#[test]
+fn offering_reregistration_same_version_fails() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let client = setup(&env);
+    let operator = Address::generate(&env);
+    let target = Address::generate(&env);
+    let version = String::from_str(&env, "1.0.0");
+    let function = String::from_str(&env, "ping");
+    let trigger_class = String::from_str(&env, "cron");
+    let denomination = String::from_str(&env, "XLM");
+    let pointer = String::from_str(&env, "https://acme.example.com/off.json");
+
+    client.register_offering(
+        &operator,
+        &version,
+        &target,
+        &function,
+        &trigger_class,
+        &50i128,
+        &denomination,
+        &pointer,
+    );
+    let res = client.try_register_offering(
+        &operator,
+        &version,
+        &target,
+        &function,
+        &trigger_class,
+        &50i128,
+        &denomination,
+        &pointer,
+    );
+    assert_eq!(res, Err(Ok(Error::AlreadyPublished)));
+}
+
+#[test]
+#[should_panic]
+fn offering_publish_requires_operator_auth() {
+    let env = Env::default();
+    let client = setup(&env);
+    let operator = Address::generate(&env);
+    let target = Address::generate(&env);
+    let version = String::from_str(&env, "1.0.0");
+    let function = String::from_str(&env, "ping");
+    let trigger_class = String::from_str(&env, "cron");
+    let denomination = String::from_str(&env, "XLM");
+    let pointer = String::from_str(&env, "https://acme.example.com/off.json");
+    client.register_offering(
+        &operator,
+        &version,
+        &target,
+        &function,
+        &trigger_class,
+        &50i128,
+        &denomination,
+        &pointer,
+    );
+}
+
+#[test]
+fn only_operator_can_modify_own_record() {
+    // Ensures that operator A cannot overwrite operator B's record via
+    // publisher auth - the contract requires `operator.require_auth()` so the
+    // transaction must be signed by the operator address being written.
+    // In tests, mock_all_auths bypasses auth, so we verify isolation by
+    // checking that each operator's namespace is independent and that an
+    // operator's version list does not leak into another's.
+    let env = Env::default();
+    env.mock_all_auths();
+    let client = setup(&env);
+
+    let operator_a = Address::generate(&env);
+    let operator_b = Address::generate(&env);
+    let version = String::from_str(&env, "1.0.0");
+    let display_name = String::from_str(&env, "Acme");
+    let contact = String::from_str(&env, "https://acme.example.com");
+    let trigger_classes = vec_str(&env, &["cron"]);
+    let networks = vec_str(&env, &["testnet"]);
+    let denomination = String::from_str(&env, "XLM");
+    let latency_tier = String::from_str(&env, "standard");
+    let pointer = String::from_str(&env, "https://acme.example.com/o.json");
+
+    client.register_operator(
+        &operator_a,
+        &version,
+        &display_name,
+        &contact,
+        &trigger_classes,
+        &networks,
+        &100i128,
+        &denomination,
+        &latency_tier,
+        &pointer,
+    );
+    // B has no records yet
+    assert!(client.latest_operator(&operator_b).is_none());
+    assert_eq!(client.list_operator_versions(&operator_b).len(), 0);
+
+    // B can register its own version independently
+    client.register_operator(
+        &operator_b,
+        &version,
+        &display_name,
+        &contact,
+        &trigger_classes,
+        &networks,
+        &200i128,
+        &denomination,
+        &latency_tier,
+        &pointer,
+    );
+    assert_eq!(client.get_operator(&operator_a, &version).unwrap().price, 100i128);
+    assert_eq!(client.get_operator(&operator_b, &version).unwrap().price, 200i128);
+}
