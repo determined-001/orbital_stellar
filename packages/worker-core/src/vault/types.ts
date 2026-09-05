@@ -4,7 +4,9 @@
  * authority never exceeds 'call a constrained function'."
  *
  * NOTE ON SCOPE: 22.1 ("Soroban vault contract with hard constraints") is
- * open and `contracts/vault` does not exist in this repo. `VaultClient` is
+ * open, and `contracts/vault` is a placeholder crate with no `#[contract]`,
+ * no storage and no entry points - it exists only so #1069's `#[ignore]`d
+ * property/fuzz specs compile. `VaultClient` is
  * therefore a specification - the shape a real vault-calling client must
  * satisfy - not a working implementation. `UNIMPLEMENTED_VAULT_CLIENT` (in
  * `index.ts`) is the only value of this type shipped here, and every method

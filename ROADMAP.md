@@ -333,7 +333,7 @@ the release process, not a scheduling preference.
   e2e test green against testnet, **with a custody assertion test** that fails
   if the worker ever holds a signing key for user funds.
 - **`W2` — vault contract (MIT).**
-  *Gate:* `contracts/worker-vault` code complete, third-party audited, deployed
+  *Gate:* `contracts/vault` code complete, third-party audited, deployed
   to testnet; emits a release-event; unit tests green. The vault is the *only*
   contract with custodial authority — workers call into it, they never parallel
   it. This is what makes the §C.2 constraint true rather than aspirational.
