@@ -19,8 +19,8 @@
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
-    "@orbital-stellar/pulse-core": "workspace:*",
-    "@orbital-stellar/pulse-webhooks": "workspace:*",
+    "@orbital-stellar/pulse-core": "^0.1.0",
+    "@orbital-stellar/pulse-webhooks": "^0.1.0",
     "express": "^5.2.0",
     "express-rate-limit": "^8.6.2",
     "pg": "^8.22.0"
