@@ -17,6 +17,22 @@ only globs `packages/*` and `apps/*`); it has its own toolchain and CI job.
   that emits a `Ping` event. Exists solely so the public `/demo/contracts` page
   can offer a "Fire test event" button without ever touching the registry
   contract's real publish path.
+- **`payroll`** (`orbital-payroll`) - the reference contract for the worker
+  layer's first rule, **the trigger is not the custodian**
+  ([`docs/design/workers.md`](../docs/design/workers.md)). `configure()`,
+  `fund()`, `disburse()`, `withdraw()`. `disburse()` takes **no caller
+  authorization**: it checks that the window has elapsed, the balance covers
+  the recipient set, and recipients are configured, and does not care who
+  called it. `withdraw()` takes no destination parameter, so no call path sends
+  funds anywhere but the configured owner. Emits `Disbursed` carrying the
+  window index as a topic, so a verifier can answer "did window 7 fire?" from
+  the chain alone.
+
+  The event schema is declared with `#[contractevent]`, following `registry`,
+  so it travels in the contract's own WASM spec and resolves through the same
+  introspection path (`discoverContract` -> `parseContractSpec`) rather than
+  needing a hand-maintained copy. A bundled well-known entry, which needs the
+  deployed contract id, is added alongside the deployment.
 - **`vault`** (`orbital-vault`) - **placeholder only, not a working contract.**
   Empty crate (`src/lib.rs` is a doc comment, no `#[contract]`) that exists so
   `tests/property.rs` and `tests/fuzz.rs` - `#[ignore]`d specifications of the

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Deploys the registry and demo-emitter contracts to Stellar testnet.
+# Deploys the registry, demo-emitter and payroll contracts to Stellar testnet.
 #
 # This is a MANUAL step: run it yourself with a funded testnet identity you
 # control and are willing to hand this script access to. It is deliberately
@@ -47,6 +47,7 @@ DEPLOYER_PUBLIC_KEY="$(stellar keys address "$DEPLOYER_IDENTITY")"
 
 REGISTRY_WASM="$CONTRACTS_DIR/target/wasm32v1-none/release/orbital_abi_registry.wasm"
 DEMO_EMITTER_WASM="$CONTRACTS_DIR/target/wasm32v1-none/release/orbital_demo_emitter.wasm"
+PAYROLL_WASM="$CONTRACTS_DIR/target/wasm32v1-none/release/orbital_payroll.wasm"
 
 echo "==> Deploying registry contract (deployer: $DEPLOYER_PUBLIC_KEY)"
 REGISTRY_CONTRACT_ID="$(stellar contract deploy \
@@ -64,8 +65,17 @@ DEMO_EMITTER_CONTRACT_ID="$(stellar contract deploy \
   --alias orbital-demo-emitter)"
 echo "    demo-emitter contract: $DEMO_EMITTER_CONTRACT_ID"
 
+echo "==> Deploying payroll contract"
+PAYROLL_CONTRACT_ID="$(stellar contract deploy \
+  --wasm "$PAYROLL_WASM" \
+  --source-account "$DEPLOYER_IDENTITY" \
+  --network "$NETWORK" \
+  --alias orbital-payroll)"
+echo "    payroll contract: $PAYROLL_CONTRACT_ID"
+
 REGISTRY_WASM_HASH="$(sha256sum "$REGISTRY_WASM" | awk '{print $1}')"
 DEMO_EMITTER_WASM_HASH="$(sha256sum "$DEMO_EMITTER_WASM" | awk '{print $1}')"
+PAYROLL_WASM_HASH="$(sha256sum "$PAYROLL_WASM" | awk '{print $1}')"
 DEPLOYED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
 cat > "$CONTRACTS_DIR/deployed.testnet.json" <<EOF
@@ -81,6 +91,10 @@ cat > "$CONTRACTS_DIR/deployed.testnet.json" <<EOF
     "demoEmitter": {
       "contractId": "$DEMO_EMITTER_CONTRACT_ID",
       "wasmHash": "$DEMO_EMITTER_WASM_HASH"
+    },
+    "payroll": {
+      "contractId": "$PAYROLL_CONTRACT_ID",
+      "wasmHash": "$PAYROLL_WASM_HASH"
     }
   }
 }
@@ -92,3 +106,5 @@ echo "Next steps (manual, see maintainer plan section 8):"
 echo "  1. Add repo secrets SOROBAN_CONTRACT_ID=$REGISTRY_CONTRACT_ID and SOROBAN_INVOKER_SECRET (the deployer's secret key)."
 echo "  2. Set DEMO_EMITTER_CONTRACT_ID=$DEMO_EMITTER_CONTRACT_ID and DEMO_EMITTER_SECRET as Vercel env vars for apps/web."
 echo "  3. Run the well-known spec seeding script against the deployed registry."
+echo "  4. Register the payroll Disbursed event schema against $PAYROLL_CONTRACT_ID"
+echo "     so it resolves through AbiRegistryClient (see contracts/README.md)."
