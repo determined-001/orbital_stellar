@@ -86,11 +86,11 @@ export async function registerSeedSpecs(): Promise<void> {
       submittedAt: new Date().toISOString(),
     },
     {
-      contractId: "CAUIKL3IYGMERDRUN5QQVPKPLZTRNVXV27LFCWQIRNOHSNGB3ZXAEFBX",
+      contractId: "CAUIKL3IYGMERDRUN6YSCLWVAKIFG5Q4YJHUKM4S4NJZQIA3BAS6OJPK",
       spec: {
         version: "1.0.0",
         name: "AQUA",
-        contractId: "CAUIKL3IYGMERDRUN5QQVPKPLZTRNVXV27LFCWQIRNOHSNGB3ZXAEFBX",
+        contractId: "CAUIKL3IYGMERDRUN6YSCLWVAKIFG5Q4YJHUKM4S4NJZQIA3BAS6OJPK",
         network: "mainnet",
         functions: [],
         events: [],

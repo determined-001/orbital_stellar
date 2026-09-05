@@ -69,7 +69,7 @@ A contract qualifies as a well-known spec when it meets **all** of the following
 | `native-asset-wrapper.json` | `CAS3J7GYLGXMF6TDJBBYYSE3HQ6BBSMLNUQ34T6TZMYMW2EVH34XOWMA` | XLM is the native Stellar asset and the most widely used token on the network. |
 | `usdc.json` | `CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75` | USDC is the dominant USD stablecoin on Stellar, issued by Circle. |
 | `eurc.json` | `CDTKPWPLOURQA2SGTKTUQOWRCBZEORB4BWBOMJ3D3ZTQQSGE5F6JBQLV` | EURC is Circle's MiCA-compliant EUR stablecoin on Stellar, launched 2023-09-26. |
-| `aqua.json` | `CAUIKL3IYGMERDRUN5QQVPKPLZTRNVXV27LFCWQIRNOHSNGB3ZXAEFBX` | AQUA is the governance and liquidity incentive token of the Aquarius protocol, held by 120K+ wallets. |
+| `aqua.json` | `CAUIKL3IYGMERDRUN6YSCLWVAKIFG5Q4YJHUKM4S4NJZQIA3BAS6OJPK` | AQUA is the governance and liquidity incentive token of the Aquarius protocol, held by 120K+ wallets. |
 
 > **SAC contract IDs** are derived deterministically from the classic asset. To verify or derive an address:
 > ```

@@ -30,7 +30,7 @@
     },
     {
       "name": "Aquarius (AQUA)",
-      "contract_id": "CAUIKL3IYGMERDRUN5QQVPKPLZTRNVXV27LFCWQIRNOHSNGB3ZXAEFBX",
+      "contract_id": "CAUIKL3IYGMERDRUN6YSCLWVAKIFG5Q4YJHUKM4S4NJZQIA3BAS6OJPK",
       "file": "aqua.json",
       "description": "Governance and liquidity incentive token of the Aquarius protocol on Stellar mainnet.",
       "tags": ["sep41", "sac", "governance", "defi", "aquarius"]
