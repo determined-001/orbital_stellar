@@ -36,6 +36,7 @@
     "@orbital-stellar/abi-registry": "workspace:*",
     "@orbital-stellar/pulse-core": "workspace:*",
     "@orbital-stellar/pulse-webhooks": "workspace:*",
+    "@stellar/stellar-sdk": "^16.1.0",
     "cron-parser": "^4.9.0",
     "pino": "^8.15.0",
     "prom-client": "^15.1.3",

@@ -33,6 +33,10 @@ const SECRET_ENV_VARS = [
   "DEMO_EMITTER_SECRET",
   "SOROBAN_INVOKER_SECRET",
   "ORBITAL_REGISTRY_PUBLISHER_SECRET",
+  // The worker operator's signing key (@orbital-stellar/worker-core). It signs
+  // the operator's own submissions and has no authority over subscriber funds,
+  // but it is still a seed and must never reach a browser.
+  "ORBITAL_OPERATOR_SECRET",
   "UPSTASH_REDIS_REST_TOKEN",
   "NPM_TOKEN",
 ];

@@ -333,3 +333,78 @@ console.log(result.provenance);
 
 See `docs/design/worker-verification-backfill.md` for the full design, the
 byte-identical guarantee, and the cost model.
+Worker layer primitives: triggers that hold no authority over the funds they move.
+
+> **Status: partial.** This package currently ships the transaction builder and
+> submitter (#1040). The package scaffold and the full worker definition model
+> are #1038's deliverable; `src/types.ts` carries a provisional
+> `WorkerDefinition` covering only the fields the submitter reads, so it can be
+> replaced by a type import once #1038 lands.
+
+## What the submitter does
+
+`TxSubmitter` turns a due worker decision into a signed, submitted Soroban
+invocation:
+
+1. **Builds** an `InvokeHostFunction` operation from the worker's contract ID,
+   function name and already-encoded arguments.
+2. **Simulates** it through `@orbital-stellar/pulse-core`'s `SorobanRpcClient` -
+   the same RPC client the rest of the repo uses, not a second client layer.
+3. **Prices** it from that simulation's `minResourceFee`, padded by a bounded
+   multiplier and checked against a configured ceiling (see below).
+4. **Signs** with the operator's own key, and only that key.
+5. **Submits**, then **confirms by polling** `getTransaction` - a successful
+   send is never taken as a successful invocation.
+
+```ts
+import { OperatorSigner, TxSubmitter } from "@orbital-stellar/worker-core";
+import { SorobanRpcClient } from "@orbital-stellar/pulse-core";
+import { Networks } from "@stellar/stellar-sdk";
+
+const submitter = new TxSubmitter({
+  client: new SorobanRpcClient({ url: process.env.SOROBAN_RPC_URL! }),
+  signer: OperatorSigner.fromEnv({ networkPassphrase: Networks.TESTNET }),
+  networkPassphrase: Networks.TESTNET,
+  loadAccount: (accountId) => horizon.loadAccount(accountId),
+  feeMultiplier: 1.5,
+  maxFeeStroops: 5_000_000,
+});
+
+const outcome = await submitter.submit(worker);
+```
+
+## Outcomes
+
+`submit` does not throw for anything a caller is expected to handle:
+
+| `outcome.status` | Meaning |
+|---|---|
+| `submitted` | The transaction landed in a ledger. Carries the hash, ledger and the fee actually signed for. |
+| `contract_rejected` | The contract refused the call - e.g. a permissionless `disburse()` saying "not yet due". **This is the design working, not a miss.** |
+| `failed` | Infrastructure, fee-cap or on-chain failure, with `retryable` saying whether trying again could help. |
+
+`contract_rejected` is deliberately its own status so downstream scoring does
+not count a correct refusal as a missed trigger.
+
+## Fees are always bounded
+
+An uncapped fee on a congested ledger is how an operator drains its own XLM
+float. `resolveFee` pads the simulated resource fee by `feeMultiplier`
+(default 1.5, hard ceiling 10) and refuses anything above `maxFeeStroops`
+(default 10,000,000 stroops = 1 XLM) with a `FeeCapExceededError`. A capped-out
+submission comes back as a retryable `failed` outcome - nothing is signed and
+nothing is sent.
+
+## One key, and only one
+
+`OperatorSigner` wraps exactly one keypair - the operator's. A worker triggers a
+permissionless call; it never holds authority over a subscriber's funds, so it
+never needs a subscriber's key. The type is shaped so that giving it one cannot
+be a quiet change: the keypair is private, `sign` takes no signer argument, and
+`TxSubmitter` accepts a signer rather than a list of them. Adding a second
+signer means changing this shape, which is an obvious diff in review.
+
+The seed is read through `pulse-core`'s `secretPolicy` helpers, is never logged
+(`toString`/`toJSON`/`describe` all render the public key), and never appears in
+an error message - not even a prefix. `ORBITAL_OPERATOR_SECRET` is covered by
+`scripts/assert-no-secrets-in-bundle.mjs`.

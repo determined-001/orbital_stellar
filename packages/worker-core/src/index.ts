@@ -553,3 +553,18 @@ export {
   FloatExhaustedError,
 } from "./sponsorshipPolicy.js";
 export type { SponsorshipPolicyConfig } from "./sponsorshipPolicy.js";
+
+// Transaction builder and submitter (issue #1040).
+export { TxSubmitter } from "./TxSubmitter.js";
+export type { SubmissionOutcome, TxSubmitterOptions } from "./TxSubmitter.js";
+export { OperatorSigner, NETWORK_PASSPHRASE, redactSecret } from "./OperatorSigner.js";
+export {
+  resolveFee,
+  FeeCapExceededError,
+  InvalidFeeConfigError,
+  BASE_FEE_STROOPS,
+  DEFAULT_FEE_MULTIPLIER,
+  DEFAULT_MAX_FEE_STROOPS,
+  MAX_FEE_MULTIPLIER,
+} from "./fees.js";
+export type { FeeConfig, ResolvedFee } from "./fees.js";

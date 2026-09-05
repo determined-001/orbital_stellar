@@ -172,6 +172,51 @@ export type SorobanGetEventsResult = {
   [key: string]: unknown;
 };
 
+/** Raw `simulateTransaction` result. Shapes match the JSON-RPC payload so it can be handed straight to `rpc.assembleTransaction`. */
+export type SorobanSimulateTransactionResult = {
+  /** Echoed JSON-RPC request id. */
+  id?: string;
+  /** Present when the host rejected the invocation. Absent on success. */
+  error?: string;
+  /** Resource fee the simulation says this invocation needs, in stroops. */
+  minResourceFee?: string;
+  /** Base64 `SorobanTransactionData` (the footprint and resource limits). */
+  transactionData?: string;
+  results?: Array<{ xdr: string; auth?: string[] }>;
+  /** Set when the invocation touches an archived entry that must be restored first. */
+  restorePreamble?: { minResourceFee: string; transactionData: string };
+  events?: string[];
+  latestLedger?: number;
+};
+
+/** Raw `sendTransaction` result. `PENDING` only means the network accepted it for inclusion. */
+export type SorobanSendTransactionResult = {
+  status: "PENDING" | "DUPLICATE" | "TRY_AGAIN_LATER" | "ERROR";
+  hash: string;
+  /** Base64 `TransactionResult`, present when `status` is `ERROR`. */
+  errorResultXdr?: string;
+  latestLedger?: number;
+};
+
+/** Raw `getTransaction` result. */
+export type SorobanGetTransactionResult = {
+  status: "NOT_FOUND" | "SUCCESS" | "FAILED";
+  /** Base64 `TransactionMeta`, present once the transaction is in a ledger. */
+  resultMetaXdr?: string;
+  resultXdr?: string;
+  ledger?: number;
+  createdAt?: string;
+  applicationOrder?: number;
+  latestLedger?: number;
+};
+
+export type PollTransactionOptions = SorobanRpcCallOptions & {
+  /** How long to wait between polls. Defaults to 1000ms. */
+  intervalMs?: number;
+  /** How long to keep polling before giving up. Defaults to 60000ms. */
+  timeoutMs?: number;
+};
+
 export type SorobanLatestLedgerResult = {
   id?: string;
   protocolVersion?: number;
@@ -563,6 +608,77 @@ export class SorobanRpcClient implements LedgerCloseTimeSource {
       options,
     );
     return result.sequence;
+  }
+
+  /**
+   * Simulates a transaction. A rejected invocation is a *successful* RPC call
+   * carrying an `error` string - callers decide whether that rejection is
+   * expected (a contract saying "not yet due") or a real fault.
+   */
+  async simulateTransaction(
+    transactionXdr: string,
+    options?: SorobanRpcCallOptions,
+  ): Promise<SorobanSimulateTransactionResult> {
+    return this.requestResult<SorobanSimulateTransactionResult>(
+      "simulateTransaction",
+      { transaction: transactionXdr },
+      options,
+    );
+  }
+
+  /**
+   * Submits a signed transaction. A `PENDING` reply means the network accepted
+   * it for inclusion, not that it succeeded - confirm with
+   * {@link pollTransaction}.
+   */
+  async sendTransaction(
+    transactionXdr: string,
+    options?: SorobanRpcCallOptions,
+  ): Promise<SorobanSendTransactionResult> {
+    return this.requestResult<SorobanSendTransactionResult>(
+      "sendTransaction",
+      { transaction: transactionXdr },
+      options,
+    );
+  }
+
+  /** Reads a submitted transaction's status. `NOT_FOUND` means "not in a ledger yet". */
+  async getTransaction(
+    hash: string,
+    options?: SorobanRpcCallOptions,
+  ): Promise<SorobanGetTransactionResult> {
+    return this.requestResult<SorobanGetTransactionResult>("getTransaction", { hash }, options);
+  }
+
+  /**
+   * Polls {@link getTransaction} until the transaction lands or the timeout
+   * elapses, so a caller confirms an outcome instead of assuming one from a
+   * successful send.
+   *
+   * @throws {SorobanRpcError} `code: "server"`, `retryable: true` if the
+   *   transaction has not landed within `timeoutMs` - the transaction may still
+   *   be included later, so this is a "don't know yet", not a failure.
+   */
+  async pollTransaction(
+    hash: string,
+    options?: PollTransactionOptions,
+  ): Promise<SorobanGetTransactionResult> {
+    const intervalMs = Math.max(1, options?.intervalMs ?? 1_000);
+    const timeoutMs = Math.max(1, options?.timeoutMs ?? 60_000);
+    const deadline = Date.now() + timeoutMs;
+
+    for (;;) {
+      const result = await this.getTransaction(hash, { signal: options?.signal });
+      if (result.status !== "NOT_FOUND") return result;
+
+      if (Date.now() + intervalMs > deadline) {
+        throw new SorobanRpcError(`transaction ${hash} was not confirmed within ${timeoutMs}ms`, {
+          code: "server",
+          retryable: true,
+        });
+      }
+      await sleep(intervalMs, options?.signal);
+    }
   }
 
   /**
