@@ -95,59 +95,83 @@ jobs:
         working-directory: contracts
         run: |
           set -euo pipefail
-          
-          if [ ! -f deployed.testnet.json ]; then
-            echo "No deployed.testnet.json found. Skipping provenance verification."
+
+          # Maps a manifest contract key to the WASM artefact build-wasm.sh
+          # produces. A key here that the build does not produce is a bug in
+          # the manifest, not something to skip past.
+          wasm_for() {
+            case "$1" in
+              registry)    echo "orbital_abi_registry" ;;
+              demoEmitter) echo "orbital_demo_emitter" ;;
+              payroll)     echo "orbital_payroll" ;;
+              *) echo "::error::Unknown contract key '$1' in manifest - no WASM mapping."; return 1 ;;
+            esac
+          }
+
+          verified_any=0
+
+          # Every network Orbital deploys to gets the same treatment. A missing
+          # manifest means that network has not been deployed to yet.
+          for manifest in deployed.*.json; do
+            [ -e "$manifest" ] || continue
+
+            NETWORK=$(jq -r '.network' "$manifest")
+
+            # The checked-in manifest documents the shape before the contracts
+            # are actually deployed; deploy.sh fills in the ids and hashes.
+            # Until then there is nothing to verify.
+            if jq -e '[.contracts[] | select((.contractId | startswith("<")) or (.wasmHash == ""))] | length > 0' \
+                 "$manifest" > /dev/null; then
+              echo "$manifest still holds deploy.sh placeholders. Skipping."
+              continue
+            fi
+
+            echo "==> Verifying $manifest (network: $NETWORK)"
+
+            : > "expected_$NETWORK.txt"
+            : > "actual_$NETWORK.txt"
+            : > "onchain_$NETWORK.txt"
+
+            # Every contract in the manifest is checked - adding one to a
+            # deployment automatically brings it under provenance, rather than
+            # needing this job edited too.
+            for key in $(jq -r '.contracts | keys[]' "$manifest"); do
+              wasm="target/wasm32v1-none/release/$(wasm_for "$key").wasm"
+
+              if [ ! -f "$wasm" ]; then
+                echo "::error::$manifest names '$key' but $wasm was not built."
+                exit 1
+              fi
+
+              expected=$(jq -r --arg k "$key" '.contracts[$k].wasmHash' "$manifest")
+              id=$(jq -r --arg k "$key" '.contracts[$k].contractId' "$manifest")
+
+              echo "$key: $expected" >> "expected_$NETWORK.txt"
+              echo "$key: $(sha256sum "$wasm" | awk '{print $1}')" >> "actual_$NETWORK.txt"
+
+              stellar contract fetch --id "$id" --network "$NETWORK" --out-file "onchain_${NETWORK}_${key}.wasm"
+              echo "$key: $(sha256sum "onchain_${NETWORK}_${key}.wasm" | awk '{print $1}')" >> "onchain_$NETWORK.txt"
+            done
+
+            echo "==> Comparing local build against $manifest..."
+            if ! diff -u "expected_$NETWORK.txt" "actual_$NETWORK.txt"; then
+              echo "::error::WASM hashes do not match $manifest! Did you modify contracts without updating the deployment?"
+              exit 1
+            fi
+
+            echo "==> Comparing local build against the $NETWORK network..."
+            if ! diff -u "actual_$NETWORK.txt" "onchain_$NETWORK.txt"; then
+              echo "::error::On-chain WASM hashes on $NETWORK do not match local build! The network state has drifted or was maliciously altered."
+              exit 1
+            fi
+
+            echo "    $NETWORK provenance verified."
+            verified_any=1
+          done
+
+          if [ "$verified_any" -eq 0 ]; then
+            echo "No populated deployment manifests found. Nothing to verify."
             exit 0
-          fi
-
-          # The checked-in manifest documents the shape before the contracts are
-          # actually deployed; deploy_testnet.sh fills in the ids and hashes.
-          # Until then there is nothing to verify, so skip rather than diff
-          # empty hashes against a real build.
-          if jq -e '[.contracts[] | select((.contractId | startswith("<")) or (.wasmHash == ""))] | length > 0' \
-               deployed.testnet.json > /dev/null; then
-            echo "deployed.testnet.json still holds deploy_testnet.sh placeholders. Skipping provenance verification."
-            exit 0
-          fi
-
-          REGISTRY_WASM="target/wasm32v1-none/release/orbital_abi_registry.wasm"
-          DEMO_WASM="target/wasm32v1-none/release/orbital_demo_emitter.wasm"
-
-          REGISTRY_ID=$(jq -r '.contracts.registry.contractId' deployed.testnet.json)
-          EXPECTED_HASH=$(jq -r '.contracts.registry.wasmHash' deployed.testnet.json)
-          DEMO_ID=$(jq -r '.contracts.demoEmitter.contractId' deployed.testnet.json)
-          EXPECTED_DEMO_HASH=$(jq -r '.contracts.demoEmitter.wasmHash' deployed.testnet.json)
-
-          ACTUAL_HASH=$(sha256sum "$REGISTRY_WASM" | awk '{print $1}')
-          ACTUAL_DEMO_HASH=$(sha256sum "$DEMO_WASM" | awk '{print $1}')
-
-          echo "registry: $EXPECTED_HASH" > expected_hashes.txt
-          echo "demoEmitter: $EXPECTED_DEMO_HASH" >> expected_hashes.txt
-
-          echo "registry: $ACTUAL_HASH" > actual_hashes.txt
-          echo "demoEmitter: $ACTUAL_DEMO_HASH" >> actual_hashes.txt
-
-          echo "==> Comparing local build against deployed.testnet.json..."
-          if ! diff -u expected_hashes.txt actual_hashes.txt; then
-            echo "::error::WASM hashes do not match deployed.testnet.json! Did you modify contracts without updating the deployment?"
-            exit 1
-          fi
-
-          echo "==> Fetching on-chain WASMs to verify they match..."
-          stellar contract fetch --id "$REGISTRY_ID" --network testnet --out-file onchain_registry.wasm
-          stellar contract fetch --id "$DEMO_ID" --network testnet --out-file onchain_demo.wasm
-
-          ONCHAIN_HASH=$(sha256sum onchain_registry.wasm | awk '{print $1}')
-          ONCHAIN_DEMO_HASH=$(sha256sum onchain_demo.wasm | awk '{print $1}')
-
-          echo "registry: $ONCHAIN_HASH" > onchain_hashes.txt
-          echo "demoEmitter: $ONCHAIN_DEMO_HASH" >> onchain_hashes.txt
-
-          echo "==> Comparing local build against on-chain network..."
-          if ! diff -u actual_hashes.txt onchain_hashes.txt; then
-            echo "::error::On-chain WASM hashes do not match local build! The network state has drifted or was maliciously altered."
-            exit 1
           fi
 
           echo "Provenance verification passed! (All hashes match)"

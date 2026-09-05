@@ -39,8 +39,12 @@ cargo build --release --target wasm32v1-none
 Run the deployment script:
 ```bash
 cd contracts/deploy
-DEPLOYER_IDENTITY=orbital-deployer NETWORK=testnet ./deploy_testnet.sh
+DEPLOYER_IDENTITY=orbital-deployer ./deploy_testnet.sh
 ```
+
+The network is the script's identity, not an environment variable: `deploy.sh`
+takes it as an argument and `deploy_testnet.sh` passes `testnet`. For the
+public network use `./deploy_mainnet.sh` - see `contracts/README.md`.
 
 This will:
 - Deploy the `orbital_abi_registry` contract to testnet
