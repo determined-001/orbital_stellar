@@ -512,7 +512,7 @@
       "eventType": "contract.emitted",
       "eventName": "transfer",
       "contract": "Aquarius (AQUA)",
-      "contractId": "CAUIKL3IYGMERDRUN5QQVPKPLZTRNVXV27LFCWQIRNOHSNGB3ZXAEFBX",
+      "contractId": "CAUIKL3IYGMERDRUN6YSCLWVAKIFG5Q4YJHUKM4S4NJZQIA3BAS6OJPK",
       "description": "Emitted on every successful transfer, per the SEP-41 token interface event convention.",
       "topics": [
         "from",
@@ -531,7 +531,7 @@
       "eventType": "contract.emitted",
       "eventName": "mint",
       "contract": "Aquarius (AQUA)",
-      "contractId": "CAUIKL3IYGMERDRUN5QQVPKPLZTRNVXV27LFCWQIRNOHSNGB3ZXAEFBX",
+      "contractId": "CAUIKL3IYGMERDRUN6YSCLWVAKIFG5Q4YJHUKM4S4NJZQIA3BAS6OJPK",
       "description": "Emitted when the admin mints new AQUA.",
       "topics": [
         "admin",
@@ -550,7 +550,7 @@
       "eventType": "contract.emitted",
       "eventName": "burn",
       "contract": "Aquarius (AQUA)",
-      "contractId": "CAUIKL3IYGMERDRUN5QQVPKPLZTRNVXV27LFCWQIRNOHSNGB3ZXAEFBX",
+      "contractId": "CAUIKL3IYGMERDRUN6YSCLWVAKIFG5Q4YJHUKM4S4NJZQIA3BAS6OJPK",
       "description": "Emitted when AQUA is burned by its holder.",
       "topics": [
         "from"
@@ -568,7 +568,7 @@
       "eventType": "contract.emitted",
       "eventName": "clawback",
       "contract": "Aquarius (AQUA)",
-      "contractId": "CAUIKL3IYGMERDRUN5QQVPKPLZTRNVXV27LFCWQIRNOHSNGB3ZXAEFBX",
+      "contractId": "CAUIKL3IYGMERDRUN6YSCLWVAKIFG5Q4YJHUKM4S4NJZQIA3BAS6OJPK",
       "description": "Emitted when the admin claws back AQUA from a holder.",
       "topics": [
         "admin",
@@ -587,7 +587,7 @@
       "eventType": "contract.emitted",
       "eventName": "set_authorized",
       "contract": "Aquarius (AQUA)",
-      "contractId": "CAUIKL3IYGMERDRUN5QQVPKPLZTRNVXV27LFCWQIRNOHSNGB3ZXAEFBX",
+      "contractId": "CAUIKL3IYGMERDRUN6YSCLWVAKIFG5Q4YJHUKM4S4NJZQIA3BAS6OJPK",
       "description": "Emitted when the admin sets an account's authorization flag.",
       "topics": [
         "admin",
@@ -606,7 +606,7 @@
       "eventType": "contract.emitted",
       "eventName": "approve",
       "contract": "Aquarius (AQUA)",
-      "contractId": "CAUIKL3IYGMERDRUN5QQVPKPLZTRNVXV27LFCWQIRNOHSNGB3ZXAEFBX",
+      "contractId": "CAUIKL3IYGMERDRUN6YSCLWVAKIFG5Q4YJHUKM4S4NJZQIA3BAS6OJPK",
       "description": "Emitted when an allowance is granted.",
       "topics": [
         "from",

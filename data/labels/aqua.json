@@ -1,12 +1,12 @@
 {
   "schemaVersion": "1.0.0",
-  "contractId": "CAUIKL3IYGMERDRUN5QQVPKPLZTRNVXV27LFCWQIRNOHSNGB3ZXAEFBX",
+  "contractId": "CAUIKL3IYGMERDRUN6YSCLWVAKIFG5Q4YJHUKM4S4NJZQIA3BAS6OJPK",
   "label": "Aquarius DAO (AQUA Issuer)",
   "entityType": "issuer",
   "confidence": 1.0,
   "sources": [
     "https://aqua.network",
-    "https://stellar.expert/explorer/public/contract/CAUIKL3IYGMERDRUN5QQVPKPLZTRNVXV27LFCWQIRNOHSNGB3ZXAEFBX",
+    "https://stellar.expert/explorer/public/contract/CAUIKL3IYGMERDRUN6YSCLWVAKIFG5Q4YJHUKM4S4NJZQIA3BAS6OJPK",
     "https://docs.aqua.network/developers/code-examples/prerequisites-and-basics"
   ],
   "verifiedAt": "2025-02-01T00:00:00.000Z",

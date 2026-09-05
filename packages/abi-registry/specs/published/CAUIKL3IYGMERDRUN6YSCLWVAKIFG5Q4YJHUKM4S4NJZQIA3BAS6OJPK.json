@@ -2,10 +2,8 @@
   "version": "1.0.0",
   "name": "Aquarius (AQUA)",
   "description": "Governance and liquidity incentive token of the Aquarius protocol on Stellar mainnet, deployed as a Stellar Asset Contract (SAC). AQUA is used for voting on market rewards, liquidity provision incentives, and protocol governance. Implements the full SEP-41 token interface.",
-  "contract_id": "CAUIKL3IYGMERDRUN6YSCLWVAKIFG5Q4YJHUKM4S4NJZQIA3BAS6OJPK",
+  "contractId": "CAUIKL3IYGMERDRUN6YSCLWVAKIFG5Q4YJHUKM4S4NJZQIA3BAS6OJPK",
   "network": "mainnet",
-  "source": "https://docs.aqua.network/developers/code-examples/prerequisites-and-basics",
-  "tags": ["sep41", "sac", "governance", "defi", "aquarius"],
   "functions": [
     {
       "name": "transfer",
@@ -13,12 +11,12 @@
       "params": [
         {
           "name": "from",
-          "type": "Address",
+          "type": "address",
           "doc": "Source account or contract address."
         },
         {
           "name": "to",
-          "type": "Address",
+          "type": "address",
           "doc": "Destination account or contract address."
         },
         {
@@ -27,7 +25,7 @@
           "doc": "Amount in AQUA base units (7 decimal places; 1 AQUA = 10,000,000)."
         }
       ],
-      "outputs": []
+      "returns": "void"
     },
     {
       "name": "transfer_from",
@@ -35,17 +33,17 @@
       "params": [
         {
           "name": "spender",
-          "type": "Address",
+          "type": "address",
           "doc": "Address that was granted the allowance."
         },
         {
           "name": "from",
-          "type": "Address",
+          "type": "address",
           "doc": "Source account whose allowance is consumed."
         },
         {
           "name": "to",
-          "type": "Address",
+          "type": "address",
           "doc": "Destination account or contract address."
         },
         {
@@ -54,7 +52,7 @@
           "doc": "Amount in AQUA base units."
         }
       ],
-      "outputs": []
+      "returns": "void"
     },
     {
       "name": "approve",
@@ -62,12 +60,12 @@
       "params": [
         {
           "name": "from",
-          "type": "Address",
+          "type": "address",
           "doc": "Token owner granting the allowance."
         },
         {
           "name": "spender",
-          "type": "Address",
+          "type": "address",
           "doc": "Address being granted the allowance."
         },
         {
@@ -81,7 +79,7 @@
           "doc": "Ledger sequence number at which the allowance expires."
         }
       ],
-      "outputs": []
+      "returns": "void"
     },
     {
       "name": "allowance",
@@ -89,21 +87,16 @@
       "params": [
         {
           "name": "from",
-          "type": "Address",
+          "type": "address",
           "doc": "Token owner."
         },
         {
           "name": "spender",
-          "type": "Address",
+          "type": "address",
           "doc": "Approved spender."
         }
       ],
-      "outputs": [
-        {
-          "type": "i128",
-          "doc": "Remaining allowance in AQUA base units."
-        }
-      ]
+      "returns": "i128"
     },
     {
       "name": "balance",
@@ -111,60 +104,35 @@
       "params": [
         {
           "name": "id",
-          "type": "Address",
+          "type": "address",
           "doc": "Account or contract address to query."
         }
       ],
-      "outputs": [
-        {
-          "type": "i128",
-          "doc": "Balance in AQUA base units."
-        }
-      ]
+      "returns": "i128"
     },
     {
       "name": "decimals",
       "doc": "Return the number of decimal places. Always 7 for Stellar-native AQUA.",
       "params": [],
-      "outputs": [
-        {
-          "type": "u32",
-          "doc": "Always 7."
-        }
-      ]
+      "returns": "u32"
     },
     {
       "name": "name",
       "doc": "Return the token name.",
       "params": [],
-      "outputs": [
-        {
-          "type": "String",
-          "doc": "Always 'Aquarius'."
-        }
-      ]
+      "returns": "string"
     },
     {
       "name": "symbol",
       "doc": "Return the token symbol.",
       "params": [],
-      "outputs": [
-        {
-          "type": "String",
-          "doc": "Always 'AQUA'."
-        }
-      ]
+      "returns": "string"
     },
     {
       "name": "total_supply",
       "doc": "Return the total AQUA supply currently in circulation on Stellar.",
       "params": [],
-      "outputs": [
-        {
-          "type": "i128",
-          "doc": "Total supply in AQUA base units."
-        }
-      ]
+      "returns": "i128"
     },
     {
       "name": "mint",
@@ -172,7 +140,7 @@
       "params": [
         {
           "name": "to",
-          "type": "Address",
+          "type": "address",
           "doc": "Recipient of the newly minted AQUA."
         },
         {
@@ -181,7 +149,7 @@
           "doc": "Amount to mint in AQUA base units."
         }
       ],
-      "outputs": []
+      "returns": "void"
     },
     {
       "name": "burn",
@@ -189,7 +157,7 @@
       "params": [
         {
           "name": "from",
-          "type": "Address",
+          "type": "address",
           "doc": "Account whose AQUA is burned."
         },
         {
@@ -198,7 +166,7 @@
           "doc": "Amount to burn in AQUA base units."
         }
       ],
-      "outputs": []
+      "returns": "void"
     },
     {
       "name": "burn_from",
@@ -206,12 +174,12 @@
       "params": [
         {
           "name": "spender",
-          "type": "Address",
+          "type": "address",
           "doc": "Address consuming the allowance."
         },
         {
           "name": "from",
-          "type": "Address",
+          "type": "address",
           "doc": "Account whose AQUA is burned."
         },
         {
@@ -220,7 +188,7 @@
           "doc": "Amount to burn in AQUA base units."
         }
       ],
-      "outputs": []
+      "returns": "void"
     },
     {
       "name": "clawback",
@@ -228,7 +196,7 @@
       "params": [
         {
           "name": "from",
-          "type": "Address",
+          "type": "address",
           "doc": "Account from which AQUA is clawed back."
         },
         {
@@ -237,7 +205,7 @@
           "doc": "Amount to clawback in AQUA base units."
         }
       ],
-      "outputs": []
+      "returns": "void"
     },
     {
       "name": "set_authorized",
@@ -245,7 +213,7 @@
       "params": [
         {
           "name": "id",
-          "type": "Address",
+          "type": "address",
           "doc": "Account whose authorization flag is being set."
         },
         {
@@ -254,7 +222,7 @@
           "doc": "True to authorize, false to deauthorize."
         }
       ],
-      "outputs": []
+      "returns": "void"
     },
     {
       "name": "authorized",
@@ -262,16 +230,11 @@
       "params": [
         {
           "name": "id",
-          "type": "Address",
+          "type": "address",
           "doc": "Account to query."
         }
       ],
-      "outputs": [
-        {
-          "type": "bool",
-          "doc": "True if authorized."
-        }
-      ]
+      "returns": "bool"
     },
     {
       "name": "set_admin",
@@ -279,22 +242,17 @@
       "params": [
         {
           "name": "new_admin",
-          "type": "Address",
+          "type": "address",
           "doc": "Address that will become the new admin."
         }
       ],
-      "outputs": []
+      "returns": "void"
     },
     {
       "name": "admin",
       "doc": "Return the current admin address.",
       "params": [],
-      "outputs": [
-        {
-          "type": "Address",
-          "doc": "Current admin address (Aquarius issuer account)."
-        }
-      ]
+      "returns": "address"
     }
   ],
   "events": [
@@ -303,12 +261,17 @@
       "doc": "Emitted on every successful transfer, per the SEP-41 token interface event convention.",
       "topics": [
         {
+          "name": "event_name",
+          "type": "symbol",
+          "doc": "Event name symbol, always \"transfer\"."
+        },
+        {
           "name": "from",
-          "type": "Address"
+          "type": "address"
         },
         {
           "name": "to",
-          "type": "Address"
+          "type": "address"
         }
       ],
       "data": [
@@ -324,12 +287,17 @@
       "doc": "Emitted when the admin mints new AQUA.",
       "topics": [
         {
+          "name": "event_name",
+          "type": "symbol",
+          "doc": "Event name symbol, always \"mint\"."
+        },
+        {
           "name": "admin",
-          "type": "Address"
+          "type": "address"
         },
         {
           "name": "to",
-          "type": "Address"
+          "type": "address"
         }
       ],
       "data": [
@@ -345,8 +313,13 @@
       "doc": "Emitted when AQUA is burned by its holder.",
       "topics": [
         {
+          "name": "event_name",
+          "type": "symbol",
+          "doc": "Event name symbol, always \"burn\"."
+        },
+        {
           "name": "from",
-          "type": "Address"
+          "type": "address"
         }
       ],
       "data": [
@@ -362,12 +335,17 @@
       "doc": "Emitted when the admin claws back AQUA from a holder.",
       "topics": [
         {
+          "name": "event_name",
+          "type": "symbol",
+          "doc": "Event name symbol, always \"clawback\"."
+        },
+        {
           "name": "admin",
-          "type": "Address"
+          "type": "address"
         },
         {
           "name": "from",
-          "type": "Address"
+          "type": "address"
         }
       ],
       "data": [
@@ -383,12 +361,17 @@
       "doc": "Emitted when the admin sets an account's authorization flag.",
       "topics": [
         {
+          "name": "event_name",
+          "type": "symbol",
+          "doc": "Event name symbol, always \"set_authorized\"."
+        },
+        {
           "name": "admin",
-          "type": "Address"
+          "type": "address"
         },
         {
           "name": "id",
-          "type": "Address"
+          "type": "address"
         }
       ],
       "data": [
@@ -403,12 +386,17 @@
       "doc": "Emitted when an allowance is granted.",
       "topics": [
         {
+          "name": "event_name",
+          "type": "symbol",
+          "doc": "Event name symbol, always \"approve\"."
+        },
+        {
           "name": "from",
-          "type": "Address"
+          "type": "address"
         },
         {
           "name": "spender",
-          "type": "Address"
+          "type": "address"
         }
       ],
       "data": [
@@ -423,5 +411,7 @@
         }
       ]
     }
-  ]
+  ],
+  "types": {},
+  "pointer": "https://raw.githubusercontent.com/determined-001/orbital_stellar/main/packages/abi-registry/specs/published/CAUIKL3IYGMERDRUN6YSCLWVAKIFG5Q4YJHUKM4S4NJZQIA3BAS6OJPK.json"
 }

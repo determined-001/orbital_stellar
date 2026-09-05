@@ -1,79 +1,77 @@
 {
   "version": "1.0.0",
-  "name": "Aquarius (AQUA)",
-  "description": "Governance and liquidity incentive token of the Aquarius protocol on Stellar mainnet, deployed as a Stellar Asset Contract (SAC). AQUA is used for voting on market rewards, liquidity provision incentives, and protocol governance. Implements the full SEP-41 token interface.",
-  "contract_id": "CAUIKL3IYGMERDRUN6YSCLWVAKIFG5Q4YJHUKM4S4NJZQIA3BAS6OJPK",
+  "name": "Euro Coin (EURC)",
+  "description": "Circle's EUR-backed stablecoin on Stellar mainnet, deployed as a Stellar Asset Contract (SAC). Implements the full SEP-41 token interface. Always redeemable 1:1 for euros under a full-reserve model. MiCA-compliant.",
+  "contractId": "CDTKPWPLOURQA2SGTKTUQOWRCBZEORB4BWBOMJ3D3ZTQQSGE5F6JBQLV",
   "network": "mainnet",
-  "source": "https://docs.aqua.network/developers/code-examples/prerequisites-and-basics",
-  "tags": ["sep41", "sac", "governance", "defi", "aquarius"],
   "functions": [
     {
       "name": "transfer",
-      "doc": "Transfer `amount` AQUA from `from` to `to`. Requires authorization from `from`.",
+      "doc": "Transfer `amount` EURC from `from` to `to`. Requires authorization from `from`.",
       "params": [
         {
           "name": "from",
-          "type": "Address",
+          "type": "address",
           "doc": "Source account or contract address."
         },
         {
           "name": "to",
-          "type": "Address",
+          "type": "address",
           "doc": "Destination account or contract address."
         },
         {
           "name": "amount",
           "type": "i128",
-          "doc": "Amount in AQUA base units (7 decimal places; 1 AQUA = 10,000,000)."
+          "doc": "Amount in EURC base units (7 decimal places; 1 EURC = 10,000,000)."
         }
       ],
-      "outputs": []
+      "returns": "void"
     },
     {
       "name": "transfer_from",
-      "doc": "Transfer `amount` AQUA from `from` to `to` using a pre-approved allowance. Requires authorization from `spender`.",
+      "doc": "Transfer `amount` EURC from `from` to `to` using a pre-approved allowance. Requires authorization from `spender`.",
       "params": [
         {
           "name": "spender",
-          "type": "Address",
+          "type": "address",
           "doc": "Address that was granted the allowance."
         },
         {
           "name": "from",
-          "type": "Address",
+          "type": "address",
           "doc": "Source account whose allowance is consumed."
         },
         {
           "name": "to",
-          "type": "Address",
+          "type": "address",
           "doc": "Destination account or contract address."
         },
         {
           "name": "amount",
           "type": "i128",
-          "doc": "Amount in AQUA base units."
+          "doc": "Amount in EURC base units."
         }
       ],
-      "outputs": []
+      "returns": "void"
     },
     {
       "name": "approve",
-      "doc": "Approve `spender` to transfer up to `amount` AQUA from the caller's balance.",
+      "doc": "Approve `spender` to transfer up to `amount` EURC from the caller's balance.",
       "params": [
         {
           "name": "from",
-          "type": "Address",
+          "type": "address",
           "doc": "Token owner granting the allowance."
         },
         {
           "name": "spender",
-          "type": "Address",
+          "type": "address",
           "doc": "Address being granted the allowance."
         },
         {
           "name": "amount",
           "type": "i128",
-          "doc": "Maximum transferable amount in AQUA base units."
+          "doc": "Maximum transferable amount in EURC base units."
         },
         {
           "name": "expiration_ledger",
@@ -81,7 +79,7 @@
           "doc": "Ledger sequence number at which the allowance expires."
         }
       ],
-      "outputs": []
+      "returns": "void"
     },
     {
       "name": "allowance",
@@ -89,155 +87,125 @@
       "params": [
         {
           "name": "from",
-          "type": "Address",
+          "type": "address",
           "doc": "Token owner."
         },
         {
           "name": "spender",
-          "type": "Address",
+          "type": "address",
           "doc": "Approved spender."
         }
       ],
-      "outputs": [
-        {
-          "type": "i128",
-          "doc": "Remaining allowance in AQUA base units."
-        }
-      ]
+      "returns": "i128"
     },
     {
       "name": "balance",
-      "doc": "Return the AQUA balance of `id`.",
+      "doc": "Return the EURC balance of `id`.",
       "params": [
         {
           "name": "id",
-          "type": "Address",
+          "type": "address",
           "doc": "Account or contract address to query."
         }
       ],
-      "outputs": [
-        {
-          "type": "i128",
-          "doc": "Balance in AQUA base units."
-        }
-      ]
+      "returns": "i128"
     },
     {
       "name": "decimals",
-      "doc": "Return the number of decimal places. Always 7 for Stellar-native AQUA.",
+      "doc": "Return the number of decimal places. Always 7 for Stellar-native EURC.",
       "params": [],
-      "outputs": [
-        {
-          "type": "u32",
-          "doc": "Always 7."
-        }
-      ]
+      "returns": "u32"
     },
     {
       "name": "name",
       "doc": "Return the token name.",
       "params": [],
-      "outputs": [
-        {
-          "type": "String",
-          "doc": "Always 'Aquarius'."
-        }
-      ]
+      "returns": "string"
     },
     {
       "name": "symbol",
       "doc": "Return the token symbol.",
       "params": [],
-      "outputs": [
-        {
-          "type": "String",
-          "doc": "Always 'AQUA'."
-        }
-      ]
+      "returns": "string"
     },
     {
       "name": "total_supply",
-      "doc": "Return the total AQUA supply currently in circulation on Stellar.",
+      "doc": "Return the total EURC supply currently in circulation on Stellar.",
       "params": [],
-      "outputs": [
-        {
-          "type": "i128",
-          "doc": "Total supply in AQUA base units."
-        }
-      ]
+      "returns": "i128"
     },
     {
       "name": "mint",
-      "doc": "Mint `amount` AQUA to `to`. Requires admin (Aquarius issuer) authorization.",
+      "doc": "Mint `amount` EURC to `to`. Requires admin (Circle issuer) authorization.",
       "params": [
         {
           "name": "to",
-          "type": "Address",
-          "doc": "Recipient of the newly minted AQUA."
+          "type": "address",
+          "doc": "Recipient of the newly minted EURC."
         },
         {
           "name": "amount",
           "type": "i128",
-          "doc": "Amount to mint in AQUA base units."
+          "doc": "Amount to mint in EURC base units."
         }
       ],
-      "outputs": []
+      "returns": "void"
     },
     {
       "name": "burn",
-      "doc": "Burn `amount` AQUA from `from`. Requires authorization from `from`.",
+      "doc": "Burn `amount` EURC from `from`. Requires authorization from `from`.",
       "params": [
         {
           "name": "from",
-          "type": "Address",
-          "doc": "Account whose AQUA is burned."
+          "type": "address",
+          "doc": "Account whose EURC is burned."
         },
         {
           "name": "amount",
           "type": "i128",
-          "doc": "Amount to burn in AQUA base units."
+          "doc": "Amount to burn in EURC base units."
         }
       ],
-      "outputs": []
+      "returns": "void"
     },
     {
       "name": "burn_from",
-      "doc": "Burn `amount` AQUA from `from` using a pre-approved allowance.",
+      "doc": "Burn `amount` EURC from `from` using a pre-approved allowance.",
       "params": [
         {
           "name": "spender",
-          "type": "Address",
+          "type": "address",
           "doc": "Address consuming the allowance."
         },
         {
           "name": "from",
-          "type": "Address",
-          "doc": "Account whose AQUA is burned."
+          "type": "address",
+          "doc": "Account whose EURC is burned."
         },
         {
           "name": "amount",
           "type": "i128",
-          "doc": "Amount to burn in AQUA base units."
+          "doc": "Amount to burn in EURC base units."
         }
       ],
-      "outputs": []
+      "returns": "void"
     },
     {
       "name": "clawback",
-      "doc": "Clawback `amount` AQUA from `from`. Only callable by the admin on assets with clawback enabled.",
+      "doc": "Clawback `amount` EURC from `from`. Only callable by the admin on assets with clawback enabled.",
       "params": [
         {
           "name": "from",
-          "type": "Address",
-          "doc": "Account from which AQUA is clawed back."
+          "type": "address",
+          "doc": "Account from which EURC is clawed back."
         },
         {
           "name": "amount",
           "type": "i128",
-          "doc": "Amount to clawback in AQUA base units."
+          "doc": "Amount to clawback in EURC base units."
         }
       ],
-      "outputs": []
+      "returns": "void"
     },
     {
       "name": "set_authorized",
@@ -245,7 +213,7 @@
       "params": [
         {
           "name": "id",
-          "type": "Address",
+          "type": "address",
           "doc": "Account whose authorization flag is being set."
         },
         {
@@ -254,24 +222,19 @@
           "doc": "True to authorize, false to deauthorize."
         }
       ],
-      "outputs": []
+      "returns": "void"
     },
     {
       "name": "authorized",
-      "doc": "Return whether `id` is authorized to hold and transfer AQUA.",
+      "doc": "Return whether `id` is authorized to hold and transfer EURC.",
       "params": [
         {
           "name": "id",
-          "type": "Address",
+          "type": "address",
           "doc": "Account to query."
         }
       ],
-      "outputs": [
-        {
-          "type": "bool",
-          "doc": "True if authorized."
-        }
-      ]
+      "returns": "bool"
     },
     {
       "name": "set_admin",
@@ -279,22 +242,17 @@
       "params": [
         {
           "name": "new_admin",
-          "type": "Address",
+          "type": "address",
           "doc": "Address that will become the new admin."
         }
       ],
-      "outputs": []
+      "returns": "void"
     },
     {
       "name": "admin",
       "doc": "Return the current admin address.",
       "params": [],
-      "outputs": [
-        {
-          "type": "Address",
-          "doc": "Current admin address (Aquarius issuer account)."
-        }
-      ]
+      "returns": "address"
     }
   ],
   "events": [
@@ -303,78 +261,98 @@
       "doc": "Emitted on every successful transfer, per the SEP-41 token interface event convention.",
       "topics": [
         {
+          "name": "event_name",
+          "type": "symbol",
+          "doc": "Event name symbol, always \"transfer\"."
+        },
+        {
           "name": "from",
-          "type": "Address"
+          "type": "address"
         },
         {
           "name": "to",
-          "type": "Address"
+          "type": "address"
         }
       ],
       "data": [
         {
           "name": "amount",
           "type": "i128",
-          "doc": "Amount in AQUA base units."
+          "doc": "Amount in EURC base units."
         }
       ]
     },
     {
       "name": "mint",
-      "doc": "Emitted when the admin mints new AQUA.",
+      "doc": "Emitted when the admin mints new EURC.",
       "topics": [
         {
+          "name": "event_name",
+          "type": "symbol",
+          "doc": "Event name symbol, always \"mint\"."
+        },
+        {
           "name": "admin",
-          "type": "Address"
+          "type": "address"
         },
         {
           "name": "to",
-          "type": "Address"
+          "type": "address"
         }
       ],
       "data": [
         {
           "name": "amount",
           "type": "i128",
-          "doc": "Amount minted, in AQUA base units."
+          "doc": "Amount minted, in EURC base units."
         }
       ]
     },
     {
       "name": "burn",
-      "doc": "Emitted when AQUA is burned by its holder.",
+      "doc": "Emitted when EURC is burned by its holder.",
       "topics": [
         {
+          "name": "event_name",
+          "type": "symbol",
+          "doc": "Event name symbol, always \"burn\"."
+        },
+        {
           "name": "from",
-          "type": "Address"
+          "type": "address"
         }
       ],
       "data": [
         {
           "name": "amount",
           "type": "i128",
-          "doc": "Amount burned, in AQUA base units."
+          "doc": "Amount burned, in EURC base units."
         }
       ]
     },
     {
       "name": "clawback",
-      "doc": "Emitted when the admin claws back AQUA from a holder.",
+      "doc": "Emitted when the admin claws back EURC from a holder.",
       "topics": [
         {
+          "name": "event_name",
+          "type": "symbol",
+          "doc": "Event name symbol, always \"clawback\"."
+        },
+        {
           "name": "admin",
-          "type": "Address"
+          "type": "address"
         },
         {
           "name": "from",
-          "type": "Address"
+          "type": "address"
         }
       ],
       "data": [
         {
           "name": "amount",
           "type": "i128",
-          "doc": "Amount clawed back, in AQUA base units."
+          "doc": "Amount clawed back, in EURC base units."
         }
       ]
     },
@@ -383,12 +361,17 @@
       "doc": "Emitted when the admin sets an account's authorization flag.",
       "topics": [
         {
+          "name": "event_name",
+          "type": "symbol",
+          "doc": "Event name symbol, always \"set_authorized\"."
+        },
+        {
           "name": "admin",
-          "type": "Address"
+          "type": "address"
         },
         {
           "name": "id",
-          "type": "Address"
+          "type": "address"
         }
       ],
       "data": [
@@ -403,19 +386,24 @@
       "doc": "Emitted when an allowance is granted.",
       "topics": [
         {
+          "name": "event_name",
+          "type": "symbol",
+          "doc": "Event name symbol, always \"approve\"."
+        },
+        {
           "name": "from",
-          "type": "Address"
+          "type": "address"
         },
         {
           "name": "spender",
-          "type": "Address"
+          "type": "address"
         }
       ],
       "data": [
         {
           "name": "amount",
           "type": "i128",
-          "doc": "Approved amount, in AQUA base units."
+          "doc": "Approved amount, in EURC base units."
         },
         {
           "name": "expiration_ledger",
@@ -423,5 +411,7 @@
         }
       ]
     }
-  ]
+  ],
+  "types": {},
+  "pointer": "https://raw.githubusercontent.com/determined-001/orbital_stellar/main/packages/abi-registry/specs/published/CDTKPWPLOURQA2SGTKTUQOWRCBZEORB4BWBOMJ3D3ZTQQSGE5F6JBQLV.json"
 }

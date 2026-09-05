@@ -1,0 +1,210 @@
+{
+  "version": "1.0.0",
+  "name": "Native Asset Wrapper (XLM SAC)",
+  "description": "Stellar Asset Contract wrapping the native XLM asset. Exposes XLM as a SEP-41-compatible Soroban token. Mint, burn, clawback, and authorization operations are not available on the native asset.",
+  "contractId": "CAS3J7GYLGXMF6TDJBBYYSE3HQ6BBSMLNUQ34T6TZMYMW2EVH34XOWMA",
+  "network": "mainnet",
+  "functions": [
+    {
+      "name": "transfer",
+      "doc": "Transfer `amount` stroops of XLM from `from` to `to`. Requires authorization from `from`.",
+      "params": [
+        {
+          "name": "from",
+          "type": "address",
+          "doc": "Source account or contract address."
+        },
+        {
+          "name": "to",
+          "type": "address",
+          "doc": "Destination account or contract address."
+        },
+        {
+          "name": "amount",
+          "type": "i128",
+          "doc": "Amount in stroops (1 XLM = 10,000,000 stroops)."
+        }
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "transfer_from",
+      "doc": "Transfer `amount` stroops from `from` to `to` using a pre-approved allowance.",
+      "params": [
+        {
+          "name": "spender",
+          "type": "address",
+          "doc": "Address that was granted the allowance."
+        },
+        {
+          "name": "from",
+          "type": "address",
+          "doc": "Source account whose allowance is consumed."
+        },
+        {
+          "name": "to",
+          "type": "address",
+          "doc": "Destination account or contract address."
+        },
+        {
+          "name": "amount",
+          "type": "i128",
+          "doc": "Amount in stroops."
+        }
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "approve",
+      "doc": "Approve `spender` to transfer up to `amount` stroops from the caller's balance.",
+      "params": [
+        {
+          "name": "from",
+          "type": "address",
+          "doc": "Token owner granting the allowance."
+        },
+        {
+          "name": "spender",
+          "type": "address",
+          "doc": "Address being granted the allowance."
+        },
+        {
+          "name": "amount",
+          "type": "i128",
+          "doc": "Maximum transferable amount in stroops."
+        },
+        {
+          "name": "expiration_ledger",
+          "type": "u32",
+          "doc": "Ledger sequence number at which the allowance expires."
+        }
+      ],
+      "returns": "void"
+    },
+    {
+      "name": "allowance",
+      "doc": "Return the remaining allowance that `spender` may transfer from `from`.",
+      "params": [
+        {
+          "name": "from",
+          "type": "address",
+          "doc": "Token owner."
+        },
+        {
+          "name": "spender",
+          "type": "address",
+          "doc": "Approved spender."
+        }
+      ],
+      "returns": "i128"
+    },
+    {
+      "name": "balance",
+      "doc": "Return the XLM balance of `id` in stroops.",
+      "params": [
+        {
+          "name": "id",
+          "type": "address",
+          "doc": "Account or contract address to query."
+        }
+      ],
+      "returns": "i128"
+    },
+    {
+      "name": "decimals",
+      "doc": "Return the number of decimal places. Always 7 for XLM (1 XLM = 10^7 stroops).",
+      "params": [],
+      "returns": "u32"
+    },
+    {
+      "name": "name",
+      "doc": "Return the token name.",
+      "params": [],
+      "returns": "string"
+    },
+    {
+      "name": "symbol",
+      "doc": "Return the token symbol.",
+      "params": [],
+      "returns": "string"
+    },
+    {
+      "name": "authorized",
+      "doc": "Return whether `id` is authorized. Always true for the native asset.",
+      "params": [
+        {
+          "name": "id",
+          "type": "address",
+          "doc": "Account to query."
+        }
+      ],
+      "returns": "bool"
+    },
+    {
+      "name": "admin",
+      "doc": "Return the current admin address.",
+      "params": [],
+      "returns": "address"
+    }
+  ],
+  "events": [
+    {
+      "name": "transfer",
+      "doc": "Emitted on every successful transfer, per the SEP-41 token interface event convention. The native asset has no mint/burn/clawback/set_authorized functions, so it has no corresponding events either.",
+      "topics": [
+        {
+          "name": "event_name",
+          "type": "symbol",
+          "doc": "Event name symbol, always \"transfer\"."
+        },
+        {
+          "name": "from",
+          "type": "address"
+        },
+        {
+          "name": "to",
+          "type": "address"
+        }
+      ],
+      "data": [
+        {
+          "name": "amount",
+          "type": "i128",
+          "doc": "Amount in stroops."
+        }
+      ]
+    },
+    {
+      "name": "approve",
+      "doc": "Emitted when an allowance is granted.",
+      "topics": [
+        {
+          "name": "event_name",
+          "type": "symbol",
+          "doc": "Event name symbol, always \"approve\"."
+        },
+        {
+          "name": "from",
+          "type": "address"
+        },
+        {
+          "name": "spender",
+          "type": "address"
+        }
+      ],
+      "data": [
+        {
+          "name": "amount",
+          "type": "i128",
+          "doc": "Approved amount, in stroops."
+        },
+        {
+          "name": "expiration_ledger",
+          "type": "u32"
+        }
+      ]
+    }
+  ],
+  "types": {},
+  "pointer": "https://raw.githubusercontent.com/determined-001/orbital_stellar/main/packages/abi-registry/specs/published/CAS3J7GYLGXMF6TDJBBYYSE3HQ6BBSMLNUQ34T6TZMYMW2EVH34XOWMA.json"
+}

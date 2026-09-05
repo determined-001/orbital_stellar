@@ -34,6 +34,19 @@ export type OnChainRegistryPublisherConfig = {
   pollIntervalMs?: number;
   /** How long to wait for confirmation before giving up. Defaults to 30000ms. */
   pollTimeoutMs?: number;
+  /**
+   * Simulate without submitting. The transaction is still built and run
+   * through `prepareTransaction`, so the contract executes in simulation and
+   * every host error a real submit would hit - `AlreadyPublished`, a missing
+   * auth, an archived entry - surfaces exactly as it would. Nothing is signed
+   * or sent, no fee is paid, and the returned {@link PublishResult} carries no
+   * `txHash`.
+   *
+   * This exists so a publish run against a live network can be rehearsed. The
+   * registry's writes are irreversible per `(contract_id, publisher, version)`,
+   * so the first real run should never be the first run.
+   */
+  dryRun?: boolean;
 };
 
 export type OperatorPublishParams = {
@@ -311,7 +324,19 @@ export class OnChainRegistryPublisher implements RegistryPublisher {
       .setTimeout(60)
       .build();
 
+    // prepareTransaction simulates against the live contract, so a dry run
+    // still exercises every check the real submit would - it just stops
+    // before anything is signed or sent.
     const prepared = await server.prepareTransaction(tx);
+
+    if (this.config.dryRun) {
+      return {
+        contractId: contractSpec.contractId,
+        version: contractSpec.version,
+        etag: specHash.toString("hex"),
+      };
+    }
+
     prepared.sign(keypair);
 
     const sent = await server.sendTransaction(prepared);
