@@ -377,6 +377,19 @@ is emitted and sources are resumed. `drop-oldest` and `drop-newest` shed
 events deterministically instead of pausing the source; these are useful for
 best-effort dashboards where availability is preferred over perfect delivery.
 
+"Pausing the source" is enforced at **ingestion**: a paused source's events are
+discarded in `enqueueEvent` before they reach the queue, not merely filtered
+out later when the queue is routed. This distinction is what makes the `pause`
+policy bounded. `pauseSource()` records the pause in a set; it cannot reach
+into a live Horizon SSE stream and stop it delivering, so records keep
+arriving after a pause. Filtering them at routing time alone would leave every
+one of them occupying queue depth in the meantime, and the default policy —
+which, unlike the two `drop-*` policies, has no shedding step at the mark —
+would grow with the burst rather than stop at it. A 10k-event burst through a
+deliberately slow watcher is exercised in
+`packages/pulse-core/test/EventEngine.backpressure.test.ts`, which asserts
+depth holds at the high-water mark under all three policies.
+
 ---
 
 ## 6. Webhook delivery internals

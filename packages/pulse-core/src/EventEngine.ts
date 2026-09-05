@@ -1491,7 +1491,29 @@ export class EventEngine {
     });
   }
 
+  /** Which ingestion source an event came from, for pause gating. */
+  private sourceOf(event: Timestamped<NormalizedEventOrPending>): "horizon" | "soroban" {
+    return event.type === "contract.invoked" || event.type === "contract.emitted"
+      ? "soroban"
+      : "horizon";
+  }
+
   private enqueueEvent(event: Timestamped<NormalizedEventOrPending>): void {
+    // A paused source contributes nothing - not even queue depth. `route()`
+    // already discards these at the far end, so dropping them here changes no
+    // delivery behaviour; it only stops a paused source's events accumulating.
+    //
+    // Without this the "pause" policy - the default - pauses both sources and
+    // then keeps queueing every record they go on delivering, because
+    // `pauseSource()` only adds to a Set consulted at routing time and never
+    // stops ingestion. A 10k burst through a slow watcher grew the queue to
+    // 9,999 entries instead of stopping at the high-water mark: precisely the
+    // unbounded-memory failure this queue exists to prevent. Covered by
+    // `test/EventEngine.backpressure.test.ts`.
+    if (this.pausedSources.has(this.sourceOf(event))) {
+      return;
+    }
+
     // If over capacity, apply configured policy.
     if (this.eventQueue.length >= this.queueHighWaterMark) {
       if (this.queuePolicy === "pause") {
