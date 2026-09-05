@@ -2,8 +2,11 @@
 
 extern crate std;
 
-use super::{AbiRegistry, AbiRegistryClient, Error, MAX_PAGE_SIZE};
+use super::{AbiRegistry, AbiRegistryClient, DataKey, Error, BUMP_AMOUNT, DAY_IN_LEDGERS, MAX_ENTRY_TTL, MAX_PAGE_SIZE};
+use soroban_sdk::testutils::storage::Persistent as _;
 use soroban_sdk::testutils::Address as _;
+use soroban_sdk::testutils::Ledger as _;
+use soroban_sdk::Vec;
 use soroban_sdk::{Address, BytesN, Env, String};
 use std::fs;
 use std::path::PathBuf;
@@ -352,4 +355,155 @@ fn publish_requires_publisher_auth() {
     let spec_hash = hash(&env, 1);
 
     client.publish(&publisher, &contract_id, &version, &spec_hash, &pointer);
+}
+
+
+/// The window entries used to get: 30 days of ledgers. Anything published
+/// under the old constant was archived roughly a month after its last write.
+const OLD_THIRTY_DAY_HORIZON: u32 = 30 * DAY_IN_LEDGERS;
+
+fn ttl(env: &Env, registry: &Address, key: &DataKey) -> u32 {
+    env.as_contract(registry, || env.storage().persistent().get_ttl(key))
+}
+
+fn publish_one(env: &Env, client: &AbiRegistryClient<'_>, publisher: &Address, contract_id: &Address, version: &String) {
+    client.publish(
+        publisher,
+        contract_id,
+        version,
+        &hash(env, 1),
+        &String::from_str(env, "https://example.com/spec.json"),
+    );
+}
+
+#[test]
+fn bump_amount_does_not_exceed_the_network_max_entry_ttl() {
+    // An extend_ttl asking for more than the network's max_entry_ttl is
+    // rejected by the host, so a bump above the cap would break publish()
+    // on a live network while every test here still passed.
+    assert!(BUMP_AMOUNT <= MAX_ENTRY_TTL);
+    assert!(BUMP_AMOUNT > OLD_THIRTY_DAY_HORIZON);
+}
+
+#[test]
+fn published_entries_outlive_the_old_thirty_day_horizon() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let client = setup(&env);
+    let registry = client.address.clone();
+
+    let publisher = Address::generate(&env);
+    let contract_id = Address::generate(&env);
+    let version = String::from_str(&env, "1.0.0");
+    publish_one(&env, &client, &publisher, &contract_id, &version);
+
+    let spec_key = DataKey::Spec(contract_id.clone(), publisher.clone(), version.clone());
+    let versions_key = DataKey::Versions(contract_id.clone(), publisher.clone());
+    let latest_key = DataKey::Latest(contract_id.clone(), publisher.clone());
+
+    for key in [&spec_key, &versions_key, &latest_key] {
+        let live = ttl(&env, &registry, key);
+        assert_eq!(live, BUMP_AMOUNT);
+        assert!(live > OLD_THIRTY_DAY_HORIZON);
+    }
+
+    // Past the point where the old 30-day bump would have let the entry
+    // archive, the record is still readable and still has life left.
+    env.ledger().set_sequence_number(OLD_THIRTY_DAY_HORIZON + DAY_IN_LEDGERS);
+    let record = client.latest(&contract_id, &publisher).unwrap();
+    assert_eq!(record.version, version);
+    assert!(ttl(&env, &registry, &spec_key) > 0);
+}
+
+#[test]
+fn touch_reextends_entries_that_are_close_to_expiring() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let client = setup(&env);
+    let registry = client.address.clone();
+
+    let publisher = Address::generate(&env);
+    let contract_id = Address::generate(&env);
+    let version = String::from_str(&env, "1.0.0");
+    publish_one(&env, &client, &publisher, &contract_id, &version);
+
+    // Far enough in that the entries are inside LIFETIME_THRESHOLD, i.e. the
+    // point a keeper is expected to run.
+    let near_expiry = BUMP_AMOUNT - DAY_IN_LEDGERS;
+    env.ledger().set_sequence_number(near_expiry);
+
+    let spec_key = DataKey::Spec(contract_id.clone(), publisher.clone(), version.clone());
+    assert_eq!(ttl(&env, &registry, &spec_key), DAY_IN_LEDGERS);
+
+    let mut versions: Vec<String> = Vec::new(&env);
+    versions.push_back(version.clone());
+    let extended = client.touch(&contract_id, &publisher, &versions);
+
+    // Spec + Versions + Latest.
+    assert_eq!(extended, 3);
+    assert_eq!(ttl(&env, &registry, &spec_key), BUMP_AMOUNT);
+    assert_eq!(
+        ttl(&env, &registry, &DataKey::Latest(contract_id.clone(), publisher.clone())),
+        BUMP_AMOUNT
+    );
+    assert_eq!(
+        ttl(&env, &registry, &DataKey::Versions(contract_id, publisher)),
+        BUMP_AMOUNT
+    );
+}
+
+#[test]
+fn touch_skips_versions_that_were_never_published() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let client = setup(&env);
+
+    let publisher = Address::generate(&env);
+    let contract_id = Address::generate(&env);
+    let version = String::from_str(&env, "1.0.0");
+    publish_one(&env, &client, &publisher, &contract_id, &version);
+
+    let mut versions: Vec<String> = Vec::new(&env);
+    versions.push_back(version);
+    versions.push_back(String::from_str(&env, "9.9.9"));
+
+    // Index pair + the one real spec; the unknown version is not counted.
+    assert_eq!(client.touch(&contract_id, &publisher, &versions), 3);
+}
+
+#[test]
+fn touch_reports_nothing_to_touch_instead_of_silently_succeeding() {
+    let env = Env::default();
+    let client = setup(&env);
+
+    let publisher = Address::generate(&env);
+    let contract_id = Address::generate(&env);
+    let versions: Vec<String> = Vec::new(&env);
+
+    assert_eq!(
+        client.try_touch(&contract_id, &publisher, &versions),
+        Err(Ok(Error::NothingToTouch))
+    );
+}
+
+#[test]
+fn touch_rejects_more_versions_than_a_page() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let client = setup(&env);
+
+    let publisher = Address::generate(&env);
+    let contract_id = Address::generate(&env);
+    let version = String::from_str(&env, "1.0.0");
+    publish_one(&env, &client, &publisher, &contract_id, &version);
+
+    let mut versions: Vec<String> = Vec::new(&env);
+    for i in 1..=(MAX_PAGE_SIZE + 1) {
+        versions.push_back(version_str(&env, i.min(30)));
+    }
+
+    assert_eq!(
+        client.try_touch(&contract_id, &publisher, &versions),
+        Err(Ok(Error::TooManyVersions))
+    );
 }

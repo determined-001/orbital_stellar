@@ -38,6 +38,61 @@ export type OnChainAbiRegistryClientConfig = {
   cacheTtlMs?: number;
 };
 
+/**
+ * Thrown when the registry holds an entry for this key but the network has
+ * archived it, so it can only be read again after someone pays a
+ * `RestoreFootprint`.
+ *
+ * This is deliberately distinct from a `null` return, which means "never
+ * published". The two are indistinguishable at the RPC layer unless you look
+ * for the restore preamble: an archived persistent entry makes the host
+ * refuse the invocation and the RPC answers with `restorePreamble` (the
+ * footprint and minimum fee a restore would cost) rather than a result, while
+ * a key that was never written simulates fine and returns void.
+ */
+export class RegistryEntryArchivedError extends Error {
+  readonly contractId: string;
+  readonly publisher: string;
+  readonly registryContractId: string;
+  /** Contract function whose simulation hit the archived entry. */
+  readonly fn: string;
+  /** Minimum fee, in stroops, the RPC quoted for the restore. Absent when the archival was reported as a plain simulation error. */
+  readonly minResourceFee?: string;
+  /** Base64 `SorobanTransactionData` for the restore transaction, when the RPC supplied a preamble. */
+  readonly restoreTransactionData?: string;
+
+  constructor(args: {
+    contractId: string;
+    publisher: string;
+    registryContractId: string;
+    fn: string;
+    minResourceFee?: string;
+    restoreTransactionData?: string;
+    detail?: string;
+  }) {
+    super(
+      `OnChainAbiRegistryClient: registry entry for ${args.contractId} (publisher ${args.publisher}) has been archived and must be restored before "${args.fn}" can read it` +
+        (args.minResourceFee ? ` - restore costs at least ${args.minResourceFee} stroops` : "") +
+        (args.detail ? `: ${args.detail}` : ""),
+    );
+    this.name = "RegistryEntryArchivedError";
+    this.contractId = args.contractId;
+    this.publisher = args.publisher;
+    this.registryContractId = args.registryContractId;
+    this.fn = args.fn;
+    this.minResourceFee = args.minResourceFee;
+    this.restoreTransactionData = args.restoreTransactionData;
+  }
+}
+
+/**
+ * Archived persistent entries surface either as a `restorePreamble` on an
+ * otherwise-successful simulation or, depending on RPC version, as a
+ * simulation error naming the archived/expired entry. Both are matched so the
+ * distinction survives an RPC upgrade.
+ */
+const ARCHIVED_ENTRY_ERROR = /archiv|expired|EntryArchived|restore/i;
+
 type SpecRecord = {
   version: string;
   specHash: string; // hex
@@ -169,12 +224,16 @@ export class OnChainAbiRegistryClient {
     let cursor: number | null = 0;
 
     while (cursor !== null) {
-      const retval = await this.simulate("list_versions_paged", [
-        nativeToScVal(targetContractId, { type: "address" }),
-        nativeToScVal(this.config.publisher, { type: "address" }),
-        nativeToScVal(cursor, { type: "u32" }),
-        nativeToScVal(25, { type: "u32" }), // MAX_PAGE_SIZE
-      ]);
+      const retval = await this.simulate(
+        "list_versions_paged",
+        [
+          nativeToScVal(targetContractId, { type: "address" }),
+          nativeToScVal(this.config.publisher, { type: "address" }),
+          nativeToScVal(cursor, { type: "u32" }),
+          nativeToScVal(25, { type: "u32" }), // MAX_PAGE_SIZE
+        ],
+        targetContractId,
+      );
 
       if (!retval) break;
 
@@ -198,11 +257,15 @@ export class OnChainAbiRegistryClient {
     targetContractId: string,
     version: string,
   ): Promise<SpecRecord | null> {
-    const retval = await this.simulate("get_version", [
-      nativeToScVal(targetContractId, { type: "address" }),
-      nativeToScVal(this.config.publisher, { type: "address" }),
-      nativeToScVal(version, { type: "string" }),
-    ]);
+    const retval = await this.simulate(
+      "get_version",
+      [
+        nativeToScVal(targetContractId, { type: "address" }),
+        nativeToScVal(this.config.publisher, { type: "address" }),
+        nativeToScVal(version, { type: "string" }),
+      ],
+      targetContractId,
+    );
     if (!retval) return null;
     const native = scValToNative(retval) as Record<string, unknown> | null;
     if (!native) return null;
@@ -216,7 +279,11 @@ export class OnChainAbiRegistryClient {
     };
   }
 
-  private async simulate(fn: string, args: xdr.ScVal[]): Promise<xdr.ScVal | null> {
+  private async simulate(
+    fn: string,
+    args: xdr.ScVal[],
+    targetContractId: string,
+  ): Promise<xdr.ScVal | null> {
     const server = new SorobanRpc.Server(this.config.rpcUrl);
     // Throwaway, unfunded source - see the class doc comment above.
     const source = new Account(Keypair.random().publicKey(), "0");
@@ -231,10 +298,50 @@ export class OnChainAbiRegistryClient {
       .build();
 
     const sim = await server.simulateTransaction(tx);
+
     if (SorobanRpc.Api.isSimulationError(sim)) {
+      if (ARCHIVED_ENTRY_ERROR.test(sim.error)) {
+        throw this.archived(fn, targetContractId, { detail: sim.error });
+      }
       throw new Error(`OnChainAbiRegistryClient: simulation of "${fn}" failed: ${sim.error}`);
     }
+
+    // A restore preamble means the entry exists but has been archived: the
+    // registry did publish it, and reading it again costs a RestoreFootprint.
+    // Reporting this as a plain miss would tell callers the spec was never
+    // published, which is a different (and unfixable) problem.
+    const preamble = (
+      sim as { restorePreamble?: { minResourceFee: string; transactionData?: unknown } }
+    ).restorePreamble;
+    if (preamble?.minResourceFee) {
+      throw this.archived(fn, targetContractId, {
+        minResourceFee: preamble.minResourceFee,
+        restoreTransactionData: this.encodeRestoreData(preamble.transactionData),
+      });
+    }
+
     if (!("result" in sim) || !sim.result) return null;
     return sim.result.retval;
+  }
+
+  private archived(
+    fn: string,
+    targetContractId: string,
+    extra: { minResourceFee?: string; restoreTransactionData?: string; detail?: string },
+  ): RegistryEntryArchivedError {
+    return new RegistryEntryArchivedError({
+      contractId: targetContractId,
+      publisher: this.config.publisher,
+      registryContractId: this.config.contractId,
+      fn,
+      ...extra,
+    });
+  }
+
+  /** The preamble's transactionData is an XDR object on modern SDKs and already a base64 string on older ones. */
+  private encodeRestoreData(data: unknown): string | undefined {
+    if (typeof data === "string") return data;
+    const encodable = data as { toXDR?: (format: "base64") => string } | undefined;
+    return typeof encodable?.toXDR === "function" ? encodable.toXDR("base64") : undefined;
   }
 }

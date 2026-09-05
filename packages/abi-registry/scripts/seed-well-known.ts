@@ -16,6 +16,12 @@
  * committed and pushed to `main` for the pointer to actually resolve -
  * commit them before (or immediately after) running this script.
  *
+ * Entries seeded here get the registry's full-length TTL (the network's
+ * max_entry_ttl, ~180 days) because `publish` bumps to it - see
+ * contracts/README.md, "Registry durability". They still need
+ * scripts/touch-registry.ts run against them on a cadence to stay alive
+ * beyond that window.
+ *
  * Usage:
  *   SOROBAN_CONTRACT_ID=... SOROBAN_INVOKER_SECRET=... \
  *   npx tsx scripts/seed-well-known.ts

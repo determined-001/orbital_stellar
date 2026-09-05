@@ -5,13 +5,43 @@ use soroban_sdk::{
     String, Vec,
 };
 
-// Persistent storage entries are bumped on every touch so a spec never
-// silently archives out from under a live registry. ~30 days of ledgers
-// at Stellar's ~5s close time, refreshed once the entry is within a day
-// of expiring.
+// ~5s ledger close time, so 17_280 ledgers is about a day.
 const DAY_IN_LEDGERS: u32 = 17_280;
-const BUMP_AMOUNT: u32 = 30 * DAY_IN_LEDGERS;
-const LIFETIME_THRESHOLD: u32 = BUMP_AMOUNT - DAY_IN_LEDGERS;
+
+/// The network's `max_entry_ttl` state-archival setting, in ledgers: the
+/// longest live-until window a single `extend_ttl` may ask for. Asking for
+/// more than the network allows makes the host reject the extension, so this
+/// must never exceed the live value.
+///
+/// 3_110_400 ledgers is ~180 days at a 5s close time. Verified against both
+/// networks on 2026-08-31 by reading the `STATE_ARCHIVAL` config setting
+/// (`ConfigSettingId` 10) over Soroban RPC:
+///
+/// ```text
+/// curl -s -X POST https://soroban-testnet.stellar.org \
+///   -H 'Content-Type: application/json' \
+///   -d '{"jsonrpc":"2.0","id":1,"method":"getLedgerEntries",
+///        "params":{"keys":["AAAACAAAAAo="]}}'
+/// # testnet max_entry_ttl = 3_110_400, pubnet max_entry_ttl = 3_110_400
+/// ```
+///
+/// Re-check this before raising it; the setting is a validator-votable
+/// network parameter, not a protocol constant.
+const MAX_ENTRY_TTL: u32 = 3_110_400;
+
+/// Every write extends the entries it touches to the network maximum rather
+/// than the old ~30-day window. A spec published once and never republished
+/// used to archive about a month later, which made the registry's canonical
+/// record evaporate monthly and pushed the `RestoreFootprint` cost onto a
+/// downstream consumer who did nothing wrong. Read paths deliberately do not
+/// extend anything (see `latest`), so `touch` is the supported way to keep an
+/// entry alive past this window.
+const BUMP_AMOUNT: u32 = MAX_ENTRY_TTL;
+
+/// Re-extend once an entry is within 30 days of expiring. Below the bump
+/// itself so a `touch` that runs early is a cheap no-op rather than paying
+/// rent on every call.
+const LIFETIME_THRESHOLD: u32 = BUMP_AMOUNT - 30 * DAY_IN_LEDGERS;
 
 /// Maximum number of versions returned by a single `list_versions_paged`
 /// call. Keeps Soroban resource costs bounded. Clients must page through
@@ -36,6 +66,13 @@ pub enum Error {
     StartPastEnd = 4,
     /// The requested page limit exceeds MAX_PAGE_SIZE.
     LimitExceedsMax = 5,
+    /// `touch` was handed more versions than `MAX_PAGE_SIZE`, which would
+    /// make its footprint unbounded.
+    TooManyVersions = 6,
+    /// `touch` found no live entry for the given (contract_id, publisher):
+    /// nothing was ever published under it, or every entry has already been
+    /// archived and needs a `RestoreFootprint` before it can be extended.
+    NothingToTouch = 7,
 }
 
 #[contracttype]
@@ -152,6 +189,14 @@ impl AbiRegistry {
 
     /// Returns the most recently published spec for (contract_id, publisher),
     /// or `None` if that publisher has never published a spec for it.
+    ///
+    /// Deliberately does NOT extend the TTL of the entries it reads. Every
+    /// resolver in this repo reads the registry through `simulateTransaction`
+    /// with an unfunded throwaway source (see
+    /// `packages/abi-registry/src/OnChainAbiRegistryClient.ts`); a read that
+    /// wrote would turn spec resolution into a fee-paying, signed transaction
+    /// for every consumer. Durability comes from the write path bumping to
+    /// `MAX_ENTRY_TTL` and from `touch` being run on a schedule instead.
     pub fn latest(env: Env, contract_id: Address, publisher: Address) -> Option<SpecRecord> {
         let latest_key = DataKey::Latest(contract_id.clone(), publisher.clone());
         let version: String = env.storage().persistent().get(&latest_key)?;
@@ -160,6 +205,12 @@ impl AbiRegistry {
 
     /// Returns a specific published version's record, or `None` if it was
     /// never published.
+    ///
+    /// `None` means "never published". An entry that was published and has
+    /// since been archived does not reach this function at all - the host
+    /// rejects the invocation before it runs and the RPC answers with a
+    /// restore preamble, which is what lets clients tell the two apart.
+    /// Read-only for the same reason as `latest`.
     pub fn get_version(
         env: Env,
         contract_id: Address,
@@ -240,6 +291,68 @@ pub fn list_versions_paged(
     let next_cursor = if end < total { Some(end) } else { None };
 
     (page, next_cursor)
+}
+
+/// Keeper entrypoint: extends the TTL of the entries backing
+/// (contract_id, publisher) back out to `MAX_ENTRY_TTL`.
+///
+/// Reads are pure by design, so this is the path that keeps a spec alive
+/// after publication. It is permissionless - TTL extension only ever adds
+/// life to an entry, so anyone willing to pay the rent may call it, which
+/// means a keeper needs a funded key but no privileged one.
+///
+/// Extends the `Latest` and `Versions` index entries, plus the `Spec` entry
+/// for each version in `versions`. Pass the versions returned by
+/// `list_versions_paged`; a caller with more than `MAX_PAGE_SIZE` versions
+/// pages through them across several calls, which keeps each call's
+/// footprint bounded.
+///
+/// Returns the number of entries extended. Errors with `NothingToTouch` when
+/// no live entry exists for the pair, so a keeper can tell "nothing here" from
+/// "kept alive" instead of silently succeeding.
+pub fn touch(
+    env: Env,
+    contract_id: Address,
+    publisher: Address,
+    versions: Vec<String>,
+) -> Result<u32, Error> {
+    if versions.len() > MAX_PAGE_SIZE {
+        return Err(Error::TooManyVersions);
+    }
+
+    let mut extended: u32 = 0;
+
+    let latest_key = DataKey::Latest(contract_id.clone(), publisher.clone());
+    if env.storage().persistent().has(&latest_key) {
+        env.storage()
+            .persistent()
+            .extend_ttl(&latest_key, LIFETIME_THRESHOLD, BUMP_AMOUNT);
+        extended += 1;
+    }
+
+    let versions_key = DataKey::Versions(contract_id.clone(), publisher.clone());
+    if env.storage().persistent().has(&versions_key) {
+        env.storage()
+            .persistent()
+            .extend_ttl(&versions_key, LIFETIME_THRESHOLD, BUMP_AMOUNT);
+        extended += 1;
+    }
+
+    for version in versions.iter() {
+        let spec_key = DataKey::Spec(contract_id.clone(), publisher.clone(), version);
+        if env.storage().persistent().has(&spec_key) {
+            env.storage()
+                .persistent()
+                .extend_ttl(&spec_key, LIFETIME_THRESHOLD, BUMP_AMOUNT);
+            extended += 1;
+        }
+    }
+
+    if extended == 0 {
+        return Err(Error::NothingToTouch);
+    }
+
+    Ok(extended)
 }
 }
 

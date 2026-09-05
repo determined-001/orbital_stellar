@@ -58,7 +58,10 @@ export type { WellKnownSpecRaw } from "./wellKnown.js";
 
 export { OnChainRegistryPublisher } from "./OnChainRegistryPublisher.js";
 export type { OnChainRegistryPublisherConfig } from "./OnChainRegistryPublisher.js";
-export { OnChainAbiRegistryClient } from "./OnChainAbiRegistryClient.js";
+export {
+  OnChainAbiRegistryClient,
+  RegistryEntryArchivedError,
+} from "./OnChainAbiRegistryClient.js";
 export type { OnChainAbiRegistryClientConfig } from "./OnChainAbiRegistryClient.js";
 
 export { BundledWellKnownClient } from "./BundledWellKnownClient.js";
