@@ -43,7 +43,11 @@ export RUSTFLAGS="${RUSTFLAGS:-} --remap-path-prefix=${CARGO_REGISTRY_HOME}=/car
 echo "==> Building contracts (release, wasm32v1-none, rustc ${ACTUAL_TOOLCHAIN}, paths remapped)"
 cargo build --release --target wasm32v1-none
 
-for wasm in target/wasm32v1-none/release/orbital_abi_registry.wasm \
-            target/wasm32v1-none/release/orbital_demo_emitter.wasm; do
+# Every contract the workspace builds, not a hand-picked subset: CI's
+# verify-provenance iterates whatever a deployment manifest names, so a
+# contract missing from this summary is one whose hash nobody sees until a
+# deployment disagrees with it.
+for wasm in target/wasm32v1-none/release/*.wasm; do
+  [ -e "$wasm" ] || continue
   printf '    %s  %s\n' "$(sha256sum "$wasm" | awk '{print $1}')" "$(basename "$wasm")"
 done

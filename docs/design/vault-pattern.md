@@ -1,6 +1,12 @@
 # Soroban vault with hard constraints
 
-**Status: proposed — awaiting design review.** Issue
+**Status: partially implemented — the review is still open.** Everything below
+except `act()` is built and tested in `contracts/vault` (23 tests, all custody
+guarantees negatively asserted). `act()` is deliberately absent because open
+question 3 is unresolved and it changes that function's shape. See
+[Implementation status](#implementation-status).
+
+Issue
 [#1068](https://github.com/determined-001/orbital_stellar/issues/1068) carries
 `needs-design`, and its own acceptance criteria require sign-off before
 implementation. This document is the thing to sign off on. Nothing in
@@ -161,3 +167,51 @@ dev-dependency, and the `wasm32v1-none` target pinned in `rust-toolchain.toml`.
 4. **Should `deposit()` be callable by anyone** (a third party topping up a
    depositor's vault), or the depositor only? Restricting it is simpler;
    allowing it enables funding flows we may want later.
+
+---
+
+## Implementation status
+
+<a id="implementation-status"></a>
+
+Added when `contracts/vault` landed. This section records what is real, so the
+design doc cannot drift into describing a contract that does not match it.
+
+| Interface row | State |
+| --- | --- |
+| `__constructor(depositor, config)` | built; rejects re-init, a zero-ledger window, and slippage above 100% |
+| `deposit(asset, amount)` | built; depositor-only, allow-list enforced |
+| `withdraw(asset, amount)` | built; **no recipient parameter**, asserted from the authorized call's argument list |
+| `act(pool, asset_in, amount_in, min_out)` | **not built** — blocked on open question 3 |
+| `set_worker` / `revoke_worker` | built; revocation is immediate |
+| `set_allowlist` / `set_bounds` | built; depositor-only, no worker path |
+| `config()` / `worker()` / `balance(asset)` | built, plus `action_window()` |
+
+### Decisions taken by the implementation
+
+These were the cheap calls; they are recorded here rather than left implicit,
+and the review can still overturn any of them.
+
+- **Q1, window accounting** — ledger-based, as proposed. No oracle, not
+  manipulable by a timestamp, drifts against wall-clock as close times vary.
+  `window_ledgers == 0` is rejected rather than treated as "unlimited".
+- **Q2, workers per vault** — exactly one. Simpler to reason about and to
+  revoke; `set_worker` replaces rather than appends.
+- **Q4, who may deposit** — depositor only. Widening this later is
+  backward-compatible; narrowing it after someone depends on third-party
+  top-ups is not.
+
+### Still open
+
+- **Q3, `act()`'s pool interface** — bind to a specific AMM, or take an opaque
+  selector constrained by the allow-list? This is the one that must be settled
+  before `act()` can be written, and it changes the storage and tests around it.
+
+### One decision the implementation added
+
+`withdraw()` deliberately does **not** check the allow-list. An asset
+allow-listed at deposit time and removed afterwards must still be retrievable;
+gating withdrawal on the allow-list would let a depositor strand their own
+funds by narrowing their own configuration, turning a safety control into a
+trap. Covered by
+`withdraw_still_works_after_the_asset_is_removed_from_the_allowlist`.

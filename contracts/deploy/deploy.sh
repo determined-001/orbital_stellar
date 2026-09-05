@@ -67,6 +67,7 @@ wasm_for() {
     registry)    echo "orbital_abi_registry" ;;
     demoEmitter) echo "orbital_demo_emitter" ;;
     payroll)     echo "orbital_payroll" ;;
+    vault)       echo "orbital_vault" ;;
     *) echo "error: unknown contract key '$1'" >&2; return 1 ;;
   esac
 }
@@ -76,6 +77,7 @@ alias_for() {
     registry)    echo "orbital-registry" ;;
     demoEmitter) echo "orbital-demo-emitter" ;;
     payroll)     echo "orbital-payroll" ;;
+    vault)       echo "orbital-vault" ;;
     *) echo "error: unknown contract key '$1'" >&2; return 1 ;;
   esac
 }

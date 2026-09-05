@@ -1,15 +1,21 @@
 //! Property-test specifications for the vault contract (issue #1069, "22.2
 //! Vault security audit and property tests").
 //!
-//! **These tests do not run.** `contracts/vault` has no contract yet - issue
-//! #1068 ("22.1 Soroban vault contract with hard constraints") is open and
-//! unstarted, so there is nothing here to assert properties against. Every
-//! function below is `#[ignore]`d and its body is `todo!()`; `cargo test`
-//! reports them as ignored, not as passing, so this file cannot create a
-//! false impression that the vault has been property-tested. It exists to
-//! record the four invariants the acceptance criteria name, in a form that
-//! is already wired into the workspace's test runner and ready for 22.1's
-//! contract to be filled in against.
+//! **These tests do not run yet.** The vault contract now exists (#1068), and
+//! three of the four invariants below are covered by example-based tests in
+//! `src/test.rs` - `withdraw_pays_the_depositor`,
+//! `withdraw_authorizes_only_asset_and_amount_with_no_destination`,
+//! `a_worker_cannot_widen_the_allowlist`, `a_worker_cannot_withdraw` and
+//! their neighbours. What is still missing here is the *property* form:
+//! quantifying over every reachable state rather than the handful a unit test
+//! constructs, which is what the acceptance criteria ask for and what a
+//! hand-written example can never provide.
+//!
+//! Every function below stays `#[ignore]`d with a `todo!()` body, so
+//! `cargo test` reports them as ignored rather than passing and this file
+//! cannot create a false impression that the vault has been property-tested.
+//! Filling them in needs a property-testing dependency and generators, which
+//! is issue #1069's own scope.
 //!
 //! Implementation note 1: "State the invariants as properties first, then
 //! fuzz against them - a fuzzer with no invariant is a slow random test."
@@ -31,7 +37,7 @@
 /// `packages/worker-core/src/vault/types.ts`, issue #1070) actually true at
 /// the contract level rather than just true of the worker's code.
 #[test]
-#[ignore = "no vault contract exists yet (#1068/22.1) - see the module doc"]
+#[ignore = "needs a property-testing harness (#1069); examples in src/test.rs cover this"]
 fn funds_only_ever_return_to_their_depositor() {
     todo!("requires the vault contract from #1068 (22.1)")
 }
@@ -43,7 +49,7 @@ fn funds_only_ever_return_to_their_depositor() {
 /// subscriber. A worker, or any automated process, must never be able to
 /// widen its own permitted trading surface.
 #[test]
-#[ignore = "no vault contract exists yet (#1068/22.1) - see the module doc"]
+#[ignore = "needs a property-testing harness (#1069); examples in src/test.rs cover this"]
 fn allow_list_only_narrows() {
     todo!("requires the vault contract from #1068 (22.1)")
 }
@@ -58,7 +64,7 @@ fn allow_list_only_narrows() {
 /// this bound relates to the off-chain price guards that sit in front of
 /// it.
 #[test]
-#[ignore = "no vault contract exists yet (#1068/22.1) - see the module doc"]
+#[ignore = "needs act() - blocked on open question 3 in docs/design/vault-pattern.md"]
 fn slippage_bounds_always_hold() {
     todo!("requires the vault contract from #1068 (22.1)")
 }
@@ -72,7 +78,7 @@ fn slippage_bounds_always_hold() {
 /// worker's authority never exceeds 'call a constrained function'" (issue
 /// #1070, §C.1).
 #[test]
-#[ignore = "no vault contract exists yet (#1068/22.1) - see the module doc"]
+#[ignore = "needs a property-testing harness (#1069); examples in src/test.rs cover this"]
 fn worker_authority_never_widens() {
     todo!("requires the vault contract from #1068 (22.1)")
 }

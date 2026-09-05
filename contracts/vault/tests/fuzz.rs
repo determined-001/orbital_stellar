@@ -29,7 +29,7 @@
 //! where that tooling and its corpus/generators belong.
 
 #[test]
-#[ignore = "no vault contract exists yet (#1068/22.1) - see the module doc for the fuzzing plan"]
+#[ignore = "needs act() and a fuzzing harness (#1069); the vault itself now exists - see the module doc for the fuzzing plan"]
 fn deposit_withdraw_action_sequences_never_violate_an_invariant() {
     todo!("requires the vault contract from #1068 (22.1), plus cargo-fuzz or proptest wiring")
 }
