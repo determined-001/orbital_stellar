@@ -148,17 +148,52 @@ and `target/wasm32v1-none/release/orbital_demo_emitter.wasm`.
 CI (`.github/workflows/contracts.yml`) runs both on every push/PR that touches
 `contracts/**`.
 
-## Deploy to testnet
+## Deploy
+
+`deploy/deploy.sh <network>` is the deployer; `deploy_testnet.sh` and
+`deploy_mainnet.sh` are one-line wrappers around it, so the network can never
+be changed by an environment variable on a script whose name says otherwise.
+
+### Testnet
 
 ```sh
 stellar keys generate orbital-deployer --network testnet --fund   # one-time
 ./deploy/deploy_testnet.sh
 ```
 
+Deploys the registry, demo-emitter and payroll contracts and writes
+`deployed.testnet.json`.
+
+### Mainnet
+
+```sh
+stellar keys add orbital-deployer     # one-time; fund it with real XLM
+./deploy/deploy_mainnet.sh
+```
+
+Deploys the registry and payroll contracts and writes `deployed.mainnet.json`.
+
+**demo-emitter is deliberately excluded from mainnet.** It is a testnet fixture
+that exists so the docs, starters and e2e tests have a contract that emits on
+demand; publishing a toy to the public network spends real XLM for no user.
+Pass `CONTRACTS="registry demoEmitter payroll"` if you disagree.
+
+Two guard rails stand in front of an irreversible act:
+
+- **Mainnet needs an explicit confirmation.** Interactively you type
+  `deploy to mainnet`; in a script you set `CONFIRM_MAINNET=yes`. Without
+  either, a non-interactive shell is refused outright.
+- **An already-populated manifest blocks a redeploy.** Deploying again
+  publishes *new* contracts at *new* ids - it does not upgrade or migrate the
+  existing ones, and anything already pointing at the old ids keeps pointing at
+  them. Set `ALLOW_REDEPLOY=yes` to override.
+
+Other environment variables: `DEPLOYER_IDENTITY` (default `orbital-deployer`),
+`CONTRACTS`, and `RPC_URL` + `NETWORK_PASSPHRASE` together for a private
+endpoint.
+
 This is a manual, one-time act - contracts are immutable once deployed, so
-deployment is intentionally not part of any CI pipeline. The script builds
-both contracts, deploys them, and writes `deployed.testnet.json` with the
-resulting contract IDs. See that script's header comment and the maintainer
+deployment is intentionally not part of any CI pipeline. See that script's header comment and the maintainer
 plan's "manual/gated steps" section for the secret-provisioning steps that
 follow (GitHub repo secrets for the nightly integration test, Vercel env vars
 for the demo's "Fire test event" route).
@@ -169,8 +204,13 @@ for the demo's "Fire test event" route).
 
 The procedure:
 1. CI builds the contracts through `build-wasm.sh`, which is what makes the output byte-for-byte identical across environments. Two inputs would otherwise leak in and both have to be controlled: the compiler version (pinned exactly in `rust-toolchain.toml`, and asserted by the script) and absolute build paths (normalised with `--remap-path-prefix`). The deploy script uses the same wrapper, so what gets deployed is what CI rebuilds.
-2. The `wasmHash` values recorded in `deployed.testnet.json` are compared against the newly built WASM hashes. A mismatch fails the job with a diff of expected vs actual.
-3. The deployed WASM bytecodes are fetched directly from the Stellar testnet and hashed to ensure they exactly match the local build.
+2. The `wasmHash` values recorded in each `deployed.<network>.json` are compared against the newly built WASM hashes. A mismatch fails the job with a diff of expected vs actual.
+3. The deployed WASM bytecodes are fetched directly from that network and hashed to ensure they exactly match the local build.
+
+The job iterates over every `deployed.*.json` manifest and every contract key
+inside it, so adding a network or a contract to a deployment brings it under
+provenance automatically rather than needing the workflow edited too. A
+manifest still holding `<placeholder>` ids is skipped, not failed.
 
 Changing contract source without redeploying turns the CI job red. If you intentionally modify a contract, you must rebuild, redeploy (which updates `deployed.testnet.json`), and commit both the source changes and the updated JSON file together.
 
