@@ -9,7 +9,9 @@
 [![Node](https://img.shields.io/badge/node-20%20%7C%2022-339933?style=flat-square&logo=node.js)](.github/workflows/ci.yml)
 [![Conventional Commits](https://img.shields.io/badge/commits-conventional-fe5196?style=flat-square&logo=conventionalcommits)](https://www.conventionalcommits.org)
 
-> **Status**: `v0.1.0` on npm &nbsp;·&nbsp; **Networks**: testnet + mainnet &nbsp;·&nbsp; **License**: MIT
+> **Status**: `v0.1.0` on npm &nbsp;·&nbsp; **Contracts**: testnet only &nbsp;·&nbsp; **License**: MIT
+>
+> The libraries read both networks. Orbital's own contracts are deployed to testnet and have not been deployed to mainnet - see [What works today](#what-works-today).
 
 **Stellar's biggest developer-experience gap is that Soroban events arrive as raw, untyped payloads with no shared vocabulary - every team invents its own decoding, and no two teams agree on what a `swap` or a `liquidation` even is.**
 
@@ -20,6 +22,7 @@ Orbital ships the typed event layer once, openly: an open ABI/event-schema regis
 ## Table of contents
 
 - [Why this exists](#why-this-exists)
+- [What works today](#what-works-today)
 - [Packages](#packages)
 - [Quickstart](#quickstart)
 - [Architecture](#architecture)
@@ -44,7 +47,38 @@ Stellar's official APIs give you the raw firehose - and not much else:
 
 Every serious Stellar app - wallet, dashboard, anchor integration, analytics tool - re-solves the same problem. Orbital ships those primitives once, and the registry that makes decoding canonical, so you can `pnpm add` them instead of rebuilding them.
 
+For how this sits against SEP-48, the official JS SDK, Mercury and the other Stellar indexers - including where they win - see [`docs/competitive-landscape.md`](docs/competitive-landscape.md).
+
 The longer-form thesis, the multi-year vision, and the SCF grant case live in [`PROGRESS.md`](PROGRESS.md), [`ROADMAP.md`](ROADMAP.md), and `docs/proposal.md` (in progress).
+
+---
+
+## What works today
+
+Four different states get conflated in most project READMEs. They are separated here on purpose, because "it is in the repo" and "you can install it and it works" are not the same claim.
+
+| Capability | On npm | In this repo | Notes |
+|---|---|---|---|
+| Horizon subscription + classic event taxonomy | ✅ `0.1.0` | ✅ | Payments, account ops, trustlines, offers, claimables, liquidity pools, manage-data |
+| Reconnection, rate-limit backoff, cursor persistence | ✅ `0.1.0` | ✅ | |
+| HMAC webhook delivery + verification | ⚠️ partial | ✅ | Retry-queue and signing exports landed after `0.1.0` |
+| React hooks | ✅ `0.1.0` | ✅ | 4.6 kB gzip |
+| **Soroban contract-event subscription** | ❌ | ✅ | `CoreConfig.soroban` on the published build has no `rpcUrl`. Needs the next release - see [#1132](https://github.com/determined-001/orbital_stellar/issues/1132) |
+| ABI registry client + WASM auto-discovery | ⚠️ partial | ✅ | |
+| Worker layer (`worker-core`) | ❌ unpublished | ⚠️ partial | Triggers, scheduling, verification and reputation exist. The vault contract it depends on is a placeholder - [#1068](https://github.com/determined-001/orbital_stellar/issues/1068) |
+
+**The published packages are behind this repository.** `0.1.0` predates a large amount of the work here, most consequentially Soroban RPC configuration. If you need contract-event subscription today, install from source. Tracked as [#1132](https://github.com/determined-001/orbital_stellar/issues/1132).
+
+### On-chain status
+
+| Contract | Testnet | Mainnet |
+|---|---|---|
+| `registry` | deployed, **never invoked** | not deployed |
+| `demo-emitter` | deployed, **never invoked** | not deployed (testnet fixture by design) |
+| `payroll` | deployed | not deployed |
+| `vault` | placeholder crate, not built | - |
+
+"Never invoked" is meant literally and is checkable: the deployer account has submitted only `UploadContractWasm` and `CreateContract` operations, no `InvokeContract`, and `getEvents` returns nothing for either contract across the RPC retention window. No spec has been registered in the registry yet.
 
 ---
 
@@ -83,6 +117,13 @@ pnpm add @orbital-stellar/pulse-webhooks         # if you push events to HTTPS e
 pnpm add @orbital-stellar/pulse-notify react     # if you render live events in React
 pnpm add @orbital-stellar/abi-registry           # if you decode Soroban contract events
 ```
+
+> **Soroban contract events need a build newer than `0.1.0`.** The published
+> `pulse-core` cannot be configured with a Soroban RPC endpoint, so contract
+> subscription is unreachable from npm until the next release
+> ([#1132](https://github.com/determined-001/orbital_stellar/issues/1132)).
+> The Horizon/classic examples below work against `0.1.0` as written; clone the
+> repo for the Soroban ones.
 
 Or clone the repo to work from source:
 
