@@ -332,17 +332,16 @@ the release process, not a scheduling preference.
   *Gate:* `@orbital-stellar/worker-core` published to npm; trigger-execution
   e2e test green against testnet, **with a custody assertion test** that fails
   if the worker ever holds a signing key for user funds.
-- **`W2` — vault contract (MIT).**
-  *Gate:* `contracts/vault` code complete, third-party audited, deployed
-  to testnet; emits a release-event; unit tests green. The vault is the *only*
-  contract with custodial authority — workers call into it, they never parallel
-  it. This is what makes the §C.2 constraint true rather than aspirational.
+- **`W2` — external operators (MIT).**
+  *Gate:* operators other than Orbital can register and run workers, with
+  subscriptions and notifications in place. Still no authority over funds —
+  the record is billing and notification only.
 - **`W3` — counterparty integration gate.**
   *Gate:* the named counterparty (see the [`CHANGELOG.md`](./CHANGELOG.md)
   unfreeze entry — name to be supplied by maintainer) signs off that the
   worker layer's trigger-without-custody primitive satisfies their
   settlement-desk automation need; at least one production settlement flow runs
-  worker-triggered and vault-custodied. This gate is what motivated the
+  worker-triggered, with the contract itself holding the funds. This gate is what motivated the
   unfreeze — see the [`CHANGELOG.md`](./CHANGELOG.md) unfreeze entry. Until
   `W3` is met, the worker layer stays staging-only.
 - **`W4` — backstop (operated service, lands last).**

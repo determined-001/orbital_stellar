@@ -140,100 +140,26 @@ by `TimeTrigger`) is `IntervalSchedule | CronSchedule`, both carrying a required
 Narrows a `Trigger` to `TimeTrigger`, throwing `TriggerNotImplementedError` for
 `event` and `computation` triggers. Call this before acting on any `Trigger`.
 
-## Latency-sensitive tier (`hotPath/`, `backstop/tiers.ts`) - stub, not wired up
+## No latency tier, and no copy-trade worker
 
-> **This is a standalone stub, not a working hot path.** Issue #1071 (22.4)
-> depends on #1064 (21.3, tier configuration) and #1070 (22.3, the copy-trade
-> worker), both open. There is no submitter, RPC/simulation layer, or real
-> tier-configuration system to plug into yet. What ships here is the
-> structural safety boundary the acceptance criteria ask for, with everything
-> gated shut - not a usable execution path. `assertHotPathReady` throws
-> unconditionally.
+Both used to live here as stubs. Both are gone.
 
-§C.7: for copy-trading and liquidations, "late" means the opportunity is gone,
-and catching the miss costs the same as running primary infrastructure - so
-this tier is worth building only once its cost is actually measured, not
-promised.
+They existed to serve a trading product this package is not. Copy-trading means
+mirroring someone else's trades on a subscriber's behalf, which means the worker
+moves subscriber funds, which means custody, which is why it needed a vault with
+allow-listed pools and slippage bounds. Every step followed from the one before
+it; the first step was the mistake.
 
-- **`HotPathPlan`** (`StaticHotPathPlan | DynamicHotPathPlan`) - the
-  pre-signing boundary is structural, not a judgment call: only a
-  `StaticHotPathPlan` (fixed `args`, nothing left to observe) is ever
-  pre-signable; a `DynamicHotPathPlan` (an `ArgBuilder`, evaluated against
-  chain state at submission time) never is. `isPreSignable(plan)` narrows on
-  this.
-- **`LatencyScorecardEntry`** / `recordScorecardEntry(...)` - the "measured
-  end to end, published on the scorecards" shape: condition observed to
-  transaction submitted, in a declared ledger budget (`LatencyBudget`), with
-  `latencyMs`/`withinBudget` derived rather than caller-supplied.
-- **`TierEnableDecision`** / `LATENCY_SENSITIVE_TIER_DEFAULT` /
-  `assertTierEnableDecisionIsValid` (in `backstop/tiers.ts`) - "enabling the
-  tier is a documented, reversible operational decision": who decided, when,
-  why, and (once `enabled` is true) a required `CostMeasurement` from 21.2.
-  The shipped default is disabled, with an unset decider and a rationale
-  naming the unimplemented dependencies. `reversible` is a literal `true` -
-  a decision that claims to be irreversible does not type-check.
+A worker here calls a function **anyone could have called** and holds nothing.
+`contracts/payroll`'s `disburse()` is the reference: it takes no caller
+authorization, checks its own conditions, and produces identical results whether
+a worker, the owner, a recipient or a stranger fires it. There is no authority
+to constrain, so there is nothing for a vault to do.
 
-**Backpressure**: this module does not define its own queue.
-`packages/pulse-core/src/EventEngine.ts` already implements bounded-queue
-backpressure (`CoreConfig.queue`, the `engine.backpressure` notification) -
-per the acceptance criteria, a real hot-path submitter must observe
-conditions through that existing mechanism, not a parallel one. This package
-has no dependency on `pulse-core` yet because there is no real consumer of
-one here; that dependency belongs to the real implementation.
-## Copy-trade worker on the vault pattern (`workers/copyTrade.ts`, `vault/`)
+Issues #1068 (vault), #1070 (copy-trade) and #1071 (latency path) are closed
+unbuilt. See [`docs/design/workers.md` §6](../../docs/design/workers.md#the-vault-pattern-was-cut)
+for the reasoning, and read it before proposing any of them again.
 
-> **Decision logic only - not runnable against a real vault yet.** This
-> issue (22.3) is explicitly "the last thing built in the entire backlog,
-> deliberately," and depends on five other open issues: 22.2 (vault audit),
-> 22.1 (the vault contract itself - `contracts/vault` does not exist in this
-> repo), 20.6 (event triggers), 21.5 (regulatory framing), and 19.1
-> (verification). What ships here is the skip/execute decision logic a real
-> copy-trade worker runs, built against the `VaultClient` interface below and
-> exercised in tests against a fake implementation - never against a real
-> vault.
-
-§C.1's reference trade-like worker: a whale trade is observed, and the action
-is mirrored to subscribers, executed **strictly through the vault** - this
-module's authority never exceeds "call a constrained function." Nothing in
-`workers/copyTrade.ts` holds a signer, a secret, or a balance; the only thing
-it can do to a vault is read its subscriber-set `VaultConfig` and request one
-`VaultExecutionRequest`.
-
-### `VaultClient` / `UNIMPLEMENTED_VAULT_CLIENT`
-
-`VaultClient` (in `vault/`) is the specification a real vault-calling client
-must satisfy once 22.1 ships: `getConfig(vaultId)` and `execute(request)`.
-There is deliberately no deposit/withdraw/arbitrary-call method - a worker
-needing one has exceeded the constrained-function boundary. The only value of
-this type shipped here, `UNIMPLEMENTED_VAULT_CLIENT`, throws
-`VaultNotImplementedError` from every method.
-
-### `createCopyTradeTrigger(sourceAccount, asset)`
-
-Builds an `EventTrigger` (the existing trigger type from this package, not a
-bespoke shape) for watching a source account's trades on an asset -
-implementation note 3: "Reuse 20.6's event trigger for the observation side -
-do not add a second matching path." Not runtime-usable until 20.6 implements
-event matching.
-
-### `computeMirroredSize(observed, vaultConfig, mirrorRatioBps)`
-
-Mirrors the observed trade proportionally, capped at
-`vaultConfig.maxPositionSizeRaw` - "position sizing is bounded by vault
-configuration the subscriber set."
-
-### `planCopyTrade(observed, config, mirrorRatioBps, currentLedgerSequence, nowUnix)`
-
-Decides, for one observed trade, whether to mirror it through the vault or
-skip it with a named reason - implementation note 1: "skips are a normal,
-expected outcome here and must be first-class in the record." Every skip is
-recorded (`CopyTradeSkipRecord`) and handed to an optional `onSkip` callback,
-never silently dropped. Skip reasons: `asset_not_allow_listed`,
-`pool_not_allow_listed`, `position_size_zero_after_bound`,
-`slippage_reverted` (a vault-contract revert - the constraint working, not a
-miss), `subscriber_revoked`, `latency_budget_exceeded`. Checks run cheapest
-and most decisive first: the latency budget and subscriber revocation are
-checked before the vault is consulted for a trade at all.
 ## Price and slippage guard rails (`guards/`)
 
 Trade automation reads prices, and a price source is an attack surface. These

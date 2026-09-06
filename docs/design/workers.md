@@ -162,7 +162,7 @@ rule is broader than the check, and review is where the rest of it is enforced.
 
 ---
 
-## 3. Build order: W0 → W4, fixed
+## 3. Build order: W0 → W3, fixed
 
 | Stage | What lands | Why here |
 |---|---|---|
@@ -170,15 +170,13 @@ rule is broader than the check, and review is where the rest of it is enforced.
 | **W1** | The worker standard and `worker-core` | Interfaces cannot be designed before one real worker exists to design them against |
 | **W2** | External operators, subscriptions, notifications | Adds parties, but still no authority — the record is billing and notification only |
 | **W3** | Backstop, time-insensitive tier only | The first *promise* to a subscriber, restricted to the tier where lateness is a non-event |
-| **W4** | Latency-sensitive tier | The expensive promise, last |
 
-The order is set by **risk, not convenience.** W4 is the stage where a missed
-firing is a real loss to a subscriber, so it lands only once the monitoring,
-the SLOs and the operator diversity exist to keep the promise. The tier
-abstraction is built in W3 with the latency-sensitive tier defined but disabled
-behind an explicit flag (21.3), so the expensive promise cannot be made before
-the infrastructure exists to keep it. That flag is a safety device, not a
-feature toggle: it is not flipped for a demo.
+The order is set by **risk, not convenience.**
+
+There was a fifth stage, `W4`, for a latency-sensitive tier and the vault
+pattern that tier required. It has been cut — see
+[§6, "The vault pattern was cut"](#the-vault-pattern-was-cut). The layer ends
+at W3, where the worst outcome a worker can produce is still lateness.
 
 ---
 
@@ -207,8 +205,10 @@ implementations, no "small version to start with":
 - **No slashing.**
 - **No bonding pools.**
 - **No economic-security adjudication.**
+- **No vault, and no worker that holds or moves subscriber funds.**
 
-All four are answers to the question "how do we punish a worker that misbehaves".
+The first four are answers to the question "how do we punish a worker that
+misbehaves".
 Under rule 1 a worker cannot misbehave in a way that moves money, so the
 question does not arise — and building the machinery anyway would create the
 custody relationship the rules exist to prevent, while making the layer look
@@ -216,13 +216,44 @@ like a staking product to anyone reading it from outside.
 
 ---
 
-## 6. Two corrections that must not be re-litigated
+## 6. Three corrections that must not be re-litigated
 
 ### CAP-0066 obsoletes the TTL-keeper use case
 
 "Workers that top up Soroban state TTLs before entries expire" was a plausible
 first product. CAP-0066 removes the need for it at the protocol level. It is
 recorded here so it is not proposed again as a fresh idea in six months.
+
+### <a id="the-vault-pattern-was-cut"></a>The vault pattern was cut
+
+The backlog once carried a `W4` stage: a latency-sensitive tier, a copy-trade
+worker, and a Soroban vault with hard constraints to make the copy-trade worker
+safe (issues #1068, #1070, #1071, all closed unbuilt).
+
+**That was a trading product, and it is not what this layer is.** The chain of
+reasoning that produced it ran: copy-trading means mirroring someone else's
+trades on a subscriber's behalf → so the worker must move subscriber funds →
+so the worker needs custody → so custody needs a vault with allow-listed pools,
+slippage bounds and a constrained action function. Every step follows from the
+one before it. The first step was the mistake.
+
+Nothing in rules 1–4 needs a vault. A worker that calls a function *anyone
+could have called* holds nothing, so there is nothing to constrain. The
+canonical example is already in this repository: `contracts/payroll`'s
+`disburse()` takes no caller authorization at all. It checks its own
+conditions and does not care who called it, so a worker, the owner, a
+recipient and a stranger produce identical results. That is the whole layer,
+demonstrated in one function.
+
+A vault only becomes necessary once a worker is asked to decide *where* money
+goes rather than *when* a predetermined movement happens. Rule 1 forbids
+exactly that. So the vault was never a component of this design — it was a
+component of a different design that briefly shared its name.
+
+**If this is proposed again**, the question to ask first is: does the worker
+need to choose a destination? If no, no vault is needed. If yes, rule 1 has
+been broken and the proposal should be rejected on that basis, not redesigned
+around a safer vault.
 
 ### P23: workers are application-layer and cannot repair core ledger state
 
