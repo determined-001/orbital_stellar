@@ -79,9 +79,23 @@ jobs:
           toolchain: "1.97.1"
           targets: wasm32v1-none
 
+      # Dependency downloads are cached; build artifacts deliberately are NOT.
+      #
+      # This job's entire purpose is to rebuild the contracts from source and
+      # prove the bytes match what was deployed. Restoring a prebuilt `target/`
+      # defeats exactly that: rust-cache falls back to a prefix restore-key when
+      # there is no exact hit, so the job was reusing artifacts built from a
+      # different commit and then "verifying" those. It reported
+      # `Finished release profile in 1.31s` for three Soroban contracts that
+      # take ~49s to build from clean - and produced a registry hash
+      # (5c800423...) that no checkout of this repository can reproduce.
+      #
+      # A provenance check that trusts a cache is not a provenance check.
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: contracts
+          cache-targets: false
+          save-if: false
 
       - uses: cargo-bins/cargo-binstall@main
 

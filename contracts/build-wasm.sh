@@ -41,7 +41,10 @@ CARGO_REGISTRY_HOME="${CARGO_HOME:-$HOME/.cargo}"
 export RUSTFLAGS="${RUSTFLAGS:-} --remap-path-prefix=${CARGO_REGISTRY_HOME}=/cargo --remap-path-prefix=${CONTRACTS_DIR}=/build"
 
 echo "==> Building contracts (release, wasm32v1-none, rustc ${ACTUAL_TOOLCHAIN}, paths remapped)"
-cargo build --release --target wasm32v1-none
+# --locked: the recorded hashes are only meaningful if the dependency graph is
+# exactly the one in Cargo.lock. Without it cargo may update the index and
+# silently resolve something else, which changes the bytes.
+cargo build --locked --release --target wasm32v1-none
 
 # Every contract the workspace builds, not a hand-picked subset: CI's
 # verify-provenance iterates whatever a deployment manifest names, so a
