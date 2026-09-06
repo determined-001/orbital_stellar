@@ -51,6 +51,15 @@ export type OnChainAbiRegistryClientConfig = {
    * ships the well-known specs already holds every byte it would download.
    */
   offlineBlobs?: ReadonlyMap<string, string>;
+  /**
+   * Extra attempts after a *transport* failure - a request that never reached
+   * the RPC. Defaults to 2, so three attempts in total, with 150ms then 300ms
+   * of backoff.
+   *
+   * Deterministic failures are never retried; see {@link withTransportRetry}.
+   * Set to 0 to fail on the first dropped connection.
+   */
+  transportRetries?: number;
 };
 
 /**
@@ -323,6 +332,46 @@ export class OnChainAbiRegistryClient {
     };
   }
 
+  /**
+   * Retries a call that failed to reach the RPC at all.
+   *
+   * Public Soroban RPC endpoints drop connections. Measured against
+   * soroban-testnet.stellar.org: roughly one cold read in eight fails with a
+   * bare `fetch failed` and no cause - not a slow response, a dropped one. A
+   * page reading five contracts then has about even odds of at least one
+   * failing, which is why the registry explorer reported an empty registry
+   * against a registry that held four specs.
+   *
+   * Only *transport* failures are retried. A simulation error, an archived
+   * entry, or a contract error is deterministic: the same call will fail the
+   * same way, so retrying it just multiplies the wait before reporting what
+   * was already known. Those propagate on the first attempt.
+   */
+  private async withTransportRetry<T>(call: () => Promise<T>, label: string): Promise<T> {
+    const attempts = Math.max(1, (this.config.transportRetries ?? 2) + 1);
+    let lastError: unknown;
+
+    for (let attempt = 1; attempt <= attempts; attempt++) {
+      try {
+        return await call();
+      } catch (err) {
+        lastError = err;
+        // A thrown Error with no `cause` and a transport-shaped message is
+        // undici failing to complete the request. Anything the RPC actually
+        // answered comes back as a value, not a throw.
+        if (attempt === attempts) break;
+        await new Promise((r) => setTimeout(r, 150 * 2 ** (attempt - 1)));
+      }
+    }
+
+    throw new Error(
+      `OnChainAbiRegistryClient: RPC unreachable for ${label} after ${attempts} attempts: ${
+        lastError instanceof Error ? lastError.message : String(lastError)
+      }`,
+      { cause: lastError },
+    );
+  }
+
   private async simulate(
     fn: string,
     args: xdr.ScVal[],
@@ -341,7 +390,10 @@ export class OnChainAbiRegistryClient {
       .setTimeout(30)
       .build();
 
-    const sim = await server.simulateTransaction(tx);
+    const sim = await this.withTransportRetry(
+      () => server.simulateTransaction(tx),
+      `${fn}(${targetContractId})`,
+    );
 
     if (SorobanRpc.Api.isSimulationError(sim)) {
       if (ARCHIVED_ENTRY_ERROR.test(sim.error)) {
