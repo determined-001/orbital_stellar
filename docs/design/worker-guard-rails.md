@@ -1,17 +1,24 @@
 # Worker price and slippage guard rails
 
-Trade automation reads prices, and a price source is an attack surface. This
-document is the on-chain/off-chain split for the guards that sit in front of
-the vault's slippage bound - its last line of defence - for issue 22.5
+A worker that reads a price before deciding whether to fire is trusting a
+price source, and a price source is an attack surface. This document covers
+the guards that decide when a worker refuses to act
 (`packages/worker-core/src/guards/priceGuard.ts`,
 `packages/worker-core/src/guards/circuitBreaker.ts`).
 
-**Status: partial.** The off-chain guards below are implemented and tested.
-The on-chain half is a specification, not code: issue 22.5 depends on 22.3
-("Copy-trade worker on the vault pattern"), and `contracts/vault` does not
-exist in this repo yet. Rather than invent a vault contract as a side effect
-of this issue, this document states what that contract **must** enforce once
-it exists, so 22.3's implementation has a concrete target.
+**Status: the off-chain guards are implemented and tested; the on-chain half
+no longer applies.** These guards were designed as the first line in front of a
+vault's on-chain slippage bound. That vault was cut along with the copy-trade
+worker it existed for (#1068, #1070, #1071, closed unbuilt - see
+[`workers.md` §6](./workers.md#the-vault-pattern-was-cut)), so there is no
+second line behind them and no custodial contract in this repository.
+
+What survives is still useful and is why this file is kept: a worker that
+refuses to fire when a price has moved beyond a bound, or when a dependency is
+failing repeatedly, is applying a sanity check before it calls a contract. That
+is worth having whether or not money is at stake, because firing a trigger on
+bad data is its own failure. Read the rest of this document as "guards on when
+a worker fires", not as "half of a custody defence".
 
 ---
 

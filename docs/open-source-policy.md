@@ -95,11 +95,12 @@ down the same open-code / operated-service line as the rest of Orbital:
 - **The standard** — the event-worker spec, trigger/attestation envelope, and
   reference types. Published as open data / open spec, the canonical surface
   other tools emit against (mirrors the ABI Registry's open-standard model).
-- **The vault contract** — `contracts/vault`, the *only* contract with
-  custodial authority. MIT-licensed, audited, and deployed by Orbital; workers
-  call into it, they never parallel it. This is what makes the §C.2
-  trigger-≠-custodian constraint (`ORBITAL_PRD.md` §C.2) true rather than
-  aspirational.
+- **The reference contracts** — `contracts/payroll` and `contracts/registry`.
+  Payroll is the canonical demonstration that a worker needs no authority at
+  all: `disburse()` takes no caller authorization, so a worker, the owner and a
+  stranger produce identical results. There is deliberately **no contract in
+  this repository with custodial authority** — the vault branch was cut, see
+  [`design/workers.md` §6](./design/workers.md#the-vault-pattern-was-cut).
 
 **Operated service (closed, separate Cloud repository — never folded back):**
 

@@ -65,7 +65,7 @@ Four different states get conflated in most project READMEs. They are separated 
 | React hooks | ✅ `0.1.0` | ✅ | 4.6 kB gzip |
 | **Soroban contract-event subscription** | ❌ | ✅ | `CoreConfig.soroban` on the published build has no `rpcUrl`. Needs the next release - see [#1132](https://github.com/determined-001/orbital_stellar/issues/1132) |
 | ABI registry client + WASM auto-discovery | ⚠️ partial | ✅ | |
-| Worker layer (`worker-core`) | ❌ unpublished | ⚠️ partial | Triggers, scheduling, verification and reputation exist. The vault contract it depends on is a placeholder - [#1068](https://github.com/determined-001/orbital_stellar/issues/1068) |
+| Worker layer (`worker-core`) | ❌ unpublished | ⚠️ partial | Triggers, scheduling, verification and reputation exist. Workers call functions anyone could call - `contracts/payroll`'s `disburse()` is the reference. No custody anywhere. |
 
 **The published packages are behind this repository.** `0.1.0` predates a large amount of the work here, most consequentially Soroban RPC configuration. If you need contract-event subscription today, install from source. Tracked as [#1132](https://github.com/determined-001/orbital_stellar/issues/1132).
 
@@ -76,7 +76,6 @@ Four different states get conflated in most project READMEs. They are separated 
 | `registry` | deployed, **never invoked** | not deployed |
 | `demo-emitter` | deployed, **never invoked** | not deployed (testnet fixture by design) |
 | `payroll` | deployed | not deployed |
-| `vault` | placeholder crate, not built | - |
 
 "Never invoked" is meant literally and is checkable: the deployer account has submitted only `UploadContractWasm` and `CreateContract` operations, no `InvokeContract`, and `getEvents` returns nothing for either contract across the RPC retention window. No spec has been registered in the registry yet.
 

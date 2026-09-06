@@ -27,7 +27,7 @@ None / Yes (describe below)
 
 ---
 
-### Custody checklist (PRs touching `packages/worker-core/`, `contracts/vault/` or `contracts/payroll/`)
+### Custody checklist (PRs touching `packages/worker-core/` or `contracts/payroll/`)
 
 *Delete this section if the PR touches none of those paths.*
 

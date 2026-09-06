@@ -5,7 +5,9 @@ Published external security audit reports land here, one per report, named
 short `.md` index entry if the original isn't Markdown).
 
 **Nothing is published here yet.** The first audit this directory expects is
-the vault contract's (`contracts/vault`), tracked by issue #1069 ("22.2 Vault
+no custodial contract exists to audit (the vault branch was cut - see
+`../design/workers.md` §6). This directory stands ready for an audit of
+whatever ships. (Formerly tracked by #1069, "22.2 Vault
 security audit and property tests") and gated per
 [`SECURITY.md`'s "Vault audit gate"](../../SECURITY.md#vault-audit-gate-phase-4-worker-layer)
 section - the vault contract itself doesn't exist yet either (issue #1068).

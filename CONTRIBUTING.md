@@ -164,7 +164,7 @@ PRs that change public APIs require a description of the migration path. Breakin
 
 ## The custody gate
 
-If your change touches `packages/worker-core/`, `contracts/vault/`,
+If your change touches `packages/worker-core/`,
 `contracts/payroll/`, `contracts/registry/`, `packages/pulse-core/` or
 `scripts/`, a CI job called **Custody gate** runs against it.
 

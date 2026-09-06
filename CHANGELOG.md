@@ -32,7 +32,8 @@ roadmap as [Phase 4 — Workers entry gate](./ROADMAP.md#phase-4--workers-entry-
 - **Staging (build order is a hard constraint — W4 lands last):**
   - `W0` — Worker standard (MIT)
   - `W1` — `worker-core` runtime (MIT)
-  - `W2` — vault contract (MIT, the only custodial contract)
+  - `W2` — external operators (MIT). *(Originally the vault contract; the
+    custodial branch was cut — see `docs/design/workers.md` §6.)*
   - `W3` — counterparty integration gate (sign-off by named counterparty — name to be supplied by maintainer)
   - `W4` — backstop (operated service, **lands last**)
 - **Not unfrozen:** payments SDK, auth/identity, x402, agent-sdk, intent

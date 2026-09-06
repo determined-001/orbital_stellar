@@ -90,7 +90,7 @@ export const LATENCY_SENSITIVE_TIER_DEFAULT: TierEnableDecision = {
   decidedAt: "1970-01-01T00:00:00.000Z",
   rationale:
     "Default: disabled. No cost measurement exists yet (21.2 unimplemented), and the " +
-    "infrastructure this tier depends on (22.3 copy-trade worker, 22.4's own hot path) " +
+    "infrastructure this tier depends on " +
     "is not merged. 21.3 tier configuration - this file's tier table - has landed. " +
     "See #1071, #1070, #1063.",
   reversible: true,
