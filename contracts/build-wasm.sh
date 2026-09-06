@@ -36,9 +36,19 @@ fi
 
 CARGO_REGISTRY_HOME="${CARGO_HOME:-$HOME/.cargo}"
 
-# Keep these two prefixes in sync with anything that verifies a hash: change
-# them and every recorded hash changes with them.
-export RUSTFLAGS="${RUSTFLAGS:-} --remap-path-prefix=${CARGO_REGISTRY_HOME}=/cargo --remap-path-prefix=${CONTRACTS_DIR}=/build"
+# The toolchain's own sysroot. Panic locations that inline out of `core` embed
+# a path under it - e.g.
+#   <sysroot>/lib/rustlib/src/rust/library/core/src/ops/function.rs
+# - and that path is absolute and host-specific. Remapping CARGO_HOME and the
+# contracts directory is not enough: registry and payroll each carry one such
+# string, which is why their hashes differed between a developer's machine and
+# CI while demo-emitter, which carries none, matched everywhere. Rebuilding
+# somewhere else then "failed" provenance on a source tree nobody had touched.
+RUST_SYSROOT="$(rustc --print sysroot)"
+
+# Keep these three prefixes in sync with anything that verifies a hash: change
+# any of them and every recorded hash changes with it.
+export RUSTFLAGS="${RUSTFLAGS:-} --remap-path-prefix=${CARGO_REGISTRY_HOME}=/cargo --remap-path-prefix=${CONTRACTS_DIR}=/build --remap-path-prefix=${RUST_SYSROOT}=/rust"
 
 echo "==> Building contracts (release, wasm32v1-none, rustc ${ACTUAL_TOOLCHAIN}, paths remapped)"
 # --locked: the recorded hashes are only meaningful if the dependency graph is
