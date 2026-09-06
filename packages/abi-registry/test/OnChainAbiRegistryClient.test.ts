@@ -360,3 +360,51 @@ describe("OnChainAbiRegistryClient archival", () => {
     await expect(client.getSpec(TARGET_CONTRACT_ID)).resolves.toBeNull();
   });
 });
+
+describe("OnChainAbiRegistryClient - transport retry", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  /** A simulate that throws the way undici does - a bare Error, no cause - n times, then works. */
+  function flakySimulate(failures: number, inner: ReturnType<typeof vi.fn>) {
+    let seen = 0;
+    return vi.fn().mockImplementation(async (...args: unknown[]) => {
+      if (seen++ < failures) throw new Error("fetch failed");
+      return inner(...args);
+    });
+  }
+
+  it("survives a dropped connection and resolves on a later attempt", async () => {
+    // Measured against the public testnet RPC: roughly one cold read in eight
+    // fails this way. Five contracts per page then has about even odds of at
+    // least one failing, which is what made the explorer report an empty
+    // registry against a registry holding four specs.
+    const simulate = flakySimulate(2, routingSimulate({ versions: [], records: {} }));
+    installMockServer(simulate);
+
+    expect(await makeClient().getSpec(TARGET_CONTRACT_ID)).toBeNull();
+    expect(simulate).toHaveBeenCalledTimes(3);
+  });
+
+  it("gives up after the configured attempts and names the cause", async () => {
+    const simulate = flakySimulate(99, vi.fn());
+    installMockServer(simulate);
+
+    await expect(makeClient({ transportRetries: 1 }).getSpec(TARGET_CONTRACT_ID)).rejects.toThrow(
+      /RPC unreachable .* after 2 attempts/,
+    );
+    expect(simulate).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not retry when the RPC answered", async () => {
+    // A simulation error is deterministic - the same call fails the same way.
+    // Retrying only multiplies the wait before reporting what was already
+    // known, so it must propagate on the first attempt.
+    const simulate = vi.fn().mockResolvedValue({ error: "some contract error" });
+    installMockServer(simulate);
+
+    await expect(makeClient().getSpec(TARGET_CONTRACT_ID)).rejects.toThrow(/simulation of/);
+    expect(simulate).toHaveBeenCalledTimes(1);
+  });
+});
