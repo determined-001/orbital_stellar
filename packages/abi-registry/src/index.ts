@@ -186,3 +186,7 @@ export { TtlLruCache } from "./TtlLruCache.js";
 
 export { runVerificationJob } from "./verificationJob.js";
 export type { VerificationJobConfig, JobResult } from "./verificationJob.js";
+
+export { TaxonomyResolver, TaxonomyLoadError, AmbiguousTaxonomyError } from "./taxonomyResolver.js";
+export type { ResolvableEvent, ResolvableTopic, TaxonomyResolution } from "./taxonomyResolver.js";
+export { SEP41_TAXONOMY } from "./wellKnownTaxonomy.js";
