@@ -36,19 +36,27 @@ fi
 
 CARGO_REGISTRY_HOME="${CARGO_HOME:-$HOME/.cargo}"
 
-# The toolchain's own sysroot. Panic locations that inline out of `core` embed
-# a path under it - e.g.
-#   <sysroot>/lib/rustlib/src/rust/library/core/src/ops/function.rs
-# - and that path is absolute and host-specific. Remapping CARGO_HOME and the
-# contracts directory is not enough: registry and payroll each carry one such
-# string, which is why their hashes differed between a developer's machine and
-# CI while demo-emitter, which carries none, matched everywhere. Rebuilding
-# somewhere else then "failed" provenance on a source tree nobody had touched.
+# Panic locations that inline out of `core` embed a path to core's source, and
+# which path depends on whether the `rust-src` rustup component is installed:
+#
+#   with rust-src     <sysroot>/lib/rustlib/src/rust/library/core/src/ops/function.rs
+#   without rust-src  /rustc/<commit-hash>/library/core/src/ops/function.rs
+#
+# CI installs `profile = minimal` (rust-toolchain.toml) so it never has
+# rust-src and always emits the second form. A developer who has it installed
+# emits the first, with their own home directory in it - and gets a different
+# WASM from identical source. That is why registry and payroll hashes differed
+# between machines while demo-emitter, which inlines no such panic, matched
+# everywhere.
+#
+# Normalising to the `/rustc/<commit-hash>` form makes a machine WITH rust-src
+# reproduce what a machine without it builds, rather than the other way round:
+# the stripped form is what CI and any clean toolchain already produce, so it
+# is the canonical one to converge on.
 RUST_SYSROOT="$(rustc --print sysroot)"
+RUSTC_COMMIT="$(rustc -vV | sed -n 's/^commit-hash: //p')"
 
-# Keep these three prefixes in sync with anything that verifies a hash: change
-# any of them and every recorded hash changes with it.
-export RUSTFLAGS="${RUSTFLAGS:-} --remap-path-prefix=${CARGO_REGISTRY_HOME}=/cargo --remap-path-prefix=${CONTRACTS_DIR}=/build --remap-path-prefix=${RUST_SYSROOT}=/rust"
+export RUSTFLAGS="${RUSTFLAGS:-} --remap-path-prefix=${CARGO_REGISTRY_HOME}=/cargo --remap-path-prefix=${CONTRACTS_DIR}=/build --remap-path-prefix=${RUST_SYSROOT}/lib/rustlib/src/rust=/rustc/${RUSTC_COMMIT}"
 
 echo "==> Building contracts (release, wasm32v1-none, rustc ${ACTUAL_TOOLCHAIN}, paths remapped)"
 # --locked: the recorded hashes are only meaningful if the dependency graph is
