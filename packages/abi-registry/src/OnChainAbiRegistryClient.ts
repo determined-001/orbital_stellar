@@ -11,7 +11,7 @@ import {
   xdr,
 } from "@stellar/stellar-sdk";
 import { TtlLruCache, DEFAULT_MAX_CACHE_SIZE, DEFAULT_CACHE_TTL_MS } from "./TtlLruCache.js";
-import { validateSpec } from "./spec.js";
+import { validateSpec, canonicalizeSpec } from "./spec.js";
 import type { ContractSpec } from "./spec.js";
 
 export type OnChainAbiRegistryClientConfig = {
@@ -193,14 +193,35 @@ export class OnChainAbiRegistryClient {
       );
     }
     const text = await response.text();
-    const actualHash = createHash("sha256").update(text).digest("hex");
+
+    let parsed: ContractSpec;
+    try {
+      parsed = JSON.parse(text) as ContractSpec;
+    } catch {
+      throw new Error(
+        `OnChainAbiRegistryClient: spec blob at ${record.pointer} is not valid JSON.`,
+      );
+    }
+
+    // Hash the CANONICAL form, not the bytes as served. `canonicalizeSpec`'s
+    // contract is explicit that it "is what OnChainRegistryPublisher hashes
+    // before publishing, and what any resolver must re-hash to verify a
+    // fetched spec blob against the on-chain spec_hash".
+    //
+    // Hashing the raw response instead made every on-chain resolution fail:
+    // the publisher hashes sorted-key compact JSON while the blob is served
+    // pretty-printed, so the two never agreed and `getSpec` threw for every
+    // seeded contract. It also made the hash hostage to formatting - a
+    // re-serialising CDN, a trailing newline or a reformatted commit would
+    // each have broken a spec that had not changed.
+    const actualHash = createHash("sha256").update(canonicalizeSpec(parsed)).digest("hex");
     if (actualHash !== record.specHash) {
       throw new Error(
         `OnChainAbiRegistryClient: spec_hash mismatch for ${contractId}@${record.version} - expected ${record.specHash}, got ${actualHash}. The fetched blob does not match the on-chain hash and was not returned.`,
       );
     }
 
-    const spec = JSON.parse(text) as ContractSpec;
+    const spec = parsed;
     const validation = validateSpec(spec);
     if (!validation.valid) {
       throw new Error(

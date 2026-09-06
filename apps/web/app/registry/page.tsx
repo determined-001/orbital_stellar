@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { getSpecStore, getVerdictStore } from "@/lib/registry";
+import { getOnChainSpecs, getVerdictStore } from "@/lib/registry";
+import { ORBITAL_REGISTRY_TESTNET_CONTRACT_ID } from "@orbital-stellar/abi-registry";
 
 export const dynamic = "force-dynamic";
 
@@ -48,8 +49,13 @@ function StatusBadge({ status }: { status: string | undefined }) {
 }
 
 export default async function RegistryPage() {
-  const specs = await getSpecStore().getAll();
+  // Live from the on-chain registry contract. Nothing on this page is a
+  // hardcoded row: if the chain is unreachable the list is empty and the
+  // explicit error state below says so, rather than rendering placeholders
+  // that read as data.
+  const specs = await getOnChainSpecs();
   const verdicts = await getVerdictStore().getAll();
+  const registryConfigured = Boolean(ORBITAL_REGISTRY_TESTNET_CONTRACT_ID);
   const verdictMap = new Map(verdicts.map((v) => [v.contractId, v]));
 
   return (
@@ -118,7 +124,9 @@ export default async function RegistryPage() {
                 color: "var(--muted)",
               }}
             >
-              No registered specs yet.
+              {registryConfigured
+                ? "Could not read the registry contract. The network may be unreachable, or the entries may have archived - this is an error, not an empty registry."
+                : "No registry contract configured. Set ORBITAL_REGISTRY_TESTNET_CONTRACT_ID once the registry is deployed."}
             </div>
           )}
 
