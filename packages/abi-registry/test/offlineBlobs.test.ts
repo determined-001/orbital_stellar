@@ -1,6 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { createHash } from "node:crypto";
-import { buildWellKnownOfflineBlobs } from "../src/offlineBlobs.js";
+import { readFileSync } from "node:fs";
+import { buildOfflineBlobs, buildWellKnownOfflineBlobs } from "../src/offlineBlobs.js";
+import { wellKnownToContractSpec } from "../src/wellKnown.js";
 import { canonicalizeSpec } from "../src/spec.js";
 import type { ContractSpec } from "../src/spec.js";
 
@@ -46,5 +48,25 @@ describe("buildWellKnownOfflineBlobs", () => {
     // for a different host must not satisfy a record published for this one.
     const other = buildWellKnownOfflineBlobs("https://example.invalid/specs");
     for (const [, hash] of ON_CHAIN_HASHES) expect(other.has(hash)).toBe(false);
+  });
+});
+
+describe("buildOfflineBlobs", () => {
+  it("builds from supplied specs, taking no filesystem path of its own", () => {
+    // The split from buildWellKnownOfflineBlobs exists because that one
+    // resolves the spec files relative to `import.meta.url`, and a bundler
+    // rewrites it: under Next/Turbopack the path became
+    // `/_next/static/media/specs/well-known/usdc.json`, the read threw ENOENT,
+    // and it took the whole page down with a 500. Anything that gets bundled
+    // must import its specs and call this instead.
+    const usdc = readFileSync(new URL("../specs/well-known/usdc.json", import.meta.url), "utf-8");
+    const blobs = buildOfflineBlobs([wellKnownToContractSpec(JSON.parse(usdc))]);
+
+    expect(blobs.size).toBe(1);
+    // The same hash the bundled build produces for USDC, so the two entry
+    // points cannot drift apart.
+    expect(blobs.has("5300e7f2f1d52c91cf978326a4b49d7a9f0e15ce85b5b7c72d27cd2e78d83790")).toBe(
+      true,
+    );
   });
 });
