@@ -1,4 +1,3 @@
-import { Networks } from "@stellar/stellar-sdk";
 import { BundledWellKnownClient } from "./BundledWellKnownClient.js";
 import { ChainedAbiRegistryClient } from "./ChainedAbiRegistryClient.js";
 import type { AbiRegistryReader } from "./ChainedAbiRegistryClient.js";
@@ -9,6 +8,7 @@ import {
   ORBITAL_REGISTRY_TESTNET_CONTRACT_ID,
   ORBITAL_REGISTRY_PUBLISHER_ADDRESS,
   ORBITAL_REGISTRY_TESTNET_RPC_URL,
+  ORBITAL_REGISTRY_TESTNET_NETWORK_PASSPHRASE,
   ORBITAL_HOSTED_REGISTRY_BASE_URL,
 } from "./registryConstants.js";
 
@@ -88,7 +88,7 @@ export function createDefaultAbiRegistryClient(
     onChainClient = new OnChainAbiRegistryClient({
       contractId: registryContractId,
       rpcUrl,
-      networkPassphrase: Networks.TESTNET,
+      networkPassphrase: ORBITAL_REGISTRY_TESTNET_NETWORK_PASSPHRASE,
       publisher: publisherAddress,
     });
   }
