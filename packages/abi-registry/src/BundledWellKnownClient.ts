@@ -30,6 +30,19 @@ function loadBundle(): Map<string, ContractSpec> {
 }
 
 /**
+ * The bundled well-known specs, keyed by contract id.
+ *
+ * Exported so anything else that needs the same set - `offlineBlobs.ts`
+ * rebuilding published blobs, for one - reads it from here rather than keeping
+ * a second copy of the file list. Which files are bundled, and the fact that
+ * `sac-interface.json` is not among them, is a decision that should live in one
+ * place.
+ */
+export function loadBundledWellKnownSpecs(): ReadonlyMap<string, ContractSpec> {
+  return loadBundle();
+}
+
+/**
  * Resolves the specs bundled with this package (USDC, EURC, AQUA, the
  * native XLM wrapper) entirely offline - no network, no on-chain registry
  * required. The first link in {@link createDefaultAbiRegistryClient}'s

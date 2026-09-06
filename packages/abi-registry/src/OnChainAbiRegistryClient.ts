@@ -36,6 +36,21 @@ export type OnChainAbiRegistryClientConfig = {
   maxCacheSize?: number;
   /** Time-to-live for cached entries in milliseconds. Defaults to 5 minutes. */
   cacheTtlMs?: number;
+  /**
+   * Locally-held spec blobs, keyed by their canonical sha256 - the same hash
+   * the registry stores on chain.
+   *
+   * Content addressing is what makes this safe rather than merely fast: a hit
+   * means the bytes in hand are provably the bytes the chain names, so fetching
+   * the pointer to confirm what the hash already proves is a round trip for
+   * nothing. A miss falls through to the pointer exactly as before.
+   *
+   * This matters most where it is least convenient. Resolving a spec otherwise
+   * needs the RPC *and* whatever host serves the pointer to both be reachable,
+   * which is two chances to fail per spec on a slow network. A caller that
+   * ships the well-known specs already holds every byte it would download.
+   */
+  offlineBlobs?: ReadonlyMap<string, string>;
 };
 
 /**
@@ -186,13 +201,21 @@ export class OnChainAbiRegistryClient {
     const cached = this.specCache.get(cacheKey);
     if (cached !== undefined) return cached;
 
-    const response = await this.transport(record.pointer);
-    if (!response.ok) {
-      throw new Error(
-        `OnChainAbiRegistryClient: failed to fetch spec blob at ${record.pointer} (${response.status})`,
-      );
+    // A blob whose canonical hash already matches the on-chain record needs no
+    // fetch: that hash is the entire thing fetching the pointer would establish.
+    const local = this.config.offlineBlobs?.get(record.specHash);
+    let text: string;
+    if (local !== undefined) {
+      text = local;
+    } else {
+      const response = await this.transport(record.pointer);
+      if (!response.ok) {
+        throw new Error(
+          `OnChainAbiRegistryClient: failed to fetch spec blob at ${record.pointer} (${response.status})`,
+        );
+      }
+      text = await response.text();
     }
-    const text = await response.text();
 
     let parsed: ContractSpec;
     try {

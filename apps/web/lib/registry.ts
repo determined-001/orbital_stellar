@@ -13,6 +13,7 @@ import {
   ORBITAL_REGISTRY_PUBLISHER_ADDRESS,
   ORBITAL_REGISTRY_TESTNET_RPC_URL,
   ORBITAL_REGISTRY_TESTNET_NETWORK_PASSPHRASE,
+  buildWellKnownOfflineBlobs,
 } from "@orbital-stellar/abi-registry";
 import type { RegisteredSpec, ContractSpec } from "@orbital-stellar/abi-registry";
 import wellKnownIndex from "@orbital-stellar/abi-registry/specs/well-known/index.json";
@@ -83,6 +84,11 @@ function getOnChainRegistryClient(): OnChainAbiRegistryClient {
       networkPassphrase:
         process.env.ORBITAL_NETWORK_PASSPHRASE ?? ORBITAL_REGISTRY_TESTNET_NETWORK_PASSPHRASE,
       publisher: ORBITAL_REGISTRY_PUBLISHER_ADDRESS,
+      // The four well-known specs are in this repository, so their blobs never
+      // need fetching: the chain supplies the hash and we already hold bytes
+      // that match it. Halves the network calls per cold read and drops
+      // raw.githubusercontent.com out of the path entirely.
+      offlineBlobs: buildWellKnownOfflineBlobs(),
     });
   }
   return g.__orbitalOnChainRegistry;
