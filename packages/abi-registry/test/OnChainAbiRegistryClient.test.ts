@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { createHash } from "node:crypto";
+import { canonicalizeSpec } from "../src/spec.js";
 import { Address, Keypair, Networks, rpc as SorobanRpc, StrKey, xdr } from "@stellar/stellar-sdk";
 import {
   OnChainAbiRegistryClient,
@@ -148,8 +149,10 @@ describe("OnChainAbiRegistryClient", () => {
 
   it("resolves the latest published spec, verifying the blob's hash against the on-chain spec_hash", async () => {
     const spec = testSpec({ version: "2.0.0" });
-    const blob = JSON.stringify(spec);
-    const specHash = createHash("sha256").update(blob).digest();
+    // Served pretty-printed, hashed canonically - exactly the shape the
+    // seeding script produces, and the case that used to fail.
+    const blob = JSON.stringify(spec, null, 2);
+    const specHash = createHash("sha256").update(canonicalizeSpec(spec)).digest();
 
     installMockServer(
       routingSimulate({
@@ -186,7 +189,7 @@ describe("OnChainAbiRegistryClient", () => {
 
   it("throws when the fetched blob's hash does not match the on-chain spec_hash", async () => {
     const spec = testSpec();
-    const blob = JSON.stringify(spec);
+    const blob = JSON.stringify(spec, null, 2);
     const wrongHash = createHash("sha256").update("tampered").digest();
 
     installMockServer(
@@ -211,8 +214,8 @@ describe("OnChainAbiRegistryClient", () => {
   it("getSpecAt resolves the version whose published_at_ledger is <= the requested ledger", async () => {
     const specV1 = testSpec({ version: "1.0.0" });
     const specV2 = testSpec({ version: "2.0.0" });
-    const blobV1 = JSON.stringify(specV1);
-    const blobV2 = JSON.stringify(specV2);
+    const blobV1 = JSON.stringify(specV1, null, 2);
+    const blobV2 = JSON.stringify(specV2, null, 2);
 
     installMockServer(
       routingSimulate({
@@ -220,14 +223,14 @@ describe("OnChainAbiRegistryClient", () => {
         records: {
           "1.0.0": specRecordScVal({
             version: "1.0.0",
-            specHash: createHash("sha256").update(blobV1).digest(),
+            specHash: createHash("sha256").update(canonicalizeSpec(specV1)).digest(),
             pointer: "https://example.com/v1.json",
             publisher: PUBLISHER_ADDRESS,
             publishedAtLedger: 100,
           }),
           "2.0.0": specRecordScVal({
             version: "2.0.0",
-            specHash: createHash("sha256").update(blobV2).digest(),
+            specHash: createHash("sha256").update(canonicalizeSpec(specV2)).digest(),
             pointer: "https://example.com/v2.json",
             publisher: PUBLISHER_ADDRESS,
             publishedAtLedger: 200,
@@ -248,13 +251,13 @@ describe("OnChainAbiRegistryClient", () => {
 
   it("clears cached records and specs so a subsequent lookup re-reads the chain", async () => {
     const spec = testSpec();
-    const blob = JSON.stringify(spec);
+    const blob = JSON.stringify(spec, null, 2);
     const simulate = routingSimulate({
       versions: ["1.0.0"],
       records: {
         "1.0.0": specRecordScVal({
           version: "1.0.0",
-          specHash: createHash("sha256").update(blob).digest(),
+          specHash: createHash("sha256").update(canonicalizeSpec(spec)).digest(),
           pointer: "https://example.com/spec.json",
           publisher: PUBLISHER_ADDRESS,
         }),
@@ -274,13 +277,13 @@ describe("OnChainAbiRegistryClient", () => {
 
   it("caches resolved specs - a second getSpec call does not re-simulate", async () => {
     const spec = testSpec();
-    const blob = JSON.stringify(spec);
+    const blob = JSON.stringify(spec, null, 2);
     const simulate = routingSimulate({
       versions: ["1.0.0"],
       records: {
         "1.0.0": specRecordScVal({
           version: "1.0.0",
-          specHash: createHash("sha256").update(blob).digest(),
+          specHash: createHash("sha256").update(canonicalizeSpec(spec)).digest(),
           pointer: "https://example.com/spec.json",
           publisher: PUBLISHER_ADDRESS,
         }),

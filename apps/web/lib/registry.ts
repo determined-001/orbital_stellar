@@ -7,7 +7,15 @@ import {
   NoopAlertManager,
   runVerificationJob,
 } from "@orbital-stellar/abi-registry";
-import type { RegisteredSpec } from "@orbital-stellar/abi-registry";
+import {
+  OnChainAbiRegistryClient,
+  ORBITAL_REGISTRY_TESTNET_CONTRACT_ID,
+  ORBITAL_REGISTRY_PUBLISHER_ADDRESS,
+  ORBITAL_REGISTRY_TESTNET_RPC_URL,
+} from "@orbital-stellar/abi-registry";
+import type { RegisteredSpec, ContractSpec } from "@orbital-stellar/abi-registry";
+import { Networks } from "@stellar/stellar-sdk";
+import wellKnownIndex from "@orbital-stellar/abi-registry/specs/well-known/index.json";
 
 const g = globalThis as unknown as {
   __orbitalVerdictStore?: InMemoryVerdictStore;
@@ -53,63 +61,66 @@ export function getAlertManager(): ConsoleAlertManager | NoopAlertManager {
   return g.__orbitalAlertManager;
 }
 
-export async function registerSeedSpecs(): Promise<void> {
-  const store = getSpecStore();
-  const existing = await store.getAll();
-  if (existing.length > 0) return;
+/**
+ * A spec as the registry explorer displays it: the on-chain record, plus the
+ * spec body resolved through the record's pointer.
+ */
+export type OnChainSpecView = {
+  contractId: string;
+  spec: ContractSpec;
+};
 
-  const seedSpecs: RegisteredSpec[] = [
-    {
-      contractId: "CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75",
-      spec: {
-        version: "1.0.0",
-        name: "USDC",
-        contractId: "CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75",
-        network: "mainnet",
-        functions: [],
-        events: [],
-        types: {},
-      },
-      submittedAt: new Date().toISOString(),
-    },
-    {
-      contractId: "CDTKPWPLOURQA2SGTKTUQOWRCBZEORB4BWBOMJ3D3ZTQQSGE5F6JBQLV",
-      spec: {
-        version: "1.0.0",
-        name: "EURC",
-        contractId: "CDTKPWPLOURQA2SGTKTUQOWRCBZEORB4BWBOMJ3D3ZTQQSGE5F6JBQLV",
-        network: "mainnet",
-        functions: [],
-        events: [],
-        types: {},
-      },
-      submittedAt: new Date().toISOString(),
-    },
-    {
-      contractId: "CAUIKL3IYGMERDRUN6YSCLWVAKIFG5Q4YJHUKM4S4NJZQIA3BAS6OJPK",
-      spec: {
-        version: "1.0.0",
-        name: "AQUA",
-        contractId: "CAUIKL3IYGMERDRUN6YSCLWVAKIFG5Q4YJHUKM4S4NJZQIA3BAS6OJPK",
-        network: "mainnet",
-        functions: [],
-        events: [],
-        types: {},
-      },
-      submittedAt: new Date().toISOString(),
-    },
-  ];
-
-  for (const spec of seedSpecs) {
-    await store.register(spec);
+/**
+ * Reads the registry's contents from chain.
+ *
+ * NOTE ON THE CONTRACT ID SET. The registry contract has no "list every
+ * registered contract" entry point - `latest`, `get_version` and
+ * `list_versions` are all keyed by `(contract_id, publisher)`. So the set of
+ * ids to look up has to come from somewhere off chain; here it is the bundled
+ * well-known index, which is exactly what `scripts/seed-well-known.ts`
+ * publishes. Every *value* rendered is fetched live and verified against the
+ * on-chain spec hash - only the list of ids to ask about is local.
+ *
+ * A real explorer needs enumeration on the contract itself. That is a
+ * registry-contract change, not a page change, and is why this function is
+ * written to be replaced rather than extended.
+ */
+export async function getOnChainSpecs(): Promise<OnChainSpecView[]> {
+  if (!ORBITAL_REGISTRY_TESTNET_CONTRACT_ID || !ORBITAL_REGISTRY_PUBLISHER_ADDRESS) {
+    return [];
   }
+
+  const client = new OnChainAbiRegistryClient({
+    contractId: ORBITAL_REGISTRY_TESTNET_CONTRACT_ID,
+    rpcUrl: process.env.ORBITAL_RPC_URL ?? ORBITAL_REGISTRY_TESTNET_RPC_URL,
+    networkPassphrase: process.env.ORBITAL_NETWORK_PASSPHRASE ?? Networks.TESTNET,
+    publisher: ORBITAL_REGISTRY_PUBLISHER_ADDRESS,
+  });
+
+  const ids = (wellKnownIndex as { specs: { contract_id: string }[] }).specs.map(
+    (e) => e.contract_id,
+  );
+
+  const results = await Promise.all(
+    ids.map(async (contractId): Promise<OnChainSpecView | null> => {
+      try {
+        const spec = await client.getSpec(contractId);
+        return spec ? { contractId, spec } : null;
+      } catch {
+        // One unreachable or archived entry must not blank the whole page.
+        // The caller renders what resolved; an empty result is surfaced as an
+        // explicit error state rather than as "nothing is registered".
+        return null;
+      }
+    }),
+  );
+
+  return results.filter((r): r is OnChainSpecView => r !== null);
 }
 
 export async function runVerification(): Promise<
   Awaited<ReturnType<typeof runVerificationJob>>
 > {
-  await registerSeedSpecs();
-
   const storedSpecs = await getSpecStore().getAll();
   if (storedSpecs.length === 0) {
     return {
