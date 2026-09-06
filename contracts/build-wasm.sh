@@ -36,14 +36,40 @@ fi
 
 CARGO_REGISTRY_HOME="${CARGO_HOME:-$HOME/.cargo}"
 
-# Keep these two prefixes in sync with anything that verifies a hash: change
-# them and every recorded hash changes with them.
-export RUSTFLAGS="${RUSTFLAGS:-} --remap-path-prefix=${CARGO_REGISTRY_HOME}=/cargo --remap-path-prefix=${CONTRACTS_DIR}=/build"
+# Panic locations that inline out of `core` embed a path to core's source, and
+# which path depends on whether the `rust-src` rustup component is installed:
+#
+#   with rust-src     <sysroot>/lib/rustlib/src/rust/library/core/src/ops/function.rs
+#   without rust-src  /rustc/<commit-hash>/library/core/src/ops/function.rs
+#
+# CI installs `profile = minimal` (rust-toolchain.toml) so it never has
+# rust-src and always emits the second form. A developer who has it installed
+# emits the first, with their own home directory in it - and gets a different
+# WASM from identical source. That is why registry and payroll hashes differed
+# between machines while demo-emitter, which inlines no such panic, matched
+# everywhere.
+#
+# Normalising to the `/rustc/<commit-hash>` form makes a machine WITH rust-src
+# reproduce what a machine without it builds, rather than the other way round:
+# the stripped form is what CI and any clean toolchain already produce, so it
+# is the canonical one to converge on.
+RUST_SYSROOT="$(rustc --print sysroot)"
+RUSTC_COMMIT="$(rustc -vV | sed -n 's/^commit-hash: //p')"
+
+export RUSTFLAGS="${RUSTFLAGS:-} --remap-path-prefix=${CARGO_REGISTRY_HOME}=/cargo --remap-path-prefix=${CONTRACTS_DIR}=/build --remap-path-prefix=${RUST_SYSROOT}/lib/rustlib/src/rust=/rustc/${RUSTC_COMMIT}"
 
 echo "==> Building contracts (release, wasm32v1-none, rustc ${ACTUAL_TOOLCHAIN}, paths remapped)"
-cargo build --release --target wasm32v1-none
+# --locked: the recorded hashes are only meaningful if the dependency graph is
+# exactly the one in Cargo.lock. Without it cargo may update the index and
+# silently resolve something else, which changes the bytes.
+cargo build --locked --release --target wasm32v1-none
 
-for wasm in target/wasm32v1-none/release/orbital_abi_registry.wasm \
-            target/wasm32v1-none/release/orbital_demo_emitter.wasm; do
+# Every contract the workspace builds, not a hand-picked subset: CI's
+# verify-provenance iterates whatever a deployment manifest names, so a
+# contract missing from this summary is one whose hash nobody sees until a
+# deployment disagrees with it. payroll was deployed and unhashed here for
+# weeks precisely because it was not on the list.
+for wasm in target/wasm32v1-none/release/*.wasm; do
+  [ -e "$wasm" ] || continue
   printf '    %s  %s\n' "$(sha256sum "$wasm" | awk '{print $1}')" "$(basename "$wasm")"
 done
