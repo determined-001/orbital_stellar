@@ -50,12 +50,12 @@ function StatusBadge({ status }: { status: string | undefined }) {
 
 export default async function RegistryPage() {
   // Live from the on-chain registry contract. Nothing on this page is a
-  // hardcoded row: if the chain is unreachable the list is empty and the
-  // explicit error state below says so, rather than rendering placeholders
-  // that read as data.
-  const specs = await getOnChainSpecs();
+  // hardcoded row. Reads that failed are reported separately from reads that
+  // returned nothing, because "I could not reach the chain" and "this is not
+  // registered" are different facts and a registry explorer that conflates
+  // them is misreporting the thing it exists to report.
+  const { specs, failures, configured } = await getOnChainSpecs();
   const verdicts = await getVerdictStore().getAll();
-  const registryConfigured = Boolean(ORBITAL_REGISTRY_TESTNET_CONTRACT_ID);
   const verdictMap = new Map(verdicts.map((v) => [v.contractId, v]));
 
   return (
@@ -124,12 +124,28 @@ export default async function RegistryPage() {
                 color: "var(--muted)",
               }}
             >
-              {registryConfigured
-                ? "Could not read the registry contract. The network may be unreachable, or the entries may have archived - this is an error, not an empty registry."
-                : "No registry contract configured. Set ORBITAL_REGISTRY_TESTNET_CONTRACT_ID once the registry is deployed."}
+              {!configured
+                ? "No registry contract configured. Set ORBITAL_REGISTRY_TESTNET_CONTRACT_ID once the registry is deployed."
+                : failures.length > 0
+                  ? `Could not read the registry: ${failures[0]!.reason}`
+                  : "The registry contract is reachable and holds no published specs yet."}
             </div>
           )}
 
+          {failures.length > 0 && specs.length > 0 ? (
+            <div
+              style={{
+                padding: "12px 16px",
+                borderBottom: "1px solid var(--border)",
+                fontFamily: "var(--font-mono)",
+                fontSize: "12px",
+                color: "#facc15",
+              }}
+            >
+              {failures.length} of {specs.length + failures.length} could not be read —{" "}
+              {failures[0]!.reason}
+            </div>
+          ) : null}
           {specs.map((spec) => {
             const verdict = verdictMap.get(spec.contractId);
             const verifiedAt = verdict?.verifiedAt
