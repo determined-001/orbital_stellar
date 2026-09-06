@@ -38,12 +38,13 @@ export const DEFAULT_POINTER_BASE_URL =
  * whatever it is given and re-canonicalizes before comparing, so either form
  * verifies, and the canonical one cannot drift from its own hash.
  */
-export function buildWellKnownOfflineBlobs(
+export function buildOfflineBlobs(
+  specs: Iterable<ContractSpec>,
   pointerBaseUrl: string = DEFAULT_POINTER_BASE_URL,
 ): ReadonlyMap<string, string> {
   const blobs = new Map<string, string>();
 
-  for (const spec of loadBundledWellKnownSpecs().values()) {
+  for (const spec of specs) {
     if (!spec.contractId) continue;
 
     const withPointer: ContractSpec = {
@@ -56,4 +57,20 @@ export function buildWellKnownOfflineBlobs(
   }
 
   return blobs;
+}
+
+/**
+ * Convenience wrapper that sources the specs from the bundled files on disk.
+ *
+ * **Node-only.** It reads the filesystem relative to `import.meta.url`, which a
+ * bundler rewrites: under Next/Turbopack the path becomes
+ * `/_next/static/media/specs/well-known/usdc.json` and the read throws ENOENT.
+ * Anything that gets bundled must import its specs and call
+ * {@link buildOfflineBlobs} instead - the split exists precisely so a caller
+ * cannot accidentally drag a filesystem read into a browser or edge bundle.
+ */
+export function buildWellKnownOfflineBlobs(
+  pointerBaseUrl: string = DEFAULT_POINTER_BASE_URL,
+): ReadonlyMap<string, string> {
+  return buildOfflineBlobs(loadBundledWellKnownSpecs().values(), pointerBaseUrl);
 }

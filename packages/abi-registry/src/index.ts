@@ -79,7 +79,11 @@ export {
   ORBITAL_HOSTED_REGISTRY_BASE_URL,
 } from "./registryConstants.js";
 
-export { buildWellKnownOfflineBlobs, DEFAULT_POINTER_BASE_URL } from "./offlineBlobs.js";
+export {
+  buildOfflineBlobs,
+  buildWellKnownOfflineBlobs,
+  DEFAULT_POINTER_BASE_URL,
+} from "./offlineBlobs.js";
 export { loadBundledWellKnownSpecs } from "./BundledWellKnownClient.js";
 
 export { discoverContractSpec, NoEmbeddedSpecError } from "./discovery/discoverContract.js";

@@ -13,10 +13,19 @@ import {
   ORBITAL_REGISTRY_PUBLISHER_ADDRESS,
   ORBITAL_REGISTRY_TESTNET_RPC_URL,
   ORBITAL_REGISTRY_TESTNET_NETWORK_PASSPHRASE,
-  buildWellKnownOfflineBlobs,
+  buildOfflineBlobs,
+  wellKnownToContractSpec,
 } from "@orbital-stellar/abi-registry";
 import type { RegisteredSpec, ContractSpec } from "@orbital-stellar/abi-registry";
 import wellKnownIndex from "@orbital-stellar/abi-registry/specs/well-known/index.json";
+// Imported, not read off disk. `buildWellKnownOfflineBlobs` resolves these
+// relative to `import.meta.url`, which Turbopack rewrites into the bundle -
+// the read then fails with ENOENT on `/_next/static/media/...` and takes the
+// whole page down with a 500.
+import usdcRaw from "@orbital-stellar/abi-registry/specs/well-known/usdc.json";
+import eurcRaw from "@orbital-stellar/abi-registry/specs/well-known/eurc.json";
+import aquaRaw from "@orbital-stellar/abi-registry/specs/well-known/aqua.json";
+import xlmRaw from "@orbital-stellar/abi-registry/specs/well-known/native-asset-wrapper.json";
 
 const g = globalThis as unknown as {
   __orbitalVerdictStore?: InMemoryVerdictStore;
@@ -24,6 +33,7 @@ const g = globalThis as unknown as {
   __orbitalIssueReporter?: GitHubIssueReporter | NoopIssueReporter;
   __orbitalAlertManager?: ConsoleAlertManager | NoopAlertManager;
   __orbitalOnChainRegistry?: OnChainAbiRegistryClient;
+  __orbitalLastGoodSpecs?: { specs: OnChainSpecView[]; at: number };
 };
 
 export function getVerdictStore(): InMemoryVerdictStore {
@@ -88,7 +98,11 @@ function getOnChainRegistryClient(): OnChainAbiRegistryClient {
       // need fetching: the chain supplies the hash and we already hold bytes
       // that match it. Halves the network calls per cold read and drops
       // raw.githubusercontent.com out of the path entirely.
-      offlineBlobs: buildWellKnownOfflineBlobs(),
+      offlineBlobs: buildOfflineBlobs(
+        [usdcRaw, eurcRaw, aquaRaw, xlmRaw].map((raw) =>
+          wellKnownToContractSpec(raw as Parameters<typeof wellKnownToContractSpec>[0]),
+        ),
+      ),
     });
   }
   return g.__orbitalOnChainRegistry;
@@ -123,6 +137,12 @@ export type OnChainSpecsResult = {
   failures: OnChainSpecFailure[];
   /** False when no registry contract is configured at all. */
   configured: boolean;
+  /**
+   * When set, `specs` is the last successful read rather than a fresh one,
+   * because every read this time failed. The page must label it - showing
+   * stale data as current is a worse failure than showing none.
+   */
+  staleAsOf?: number;
 };
 
 /**
@@ -190,6 +210,26 @@ export async function getOnChainSpecs(): Promise<OnChainSpecsResult> {
   );
 
   specs.sort((a, b) => a.spec.name.localeCompare(b.spec.name));
+
+  if (specs.length > 0) {
+    g.__orbitalLastGoodSpecs = { specs, at: Date.now() };
+    return { specs, failures, configured: true };
+  }
+
+  // Everything failed. The public testnet RPC is periodically slow enough that
+  // connections time out before a response lands - measured at 4-15s per call
+  // during one such stretch - and when that happens no client-side retry helps.
+  //
+  // A registry that was readable a minute ago has not stopped existing because
+  // a third party is overloaded, so serve what was last read rather than an
+  // empty page. It is labelled stale, with its age, because presenting old
+  // data as current would be a worse failure than showing none: a reader could
+  // not tell a removed spec from an unreachable one.
+  const lastGood = g.__orbitalLastGoodSpecs;
+  if (lastGood && failures.length > 0) {
+    return { specs: lastGood.specs, failures, configured: true, staleAsOf: lastGood.at };
+  }
+
   return { specs, failures, configured: true };
 }
 

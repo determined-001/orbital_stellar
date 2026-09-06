@@ -54,7 +54,7 @@ export default async function RegistryPage() {
   // returned nothing, because "I could not reach the chain" and "this is not
   // registered" are different facts and a registry explorer that conflates
   // them is misreporting the thing it exists to report.
-  const { specs, failures, configured } = await getOnChainSpecs();
+  const { specs, failures, configured, staleAsOf } = await getOnChainSpecs();
   const verdicts = await getVerdictStore().getAll();
   const verdictMap = new Map(verdicts.map((v) => [v.contractId, v]));
 
@@ -132,7 +132,22 @@ export default async function RegistryPage() {
             </div>
           )}
 
-          {failures.length > 0 && specs.length > 0 ? (
+          {staleAsOf ? (
+            <div
+              style={{
+                padding: "12px 16px",
+                borderBottom: "1px solid var(--border)",
+                fontFamily: "var(--font-mono)",
+                fontSize: "12px",
+                color: "#facc15",
+              }}
+            >
+              Showing the last successful read from{" "}
+              {Math.round((Date.now() - staleAsOf) / 1000)}s ago — the registry is currently
+              unreachable ({failures[0]!.reason})
+            </div>
+          ) : null}
+          {!staleAsOf && failures.length > 0 && specs.length > 0 ? (
             <div
               style={{
                 padding: "12px 16px",
