@@ -4,10 +4,20 @@ import { ORBITAL_REGISTRY_TESTNET_CONTRACT_ID } from "@orbital-stellar/abi-regis
 
 export const dynamic = "force-dynamic";
 
+/**
+ * Verification status for one registered spec.
+ *
+ * "No verdict yet" and "checked, and it cannot be checked" are different facts
+ * and used to render identically as UNVERIFIED. A reader could not tell a spec
+ * nobody has looked at from one that has been examined and found unverifiable
+ * by nature - and the second is the permanent, correct answer for every
+ * Stellar Asset Contract, which has no bytecode to compare a schema against.
+ */
 function StatusBadge({ status }: { status: string | undefined }) {
   if (!status) {
     return (
       <span
+        title="No verification has been run for this spec yet."
         style={{
           fontFamily: "var(--font-mono)",
           fontSize: "11px",
@@ -18,7 +28,7 @@ function StatusBadge({ status }: { status: string | undefined }) {
           color: "var(--muted)",
         }}
       >
-        UNVERIFIED
+        NOT CHECKED
       </span>
     );
   }
@@ -84,7 +94,10 @@ export default async function RegistryPage() {
           }}
         >
           Every registered Soroban spec with on-chain verification status.
-          Mismatched specs are flagged and automatically reported.
+          Mismatched specs are flagged and automatically reported. Verification compares a
+          registered schema against the contract&apos;s own embedded spec, so a Stellar Asset
+          Contract &mdash; which has no bytecode &mdash; reports unverifiable by nature rather
+          than by fault.
         </p>
 
         <div
