@@ -1,0 +1,83 @@
+paths:
+  /api/workers/verdicts:
+    get:
+      summary: Chain-derived verification verdicts for a worker
+      description: >-
+        Public, read-only audit trail (19.4). Reuses the registry read
+        policy's rate limiting, caching and ETags (19.4 depends on #915/#918
+        rather than adding a second limiter).
+      parameters:
+        - name: worker
+          in: query
+          required: true
+          description: Subject address (account or contract) the verdicts were computed for.
+          schema:
+            type: string
+        - name: start_ledger
+          in: query
+          required: false
+          schema:
+            type: integer
+        - name: end_ledger
+          in: query
+          required: false
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Verdicts whose window overlaps the requested ledger range
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  meta:
+                    type: object
+                    properties:
+                      schemaVersion:
+                        type: integer
+                  data:
+                    type: array
+                    items:
+                      type: object
+        '400':
+          description: Missing worker, or a non-integer start_ledger/end_ledger
+        '429':
+          description: Rate limit exceeded
+  /api/workers/operators:
+    get:
+      summary: Operator reputation score
+      description: >-
+        Public, read-only reputation score for one operator - the scorecard
+        page's own data source (19.3), exposed for subscribers without an
+        indexer.
+      parameters:
+        - name: operator
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The operator's score and window metrics
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  meta:
+                    type: object
+                    properties:
+                      formulaVersion:
+                        type: string
+                  data:
+                    type: object
+                    properties:
+                      score:
+                        type: object
+                      metrics:
+                        type: object
+        '400':
+          description: Missing operator
+        '429':
+          description: Rate limit exceeded
