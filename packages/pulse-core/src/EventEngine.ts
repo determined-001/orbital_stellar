@@ -1,6 +1,17 @@
 import { Horizon, scValToNative, xdr } from "@stellar/stellar-sdk";
-import { createDefaultAbiRegistryClient, decodeContractEvent } from "@orbital-stellar/abi-registry";
-import type { ContractSpec, XdrContractSpec } from "@orbital-stellar/abi-registry";
+import {
+  createDefaultAbiRegistryClient,
+  decodeContractEvent,
+  resolvableTopicFromXdr,
+  SEP41_TAXONOMY,
+  TaxonomyResolver,
+} from "@orbital-stellar/abi-registry";
+import type {
+  ContractSpec,
+  ResolvableEvent,
+  TaxonomyResolution,
+  XdrContractSpec,
+} from "@orbital-stellar/abi-registry";
 import { Watcher } from "./Watcher.js";
 import { fullJitterBackoffMs } from "./backoff.js";
 import {
@@ -346,6 +357,8 @@ export class EventEngine {
   private unifiedCursorKey = "";
   /** Optional ABI registry used to enrich `contract.emitted` events with `decodedData`. */
   private abiRegistry?: AbiRegistryClientLike;
+  /** Resolves `semantic` on `contract.emitted` events (issue #909). `undefined` when `config.taxonomy` is `false`. */
+  private taxonomyResolver?: TaxonomyResolver;
   /**
    * Present only when constructed with `CoreConfig.network` as an array.
    * Each value is a fully independent single-network `EventEngine` (own
@@ -424,6 +437,7 @@ export class EventEngine {
     this.streamKey = config.streamKey ?? `horizon:${config.network}`;
     this.cursorFailureThreshold = config.cursorFailureThreshold ?? 5;
     this.abiRegistry = EventEngine.resolveAbiRegistry(config.abiRegistry);
+    this.taxonomyResolver = EventEngine.resolveTaxonomyResolver(config.taxonomy);
     this.cursorStore = config.cursorStore;
     this.network = config.network;
     if (config.soroban) {
@@ -505,6 +519,68 @@ export class EventEngine {
     if (abiRegistry === false) return undefined;
     if (abiRegistry) return abiRegistry;
     return createDefaultAbiRegistryClient();
+  }
+
+  /**
+   * Resolves `CoreConfig.taxonomy` to the `TaxonomyResolver` actually used:
+   * `false` opts out (`semantic` stays always `undefined`), an explicit
+   * entry array builds a resolver from just those entries, and omitting it
+   * entirely builds one from `SEP41_TAXONOMY`. Mirrors
+   * {@link resolveAbiRegistry}'s three-way shape - same defaulting
+   * convention, independent config surface.
+   */
+  private static resolveTaxonomyResolver(
+    taxonomy: CoreConfig["taxonomy"],
+  ): TaxonomyResolver | undefined {
+    if (taxonomy === false) return undefined;
+    return new TaxonomyResolver(taxonomy ?? SEP41_TAXONOMY);
+  }
+
+  /**
+   * Structural sniff of the data payload's shape from its raw XDR, for
+   * taxonomy entries that constrain `match.dataShape` (issue #909). Returns
+   * `undefined` on anything that isn't a parseable ScVal - not a guess, the
+   * same "unknown is a no-match" rule `resolvableTopicFromXdr` documents.
+   */
+  private static sniffDataShape(rawValue: unknown): "void" | "scalar" | "map" | "vec" | undefined {
+    if (typeof rawValue !== "string" || rawValue === "") return undefined;
+    let scval: xdr.ScVal;
+    try {
+      scval = xdr.ScVal.fromXDR(rawValue, "base64");
+    } catch {
+      return undefined;
+    }
+    switch (scval.switch().name) {
+      case "scvVoid":
+        return "void";
+      case "scvVec":
+        return "vec";
+      case "scvMap":
+        return "map";
+      default:
+        return "scalar";
+    }
+  }
+
+  /**
+   * Resolves `semantic` for a `contract.emitted` event (issue #909),
+   * independent of `decodedData`/`abiRegistry` - this needs only the raw
+   * topics and contract id, so it resolves even for a contract with no
+   * published ABI spec. `undefined` when no taxonomy is configured or
+   * nothing maps.
+   */
+  private resolveSemantic(
+    contractId: string,
+    rawTopics: ReadonlyArray<unknown>,
+    rawData: unknown,
+  ): TaxonomyResolution | undefined {
+    if (!this.taxonomyResolver) return undefined;
+    const event: ResolvableEvent = {
+      contractId,
+      topics: rawTopics.map((t) => resolvableTopicFromXdr(String(t))),
+      dataShape: EventEngine.sniffDataShape(rawData),
+    };
+    return this.taxonomyResolver.resolve(event) ?? undefined;
   }
 
   /**
@@ -2838,12 +2914,15 @@ export class EventEngine {
   ): Raw<ContractEmittedEvent> | null {
     if (typeof r.contract_id !== "string" || r.contract_id === "") return null;
     if (typeof r.created_at !== "string") return null;
+    const topics = Array.isArray(r.topics) ? (r.topics as string[]) : [];
+    const semantic = this.resolveSemantic(r.contract_id, topics, r.data);
     return {
       type: "contract.emitted",
       contractId: toContractAddress(r.contract_id),
-      topics: Array.isArray(r.topics) ? (r.topics as string[]) : [],
+      topics,
       data: r.data ?? null,
       decodedData: r.decodedData,
+      ...(semantic ? { semantic } : {}),
       ...(typeof r.ledger === "number" ? { ledger: r.ledger } : {}),
       ...(typeof r.eventId === "string"
         ? { eventId: r.eventId }
@@ -2905,6 +2984,7 @@ export class EventEngine {
     }
 
     if (event.type === "contract.emitted") {
+      const semantic = this.resolveSemantic(event.contractId, event.topic ?? [], event.value);
       this.route(
         withTimestampDate({
           type: "contract.emitted",
@@ -2912,6 +2992,7 @@ export class EventEngine {
           topics: event.topic,
           data: event.decodedData ?? event.value,
           decodedData: event.decodedData,
+          ...(semantic ? { semantic } : {}),
           ...(event.ledger !== undefined ? { ledger: event.ledger } : {}),
           eventId: event.id,
           ...(event.txHash !== undefined ? { txHash: event.txHash } : {}),

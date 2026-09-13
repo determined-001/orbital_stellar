@@ -16,6 +16,7 @@
  * can see, wrong is a gap they cannot.
  */
 
+import { xdr } from "@stellar/stellar-sdk";
 import type {
   TaxonomyEntry,
   TaxonomyMatch,
@@ -25,6 +26,64 @@ import type {
 } from "./taxonomy.js";
 import { findTaxonomyConflicts, validateTaxonomyEntry } from "./taxonomy.js";
 import type { PrimitiveType } from "./spec.js";
+
+/**
+ * Structural XDR → {@link ResolvableTopic} sniff for one raw event topic.
+ *
+ * Deliberately not a `decode.ts`-style decode: the resolver only needs
+ * *which* primitive type a topic is, never its decoded value, and sniffing
+ * that needs no {@link ContractSpec} - unlike `decodeContractEvent`, this
+ * runs before (and independently of) any ABI spec lookup, which is what lets
+ * `semantic` resolve even for a contract with no published spec.
+ *
+ * A composite type (vec/map/struct) has no `PrimitiveType` counterpart, so it
+ * comes back as `{ kind: "value", type: undefined }` - matching only an
+ * untyped `any` pattern, never a specifically-typed one. That is the same
+ * "unknown is a no-match, not a maybe" rule {@link matchesTopic} documents.
+ */
+export function resolvableTopicFromXdr(base64Topic: string): ResolvableTopic {
+  let scval: xdr.ScVal;
+  try {
+    scval = xdr.ScVal.fromXDR(base64Topic, "base64");
+  } catch {
+    return { kind: "value", type: undefined };
+  }
+
+  switch (scval.switch().name) {
+    case "scvSymbol":
+      return { kind: "symbol", symbol: scval.sym().toString() };
+    case "scvBool":
+      return { kind: "value", type: "bool" };
+    case "scvU32":
+      return { kind: "value", type: "u32" };
+    case "scvI32":
+      return { kind: "value", type: "i32" };
+    case "scvU64":
+      return { kind: "value", type: "u64" };
+    case "scvI64":
+      return { kind: "value", type: "i64" };
+    case "scvU128":
+      return { kind: "value", type: "u128" };
+    case "scvI128":
+      return { kind: "value", type: "i128" };
+    case "scvU256":
+      return { kind: "value", type: "u256" };
+    case "scvI256":
+      return { kind: "value", type: "i256" };
+    case "scvBytes":
+      return { kind: "value", type: "bytes" };
+    case "scvString":
+      return { kind: "value", type: "string" };
+    case "scvAddress":
+      return { kind: "value", type: "address" };
+    case "scvVoid":
+      return { kind: "value", type: "void" };
+    default:
+      // scvVec, scvMap, and every other composite/host-object arm: no
+      // PrimitiveType counterpart.
+      return { kind: "value", type: undefined };
+  }
+}
 
 /**
  * One topic slot of a raw event, as the resolver needs to see it.

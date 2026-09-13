@@ -121,6 +121,19 @@ labels (contract → protocol / issuer). Unmapped events stay unmapped; the
 layer never guesses a name. Full explanation and a live mainnet worked
 example: [`docs/semantic-layer.md`](./semantic-layer.md).
 
+**Wiring (issue #909).** `EventEngine` populates `ContractEmittedEvent.semantic`
+from `CoreConfig.taxonomy` - a `TaxonomyResolver` built from `SEP41_TAXONOMY`
+by default, a caller-supplied entry array, or `false` to opt out. It resolves
+straight from `(contractId, topics)`, independent of `decodedData`/`abiRegistry`,
+so it works even for a contract with no published ABI spec. `contract`- and
+`wasmHash`-scoped entries resolve today; `interface`-scoped entries - which
+is what the bundled `SEP41_TAXONOMY` is - do not yet, because nothing in
+this pipeline determines which SEP interfaces a contract implements
+(`ContractSpec` has no such field). Populating that is the next step, not
+implemented here: either a schema addition to `ContractSpec` (a wire-format
+change, reviewed like `STABILITY.md` treats other schema surfaces) or
+structural detection from a contract's function signatures.
+
 ---
 
 ## 3. Event lifecycle

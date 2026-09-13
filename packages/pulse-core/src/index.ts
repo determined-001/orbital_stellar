@@ -91,6 +91,7 @@ export * from "./claimPredicate.js";
 export * from "./raw-horizon.js";
 export * from "./raw-soroban.js";
 import type { RawSorobanEvent } from "./raw-soroban.js";
+import type { TaxonomyEntry, TaxonomyResolution } from "@orbital-stellar/abi-registry";
 
 import {
   RawHorizonPayment,
@@ -848,6 +849,19 @@ export type CoreConfig = {
    * only that client.
    */
   abiRegistry?: AbiRegistryClientLike | false;
+  /**
+   * Semantic taxonomy entries used to populate `semantic` on
+   * `contract.emitted` events (issue #909), handed to a `TaxonomyResolver`
+   * internally. Independent of `abiRegistry`: it maps `(contractId, topics)`
+   * to a canonical name like `asset.transferred` directly from the raw
+   * event, so it resolves even for a contract with no published ABI spec.
+   * Defaults to `SEP41_TAXONOMY` (transfer/mint/burn/clawback) when omitted;
+   * pass a different entry array to use a different taxonomy, or `false` to
+   * opt out and keep `semantic` always `undefined`. A mapping is only ever
+   * applied when it resolves deterministically - see
+   * `TaxonomyResolver.resolve` in `@orbital-stellar/abi-registry`.
+   */
+  taxonomy?: ReadonlyArray<TaxonomyEntry> | false;
   /** Soroban RPC configuration. Ignored when `network` is an array - set `soroban` per source instead. */
   soroban?: SorobanConfig;
   /**
@@ -998,6 +1012,14 @@ export type ContractEmittedEvent = {
    * decode error, or when no registry is configured.
    */
   decodedData?: unknown;
+  /**
+   * Canonical semantic name (e.g. `asset.transferred`) resolved from
+   * `CoreConfig.taxonomy` (issue #909), populated only when a mapping
+   * resolves deterministically - never guessed. Independent of
+   * `decodedData`: this resolves straight from `(contractId, topics)`, with
+   * no ABI spec required.
+   */
+  semantic?: TaxonomyResolution;
   /** Ledger sequence number where the event was emitted, when available. */
   ledger?: number;
   /** Unique event identifier from the Soroban RPC, when available. */
