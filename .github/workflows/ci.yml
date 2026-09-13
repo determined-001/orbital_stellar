@@ -100,6 +100,12 @@ jobs:
       # before worker-core is typechecked.
       - name: Build pulse-webhooks
         run: pnpm tsc -p packages/pulse-webhooks/tsconfig.json
+      # apps/web's test suite imports @orbital-stellar/worker-core directly
+      # (lib/workers.ts, lib/verification.ts), which resolves through the
+      # package's "main"/"types" entries -- so dist/ has to exist before
+      # "Test packages" (which recurses into apps/web) runs below.
+      - name: Build worker-core
+        run: pnpm tsc -p packages/worker-core/tsconfig.json
       - name: Build anchor-sdk
         # examples/anchor-starter imports @orbital-stellar/anchor-sdk as a real
         # dependency (main/types resolve through dist/), not just at the
@@ -224,12 +230,14 @@ jobs:
           node-version: 20
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      # apps/web imports pulse-core and pulse-webhooks from their built output.
+      # apps/web imports pulse-core, pulse-webhooks and worker-core from their
+      # built output.
       - name: Build workspace dependencies
         run: |
           pnpm tsc -p packages/abi-registry/tsconfig.json
           pnpm tsc -p packages/pulse-core/tsconfig.json
           pnpm tsc -p packages/pulse-webhooks/tsconfig.json
+          pnpm tsc -p packages/worker-core/tsconfig.json
       - name: Test apps/web
         run: pnpm --filter orbital/web run test
 
