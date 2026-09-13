@@ -677,6 +677,52 @@ describe("pulse-webhooks WebhookDelivery", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
+  /**
+   * Reads the in-memory retry map's size directly (13.1's `docs/ARCHITECTURE.md`
+   * bounded-queue guarantee is about that map, not `webhook.dropped` counts,
+   * which only prove eviction fired - not that the map itself never grew past
+   * the cap in between). `retryTimers` is private; there is no public accessor
+   * because the property under test *is* that internal size.
+   */
+  function retryMapSize(delivery: WebhookDelivery): number {
+    return (delivery as unknown as { retryTimers: Map<unknown, unknown> }).retryTimers.size;
+  }
+
+  it("holds the retry map at maxConcurrentRetries under a 10k-event burst (13.1)", async () => {
+    const fetchMock = vi.fn().mockRejectedValue(new Error("network down"));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const watcher = new Watcher("GABC");
+    const droppedHandler = vi.fn();
+    watcher.on("webhook.dropped", droppedHandler);
+
+    const CAP = 50;
+    const BURST = 10_000;
+    const delivery = new WebhookDelivery(watcher, {
+      url: "https://example.com/hook",
+      secret: "top-secret",
+      retries: 3,
+      maxConcurrentRetries: CAP,
+    });
+
+    let peak = 0;
+    for (let i = 0; i < BURST; i++) {
+      watcher.emit("*", { ...deliveryEvent, raw: { id: `evt_${i}` } });
+      // Each first attempt's microtask chain (doAttempt -> mocked-reject ->
+      // deliverToUrl's retry branch) resolves in a handful of ticks - fewer
+      // than flushAsyncWork's 20 - so the map's size is observed right after
+      // every insertion/eviction pair, exactly where a leak would first show
+      // up, without paying flushAsyncWork's full cost 10k times over.
+      for (let tick = 0; tick < 6; tick++) await Promise.resolve();
+      peak = Math.max(peak, retryMapSize(delivery));
+    }
+    await flushAsyncWork();
+
+    expect(peak).toBeLessThanOrEqual(CAP);
+    expect(retryMapSize(delivery)).toBe(CAP);
+    expect(droppedHandler).toHaveBeenCalledTimes(BURST - CAP);
+  }, 45_000);
+
   it("cancels pending retries for all URLs when the watcher stops", async () => {
     const fetchMock = vi.fn().mockRejectedValue(new Error("network down"));
     vi.stubGlobal("fetch", fetchMock);

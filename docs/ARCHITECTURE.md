@@ -411,7 +411,16 @@ depth holds at the high-water mark under all three policies.
    accumulate and exhaust memory. The cap (`maxConcurrentRetries`, default
    100) evicts the *newest* pending retry first when the limit is hit and
    emits a synthetic `webhook.dropped` event so consumers can route it to a
-   dead-letter store.
+   dead-letter store. This is 13.1's bounded-queue guarantee applied to
+   webhooks: without a `retryQueue` configured, the cap is enforced against
+   the in-process `retryTimers` map directly; with one (Memory/Redis/Postgres/SQS),
+   it's enforced against `queue.size()` and sheds via `evictNewest()` in
+   `persistRetry()` - same policy, same drop event, different backing store.
+   A 10k-event burst against a permanently-failing endpoint is exercised in
+   `packages/pulse-webhooks/test/pulse-webhooks.test.ts` ("holds the retry
+   map at maxConcurrentRetries under a 10k-event burst"), which asserts the
+   map's size never exceeds the cap at any point during the burst, not just
+   at the end.
 5. **Terminal failure.** After all retries are exhausted, the delivery
    emits `webhook.failed` on the watcher with `{ error, url, attempts,
    originalEvent }` in `raw`. The watcher's `on("webhook.failed", …)`
