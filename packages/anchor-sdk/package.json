@@ -37,7 +37,7 @@
   },
   "dependencies": {
     "@orbital-stellar/pulse-core": "workspace:*",
-    "zod": "^4.4.3"
+    "zod": "^4.6.2"
   },
   "devDependencies": {
     "@stellar/stellar-sdk": "^16.1.0",
