@@ -261,13 +261,13 @@ describe("OnChainAbiRegistryClient", () => {
         records: {
           "1.0.0": specRecordScVal({
             version: "1.0.0",
-            specHash: createHash("sha256").update(blobV1).digest(),
+            specHash: createHash("sha256").update(canonicalizeSpec(specV1)).digest(),
             pointer: "https://example.com/v1.json",
             publisher: PUBLISHER_ADDRESS,
           }),
           "2.0.0": specRecordScVal({
             version: "2.0.0",
-            specHash: createHash("sha256").update(blobV2).digest(),
+            specHash: createHash("sha256").update(canonicalizeSpec(specV2)).digest(),
             pointer: "https://example.com/v2.json",
             publisher: PUBLISHER_ADDRESS,
           }),
