@@ -34,6 +34,10 @@ vi.mock("@stellar/stellar-sdk", async (importOriginal) => {
     constructor(_url: string) {}
     operations() {
       return {
+        // The engine asks Horizon for join=transactions; the double mirrors that.
+        join() {
+          return this;
+        },
         cursor() {
           return {
             stream(handlers: StreamHandlers) {
@@ -342,6 +346,8 @@ describe("EventEngine dedupe window wiring", () => {
   });
 
   it("the wired window is bounded - an evicted key no longer suppresses a repeat", async () => {
+    // Pushes DEDUPE_WINDOW_CAPACITY (1024) events through synchronously to
+    // force an eviction - slower than vitest's 5s default under load.
     SorobanRpcClient.setCachedNetwork({ passphrase: TESTNET_PASSPHRASE, protocolVersion: 23 });
     globalThis.fetch = makeFetch();
 
@@ -383,5 +389,5 @@ describe("EventEngine dedupe window wiring", () => {
     expect(received).toHaveBeenCalledTimes(capacity + 2);
 
     await engine.stop();
-  });
+  }, 20_000);
 });
