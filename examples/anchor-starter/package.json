@@ -15,8 +15,8 @@
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
-    "@orbital-stellar/pulse-core": "workspace:*",
-    "@orbital-stellar/pulse-webhooks": "workspace:*"
+    "@orbital-stellar/pulse-core": "^0.1.0",
+    "@orbital-stellar/pulse-webhooks": "^0.1.0"
   },
   "devDependencies": {
     "@types/node": "^26.2.0",

@@ -16,9 +16,9 @@
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
-    "@orbital-stellar/abi-registry": "workspace:*",
-    "@orbital-stellar/pulse-core": "workspace:*",
-    "@orbital-stellar/pulse-notify": "workspace:*",
+    "@orbital-stellar/abi-registry": "^0.1.0",
+    "@orbital-stellar/pulse-core": "^0.1.0",
+    "@orbital-stellar/pulse-notify": "^0.1.0",
     "next": "^16.3.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8"
