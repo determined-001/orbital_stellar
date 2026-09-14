@@ -54,18 +54,43 @@ export default async function WorkersPage() {
   return (
     <section style={{ padding: "120px 32px" }}>
       <div style={{ maxWidth: "var(--max-width)", margin: "0 auto" }}>
-        <h1
+        <div
           style={{
-            fontFamily: "var(--font-heading)",
-            fontSize: "clamp(1.75rem, 3vw, 2.5rem)",
-            color: "#fff",
-            lineHeight: 1.1,
-            letterSpacing: "-0.01em",
+            display: "flex",
+            alignItems: "baseline",
+            justifyContent: "space-between",
+            gap: "16px",
+            flexWrap: "wrap",
             marginBottom: "8px",
           }}
         >
-          Worker Operator Scorecards
-        </h1>
+          <h1
+            style={{
+              fontFamily: "var(--font-heading)",
+              fontSize: "clamp(1.75rem, 3vw, 2.5rem)",
+              color: "#fff",
+              lineHeight: 1.1,
+              letterSpacing: "-0.01em",
+              margin: 0,
+            }}
+          >
+            Worker Operator Scorecards
+          </h1>
+          <Link
+            href="/workers/register"
+            style={{
+              fontFamily: "var(--font-mono)",
+              fontSize: "13px",
+              color: "#fff",
+              textDecoration: "none",
+              border: "1px solid var(--border)",
+              padding: "8px 16px",
+              whiteSpace: "nowrap",
+            }}
+          >
+            Register as an operator →
+          </Link>
+        </div>
         <p
           style={{
             fontFamily: "var(--font-sans)",
