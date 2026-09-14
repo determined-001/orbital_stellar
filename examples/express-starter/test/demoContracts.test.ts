@@ -10,6 +10,8 @@ function event(topic: string, decodedData: unknown): ContractEmittedEvent {
     topics: [topic],
     data: decodedData,
     decodedData,
+    timestamp: "1234567890",
+    timestampDate: new Date(1234567890 * 1000),
   };
 }
 
