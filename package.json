@@ -27,7 +27,7 @@
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@orbital-stellar/abi-registry": "workspace:*",
-    "@stellar/stellar-sdk": "^16.2.0",
+    "@stellar/stellar-sdk": "^17.0.1",
     "eslint": "^10.10.0",
     "eslint-config-prettier": "^10.1.8",
     "husky": "^9.1.7",
