@@ -1,8 +1,17 @@
 import Link from "next/link";
-import { getOnChainSpecs, getVerdictStore } from "@/lib/registry";
-import { ORBITAL_REGISTRY_TESTNET_CONTRACT_ID } from "@orbital-stellar/abi-registry";
+import {
+  getOnChainSpecs,
+  getVerdictStore,
+  stellarExpertAccountUrl,
+  stellarExpertContractUrl,
+} from "@/lib/registry";
+import { getLabelRecords } from "@/lib/registryData";
 
-export const dynamic = "force-dynamic";
+// Revalidated on a short TTL rather than force-dynamic on every request:
+// the underlying OnChainAbiRegistryClient already caches reads for 5
+// minutes (registry.ts's DEFAULT_CACHE_TTL_MS), so re-rendering on every
+// request would burn RPC-shaped work for a response that hadn't changed.
+export const revalidate = 60;
 
 function StatusBadge({ status }: { status: string | undefined }) {
   if (!status) {
@@ -48,6 +57,8 @@ function StatusBadge({ status }: { status: string | undefined }) {
   );
 }
 
+const GRID_COLUMNS = "1fr 140px 140px 140px 100px 60px";
+
 export default async function RegistryPage() {
   // Live from the on-chain registry contract. Nothing on this page is a
   // hardcoded row. Reads that failed are reported separately from reads that
@@ -57,6 +68,8 @@ export default async function RegistryPage() {
   const { specs, failures, configured, staleAsOf } = await getOnChainSpecs();
   const verdicts = await getVerdictStore().getAll();
   const verdictMap = new Map(verdicts.map((v) => [v.contractId, v]));
+  const labelMap = new Map(getLabelRecords().map((l) => [l.contractId, l]));
+  const fetchedAt = staleAsOf ?? Date.now();
 
   return (
     <section style={{ padding: "120px 32px" }}>
@@ -79,12 +92,22 @@ export default async function RegistryPage() {
             fontSize: "15px",
             color: "var(--muted2)",
             lineHeight: 1.6,
-            marginBottom: "32px",
+            marginBottom: "8px",
             maxWidth: "640px",
           }}
         >
           Every registered Soroban spec with on-chain verification status.
           Mismatched specs are flagged and automatically reported.
+        </p>
+        <p
+          style={{
+            fontFamily: "var(--font-mono)",
+            fontSize: "12px",
+            color: "var(--muted)",
+            marginBottom: "32px",
+          }}
+        >
+          Fetched {new Date(fetchedAt).toISOString()}
         </p>
 
         <div
@@ -92,13 +115,15 @@ export default async function RegistryPage() {
             background: "var(--surface)",
             border: "1px solid var(--border)",
             overflow: "hidden",
+            overflowX: "auto",
           }}
         >
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: "1fr 100px 60px",
+              gridTemplateColumns: GRID_COLUMNS,
               gap: "0",
+              minWidth: "760px",
               background: "var(--surface2)",
               borderBottom: "1px solid var(--border)",
               fontFamily: "var(--font-sans)",
@@ -110,6 +135,9 @@ export default async function RegistryPage() {
             }}
           >
             <div style={{ padding: "12px 16px" }}>Contract</div>
+            <div style={{ padding: "12px 8px" }}>Publisher</div>
+            <div style={{ padding: "12px 8px" }}>Spec Hash</div>
+            <div style={{ padding: "12px 8px" }}>Labels</div>
             <div style={{ padding: "12px 8px" }}>Status</div>
             <div style={{ padding: "12px 8px", textAlign: "center" }}>Age</div>
           </div>
@@ -161,37 +189,89 @@ export default async function RegistryPage() {
               {failures[0]!.reason}
             </div>
           ) : null}
-          {specs.map((spec) => {
-            const verdict = verdictMap.get(spec.contractId);
+          {specs.map(({ contractId, spec, record }) => {
+            const verdict = verdictMap.get(contractId);
             const verifiedAt = verdict?.verifiedAt
               ? `${Math.round((Date.now() - new Date(verdict.verifiedAt).getTime()) / 60000)}m ago`
               : "—";
+            const label = labelMap.get(contractId);
 
             return (
-              <Link
-                key={spec.contractId}
-                href={`/registry/${spec.contractId}`}
+              <div
+                key={contractId}
                 style={{
                   display: "grid",
-                  gridTemplateColumns: "1fr 100px 60px",
+                  gridTemplateColumns: GRID_COLUMNS,
                   gap: "0",
+                  minWidth: "760px",
                   borderBottom: "1px solid var(--border)",
-                  textDecoration: "none",
-                  transition: "background 0.15s",
                 }}
               >
-                <div
+                <Link
+                  href={`/registry/${contractId}`}
                   style={{
                     padding: "14px 16px",
                     fontFamily: "var(--font-mono)",
                     fontSize: "13px",
                     color: "#fff",
+                    textDecoration: "none",
                   }}
                 >
-                  <span style={{ fontWeight: 700 }}>{spec.spec.name}</span>
+                  <span style={{ fontWeight: 700 }}>{spec.name}</span>
                   <span style={{ color: "var(--muted)", marginLeft: "8px", fontSize: "11px" }}>
-                    {spec.contractId.slice(0, 12)}…
+                    {contractId.slice(0, 12)}…
                   </span>
+                </Link>
+                <div style={{ padding: "14px 8px", display: "flex", alignItems: "center" }}>
+                  {record ? (
+                    <a
+                      href={stellarExpertAccountUrl(record.publisher)}
+                      target="_blank"
+                      rel="noreferrer"
+                      style={{
+                        fontFamily: "var(--font-mono)",
+                        fontSize: "11px",
+                        color: "var(--muted2)",
+                        textDecoration: "underline",
+                      }}
+                    >
+                      {record.publisher.slice(0, 8)}…
+                    </a>
+                  ) : (
+                    <span style={{ color: "var(--muted)", fontSize: "11px" }}>—</span>
+                  )}
+                </div>
+                <div style={{ padding: "14px 8px", display: "flex", alignItems: "center" }}>
+                  {record ? (
+                    <a
+                      href={record.pointer}
+                      target="_blank"
+                      rel="noreferrer"
+                      title={record.specHash}
+                      style={{
+                        fontFamily: "var(--font-mono)",
+                        fontSize: "11px",
+                        color: "var(--muted2)",
+                        textDecoration: "underline",
+                      }}
+                    >
+                      {record.specHash.slice(0, 10)}…
+                    </a>
+                  ) : (
+                    <span style={{ color: "var(--muted)", fontSize: "11px" }}>—</span>
+                  )}
+                </div>
+                <div
+                  style={{
+                    padding: "14px 8px",
+                    display: "flex",
+                    alignItems: "center",
+                    fontFamily: "var(--font-sans)",
+                    fontSize: "11px",
+                    color: "var(--muted2)",
+                  }}
+                >
+                  {label ? label.category : "—"}
                 </div>
                 <div style={{ padding: "12px 8px", display: "flex", alignItems: "center" }}>
                   <StatusBadge status={verdict?.status} />
@@ -207,7 +287,7 @@ export default async function RegistryPage() {
                 >
                   {verifiedAt}
                 </div>
-              </Link>
+              </div>
             );
           })}
         </div>

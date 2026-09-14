@@ -291,6 +291,59 @@ describe("OnChainAbiRegistryClient", () => {
     expect(await client.getSpecByVersion(TARGET_CONTRACT_ID, "9.9.9")).toBeNull();
   });
 
+  it("getRecords returns every published version's on-chain record, without fetching or verifying blobs", async () => {
+    const specHashV1 = createHash("sha256").update("v1").digest();
+    const specHashV2 = createHash("sha256").update("v2").digest();
+    installMockServer(
+      routingSimulate({
+        versions: ["1.0.0", "2.0.0"],
+        records: {
+          "1.0.0": specRecordScVal({
+            version: "1.0.0",
+            specHash: specHashV1,
+            pointer: "https://example.com/v1.json",
+            publisher: PUBLISHER_ADDRESS,
+            publishedAtLedger: 100,
+          }),
+          "2.0.0": specRecordScVal({
+            version: "2.0.0",
+            specHash: specHashV2,
+            pointer: "https://example.com/v2.json",
+            publisher: PUBLISHER_ADDRESS,
+            publishedAtLedger: 200,
+          }),
+        },
+      }),
+    );
+    // No transport mock installed - getRecords must never call it, since it
+    // does not fetch or hash-verify the pointed-at blob.
+    const client = makeClient();
+
+    const records = await client.getRecords(TARGET_CONTRACT_ID);
+
+    expect(records).toHaveLength(2);
+    expect(records.map((r) => r.version)).toEqual(["1.0.0", "2.0.0"]);
+    expect(records[0]).toMatchObject({
+      version: "1.0.0",
+      specHash: specHashV1.toString("hex"),
+      pointer: "https://example.com/v1.json",
+      publishedAtLedger: 100,
+    });
+    expect(records[1]).toMatchObject({
+      version: "2.0.0",
+      specHash: specHashV2.toString("hex"),
+      pointer: "https://example.com/v2.json",
+      publishedAtLedger: 200,
+    });
+  });
+
+  it("getRecords returns an empty array for a contract with no published versions", async () => {
+    installMockServer(routingSimulate({ versions: [], records: {} }));
+    const client = makeClient();
+
+    expect(await client.getRecords(TARGET_CONTRACT_ID)).toEqual([]);
+  });
+
   it("clears cached records and specs so a subsequent lookup re-reads the chain", async () => {
     const spec = testSpec();
     const blob = JSON.stringify(spec, null, 2);

@@ -117,7 +117,7 @@ export class RegistryEntryArchivedError extends Error {
  */
 const ARCHIVED_ENTRY_ERROR = /archiv|expired|EntryArchived|restore/i;
 
-type SpecRecord = {
+export type SpecRecord = {
   version: string;
   specHash: string; // hex
   pointer: string;
@@ -200,7 +200,19 @@ export class OnChainAbiRegistryClient {
     return this.resolveRecord(contractId, record);
   }
 
-  private async getRecords(contractId: string): Promise<SpecRecord[]> {
+  /**
+   * Every published version's on-chain record for `contractId` - version,
+   * spec hash, off-chain pointer, publisher, and publish ledger - ordered
+   * oldest to newest. Unlike `getSpec*`, this does not fetch or verify the
+   * pointed-at blob; it is the registry explorer's version-history and
+   * publisher/spec-hash source (issue #913), which needs the on-chain
+   * record metadata for every version, not just one resolved spec body.
+   */
+  async getRecords(contractId: string): Promise<ReadonlyArray<SpecRecord>> {
+    return this.getRecordsInternal(contractId);
+  }
+
+  private async getRecordsInternal(contractId: string): Promise<SpecRecord[]> {
     const cached = this.recordsCache.get(contractId);
     if (cached !== undefined) return cached;
 

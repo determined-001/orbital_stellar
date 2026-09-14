@@ -1,6 +1,16 @@
-import { getSpecStore, getVerdictStore } from "@/lib/registry";
+import {
+  getOnChainContractDetail,
+  getVerdictStore,
+  stellarExpertAccountUrl,
+  stellarExpertContractUrl,
+} from "@/lib/registry";
+import { getLabelRecords } from "@/lib/registryData";
+import { getRecentContractEvents } from "@/lib/registryEvents";
 
-export const dynamic = "force-dynamic";
+// Same short-TTL rationale as the list page: the on-chain client already
+// caches reads, so force-dynamic would re-pay for work whose answer hasn't
+// changed.
+export const revalidate = 60;
 
 function StatusBadge({ status }: { status: string }) {
   const colors: Record<string, { bg: string; border: string; text: string }> = {
@@ -34,11 +44,13 @@ export default async function ContractDetailPage({
   params: Promise<{ contractId: string }>;
 }) {
   const { contractId } = await params;
-  const spec = await getSpecStore().get(contractId);
+  const detail = await getOnChainContractDetail(contractId);
   const history = await getVerdictStore().getHistory(contractId);
   const latestVerdict = history[history.length - 1] ?? null;
 
-  if (!spec) {
+  if (!detail.found) {
+    // "Not registered" and "could not read the chain" are different facts -
+    // conflating them is exactly the misreporting #913 calls out.
     return (
       <section style={{ padding: "120px 32px" }}>
         <div style={{ maxWidth: "var(--max-width)", margin: "0 auto" }}>
@@ -52,15 +64,27 @@ export default async function ContractDetailPage({
               marginBottom: "16px",
             }}
           >
-            Contract Not Found
+            {detail.reason === "not_registered" ? "Contract Not Found" : "Registry Unavailable"}
           </h1>
           <p style={{ fontFamily: "var(--font-sans)", fontSize: "15px", color: "var(--muted2)" }}>
-            No spec registered for <code>{contractId}</code>.
+            {detail.reason === "not_registered" ? (
+              <>
+                No spec registered on chain for <code>{contractId}</code>.
+              </>
+            ) : (
+              <>Could not read the registry contract: {detail.error}</>
+            )}
           </p>
         </div>
       </section>
     );
   }
+
+  const spec = detail.spec;
+  const records = detail.records;
+  const currentRecord = records[records.length - 1];
+  const label = getLabelRecords().find((l) => l.contractId === contractId);
+  const recentEvents = await getRecentContractEvents(contractId, spec, 10);
 
   const isMismatch = latestVerdict?.status === "mismatch";
   const isUnverifiable = latestVerdict?.status === "unverifiable";
@@ -129,7 +153,7 @@ export default async function ContractDetailPage({
               margin: 0,
             }}
           >
-            {spec.spec.name}
+            {spec.name}
           </h1>
           {latestVerdict && <StatusBadge status={latestVerdict.status} />}
         </div>
@@ -164,11 +188,60 @@ export default async function ContractDetailPage({
             </h3>
             <dl style={{ fontFamily: "var(--font-mono)", fontSize: "13px", lineHeight: 1.8 }}>
               <dt style={{ color: "var(--muted)", fontSize: "11px" }}>Contract ID</dt>
-              <dd style={{ color: "#fff", margin: 0, wordBreak: "break-all" }}>{contractId}</dd>
+              <dd style={{ color: "#fff", margin: 0, wordBreak: "break-all" }}>
+                <a
+                  href={stellarExpertContractUrl(contractId)}
+                  target="_blank"
+                  rel="noreferrer"
+                  style={{ color: "#fff", textDecoration: "underline" }}
+                >
+                  {contractId}
+                </a>
+              </dd>
               <dt style={{ color: "var(--muted)", fontSize: "11px", marginTop: "8px" }}>Version</dt>
-              <dd style={{ color: "#fff", margin: 0 }}>{spec.spec.version}</dd>
+              <dd style={{ color: "#fff", margin: 0 }}>{spec.version}</dd>
               <dt style={{ color: "var(--muted)", fontSize: "11px", marginTop: "8px" }}>Network</dt>
-              <dd style={{ color: "#fff", margin: 0 }}>{spec.spec.network ?? "unknown"}</dd>
+              <dd style={{ color: "#fff", margin: 0 }}>{spec.network ?? "unknown"}</dd>
+              {currentRecord && (
+                <>
+                  <dt style={{ color: "var(--muted)", fontSize: "11px", marginTop: "8px" }}>Publisher</dt>
+                  <dd style={{ color: "#fff", margin: 0, wordBreak: "break-all" }}>
+                    <a
+                      href={stellarExpertAccountUrl(currentRecord.publisher)}
+                      target="_blank"
+                      rel="noreferrer"
+                      style={{ color: "#fff", textDecoration: "underline" }}
+                    >
+                      {currentRecord.publisher}
+                    </a>
+                  </dd>
+                  <dt style={{ color: "var(--muted)", fontSize: "11px", marginTop: "8px" }}>Spec Hash</dt>
+                  <dd style={{ color: "#fff", margin: 0, wordBreak: "break-all" }}>
+                    <a
+                      href={currentRecord.pointer}
+                      target="_blank"
+                      rel="noreferrer"
+                      style={{ color: "#fff", textDecoration: "underline" }}
+                    >
+                      {currentRecord.specHash}
+                    </a>
+                  </dd>
+                </>
+              )}
+              {label && (
+                <>
+                  <dt style={{ color: "var(--muted)", fontSize: "11px", marginTop: "8px" }}>Labels</dt>
+                  <dd style={{ color: "#fff", margin: 0 }}>
+                    {label.category}
+                    {label.tags.length > 0 ? ` · ${label.tags.join(", ")}` : ""}
+                    {label.verified ? " · verified" : ""}
+                  </dd>
+                </>
+              )}
+              <dt style={{ color: "var(--muted)", fontSize: "11px", marginTop: "8px" }}>Fetched</dt>
+              <dd style={{ color: "var(--muted2)", margin: 0, fontSize: "11px" }}>
+                {new Date(detail.fetchedAt).toISOString()}
+              </dd>
             </dl>
           </div>
 
@@ -323,6 +396,60 @@ export default async function ContractDetailPage({
           </div>
         )}
 
+        <div
+          style={{
+            background: "var(--surface)",
+            border: "1px solid var(--border)",
+            marginBottom: "32px",
+          }}
+        >
+          <div
+            style={{
+              padding: "12px 16px",
+              borderBottom: "1px solid var(--border)",
+              fontFamily: "var(--font-sans)",
+              fontSize: "12px",
+              fontWeight: 700,
+              color: "var(--muted)",
+              textTransform: "uppercase",
+              letterSpacing: "0.05em",
+            }}
+          >
+            Version History ({records.length})
+          </div>
+          <div style={{ padding: "16px" }}>
+            {[...records].reverse().map((record, i) => (
+              <div
+                key={`${record.version}-${record.publishedAtLedger}`}
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "80px 1fr 100px",
+                  gap: "12px",
+                  alignItems: "baseline",
+                  padding: "8px 0",
+                  borderBottom: i < records.length - 1 ? "1px solid var(--border)" : "none",
+                  fontFamily: "var(--font-mono)",
+                  fontSize: "12px",
+                }}
+              >
+                <span style={{ color: "#fff", fontWeight: 700 }}>{record.version}</span>
+                <a
+                  href={record.pointer}
+                  target="_blank"
+                  rel="noreferrer"
+                  style={{ color: "var(--muted2)", textDecoration: "underline", wordBreak: "break-all" }}
+                  title={record.specHash}
+                >
+                  {record.specHash.slice(0, 16)}…
+                </a>
+                <span style={{ color: "var(--muted)", textAlign: "right" }}>
+                  ledger {record.publishedAtLedger}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+
         {history.length > 1 && (
           <div
             style={{
@@ -373,7 +500,7 @@ export default async function ContractDetailPage({
           </div>
         )}
 
-        {spec.spec.functions.length > 0 && (
+        {spec.functions.length > 0 && (
           <div
             style={{
               background: "var(--surface)",
@@ -393,10 +520,10 @@ export default async function ContractDetailPage({
                 letterSpacing: "0.05em",
               }}
             >
-              Functions ({spec.spec.functions.length})
+              Functions ({spec.functions.length})
             </div>
             <div style={{ padding: "16px" }}>
-              {spec.spec.functions.map((fn, i) => (
+              {spec.functions.map((fn, i) => (
                 <div
                   key={i}
                   style={{
@@ -427,7 +554,7 @@ export default async function ContractDetailPage({
           </div>
         )}
 
-        {spec.spec.events.length > 0 && (
+        {spec.events.length > 0 && (
           <div
             style={{
               background: "var(--surface)",
@@ -447,10 +574,10 @@ export default async function ContractDetailPage({
                 letterSpacing: "0.05em",
               }}
             >
-              Events ({spec.spec.events.length})
+              Events ({spec.events.length})
             </div>
             <div style={{ padding: "16px" }}>
-              {spec.spec.events.map((ev, i) => (
+              {spec.events.map((ev, i) => (
                 <div
                   key={i}
                   style={{
@@ -480,6 +607,138 @@ export default async function ContractDetailPage({
             </div>
           </div>
         )}
+
+        <div
+          style={{
+            background: "var(--surface)",
+            border: "1px solid var(--border)",
+            marginTop: "32px",
+          }}
+        >
+          <div
+            style={{
+              padding: "12px 16px",
+              borderBottom: "1px solid var(--border)",
+              fontFamily: "var(--font-sans)",
+              fontSize: "12px",
+              fontWeight: 700,
+              color: "var(--muted)",
+              textTransform: "uppercase",
+              letterSpacing: "0.05em",
+            }}
+          >
+            Recent Events
+          </div>
+          <div style={{ padding: "16px" }}>
+            {!recentEvents.available ? (
+              <p
+                style={{
+                  fontFamily: "var(--font-sans)",
+                  fontSize: "13px",
+                  color: "#facc15",
+                  margin: 0,
+                }}
+              >
+                Could not read recent events from chain: {recentEvents.error}
+              </p>
+            ) : recentEvents.events.length === 0 ? (
+              <p
+                style={{
+                  fontFamily: "var(--font-sans)",
+                  fontSize: "13px",
+                  color: "var(--muted)",
+                  margin: 0,
+                }}
+              >
+                No events found on chain between ledger {recentEvents.windowStartLedger} and{" "}
+                {recentEvents.latestLedger}.
+              </p>
+            ) : (
+              <>
+                {recentEvents.events.map((ev) => (
+                  <div
+                    key={ev.id}
+                    style={{
+                      marginBottom: "12px",
+                      borderBottom: "1px solid var(--border)",
+                      paddingBottom: "12px",
+                      fontFamily: "var(--font-mono)",
+                      fontSize: "12px",
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "8px",
+                        marginBottom: "4px",
+                      }}
+                    >
+                      <span style={{ color: "var(--muted)" }}>ledger {ev.ledger}</span>
+                      {ev.semantic && (
+                        <span
+                          style={{
+                            color: "#4ade80",
+                            fontWeight: 700,
+                            padding: "1px 6px",
+                            border: "1px solid #1a4a1a",
+                            fontSize: "11px",
+                          }}
+                        >
+                          {ev.semantic.name}
+                        </span>
+                      )}
+                      {ev.txHash && (
+                        <a
+                          href={`https://stellar.expert/explorer/${
+                            (process.env.ORBITAL_NETWORK ?? "testnet") === "mainnet"
+                              ? "public"
+                              : "testnet"
+                          }/tx/${ev.txHash}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          style={{ color: "var(--muted2)", textDecoration: "underline" }}
+                        >
+                          {ev.txHash.slice(0, 10)}…
+                        </a>
+                      )}
+                    </div>
+                    {ev.decoded !== undefined ? (
+                      <pre
+                        style={{
+                          fontFamily: "var(--font-mono)",
+                          background: "var(--surface2)",
+                          padding: "8px",
+                          border: "1px solid var(--border)",
+                          color: "#fff",
+                          margin: 0,
+                          whiteSpace: "pre-wrap",
+                          wordBreak: "break-all",
+                          fontSize: "11px",
+                        }}
+                      >
+                        {JSON.stringify(ev.decoded, null, 2)}
+                      </pre>
+                    ) : ev.decodeError ? (
+                      <p style={{ color: "var(--muted)", fontSize: "11px", margin: 0 }}>
+                        Not decoded: {ev.decodeError}
+                      </p>
+                    ) : (
+                      <p style={{ color: "var(--muted)", fontSize: "11px", margin: 0 }}>
+                        {ev.topics.length} topic(s), no spec to decode against.
+                      </p>
+                    )}
+                  </div>
+                ))}
+                {recentEvents.truncated && (
+                  <p style={{ color: "var(--muted)", fontSize: "11px", margin: 0 }}>
+                    More events exist in this window than shown.
+                  </p>
+                )}
+              </>
+            )}
+          </div>
+        </div>
       </div>
     </section>
   );

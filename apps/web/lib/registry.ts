@@ -16,7 +16,7 @@ import {
   buildOfflineBlobs,
   wellKnownToContractSpec,
 } from "@orbital-stellar/abi-registry";
-import type { RegisteredSpec, ContractSpec } from "@orbital-stellar/abi-registry";
+import type { RegisteredSpec, ContractSpec, SpecRecord } from "@orbital-stellar/abi-registry";
 import wellKnownIndex from "@orbital-stellar/abi-registry/specs/well-known/index.json";
 // Imported, not read off disk. `buildWellKnownOfflineBlobs` resolves these
 // relative to `import.meta.url`, which Turbopack rewrites into the bundle -
@@ -109,12 +109,40 @@ function getOnChainRegistryClient(): OnChainAbiRegistryClient {
 }
 
 /**
+ * stellar.expert names mainnet "public" in its path, so the network has to be
+ * mapped rather than interpolated. Mirrors `lib/workers.ts`'s own copy of
+ * this same mapping - each is small enough that a shared module would cost
+ * more than it saves.
+ */
+const STELLAR_EXPERT_NETWORK_PATH = { testnet: "testnet", mainnet: "public" } as const;
+
+function stellarExpertNetwork(): string {
+  const network = (process.env.ORBITAL_NETWORK as "mainnet" | "testnet" | undefined) ?? "testnet";
+  return STELLAR_EXPERT_NETWORK_PATH[network] ?? "testnet";
+}
+
+export function stellarExpertContractUrl(contractId: string): string {
+  return `https://stellar.expert/explorer/${stellarExpertNetwork()}/contract/${contractId}`;
+}
+
+export function stellarExpertAccountUrl(publicKey: string): string {
+  return `https://stellar.expert/explorer/${stellarExpertNetwork()}/account/${publicKey}`;
+}
+
+/**
  * A spec as the registry explorer displays it: the on-chain record, plus the
  * spec body resolved through the record's pointer.
  */
 export type OnChainSpecView = {
   contractId: string;
   spec: ContractSpec;
+  /**
+   * The on-chain record backing `spec` - publisher, spec hash, off-chain
+   * pointer, and publish ledger. `undefined` only if the record vanished
+   * between the two reads (a re-publish mid-request); `spec` itself is
+   * still valid in that case, it just can't be attributed.
+   */
+  record?: SpecRecord;
 };
 
 /** A contract the registry could not be read for, and why. */
@@ -182,7 +210,13 @@ export async function getOnChainSpecs(): Promise<OnChainSpecsResult> {
         // about the registry rather than a failure to read it - the bundled
         // index deliberately lists the SAC interface placeholder, which is
         // never seeded.
-        if (spec) specs.push({ contractId, spec });
+        if (spec) {
+          // Cache hit: getSpec() above already populated the records cache
+          // for this contractId via the same underlying list_versions +
+          // get_version reads, so this issues no additional RPC calls.
+          const records = await client.getRecords(contractId);
+          specs.push({ contractId, spec, record: records[records.length - 1] });
+        }
       } catch (err) {
         const cause = (err as { cause?: { code?: string; message?: string; errors?: unknown[] } })
           ?.cause;
@@ -231,6 +265,62 @@ export async function getOnChainSpecs(): Promise<OnChainSpecsResult> {
   }
 
   return { specs, failures, configured: true };
+}
+
+/** What the registry explorer's per-contract detail page (#913) got for one contractId. */
+export type OnChainContractDetail =
+  | {
+      found: true;
+      spec: ContractSpec;
+      /** Every published version's on-chain record, oldest to newest - the version history. */
+      records: ReadonlyArray<SpecRecord>;
+      fetchedAt: number;
+    }
+  | { found: false; reason: "not_registered"; fetchedAt: number }
+  | { found: false; reason: "unavailable"; error: string };
+
+/**
+ * Reads one contract's full on-chain detail: its current spec plus every
+ * published version's record. Unlike `getOnChainSpecs()`, this is not
+ * limited to the bundled well-known index - it reads whatever `contractId`
+ * the caller asks for, since a detail page is reached by an id the list
+ * page already resolved (or a direct link).
+ */
+export async function getOnChainContractDetail(contractId: string): Promise<OnChainContractDetail> {
+  if (!ORBITAL_REGISTRY_TESTNET_CONTRACT_ID || !ORBITAL_REGISTRY_PUBLISHER_ADDRESS) {
+    return { found: false, reason: "unavailable", error: "No registry contract configured." };
+  }
+
+  const client = getOnChainRegistryClient();
+  try {
+    const [spec, records] = await Promise.all([
+      client.getSpec(contractId),
+      client.getRecords(contractId),
+    ]);
+    if (!spec || records.length === 0) {
+      return { found: false, reason: "not_registered", fetchedAt: Date.now() };
+    }
+    return { found: true, spec, records, fetchedAt: Date.now() };
+  } catch (err) {
+    const cause = (err as { cause?: { code?: string; message?: string; errors?: unknown[] } })
+      ?.cause;
+    const detail = cause
+      ? ` (${[
+          cause.code,
+          cause.message,
+          Array.isArray(cause.errors)
+            ? cause.errors.map((e) => (e as Error)?.message ?? String(e)).join("; ")
+            : undefined,
+        ]
+          .filter(Boolean)
+          .join(" ")})`
+      : "";
+    return {
+      found: false,
+      reason: "unavailable",
+      error: `${err instanceof Error ? err.message : String(err)}${detail}`,
+    };
+  }
 }
 
 export async function runVerification(): Promise<

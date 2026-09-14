@@ -62,7 +62,7 @@ export {
   OnChainAbiRegistryClient,
   RegistryEntryArchivedError,
 } from "./OnChainAbiRegistryClient.js";
-export type { OnChainAbiRegistryClientConfig } from "./OnChainAbiRegistryClient.js";
+export type { OnChainAbiRegistryClientConfig, SpecRecord } from "./OnChainAbiRegistryClient.js";
 
 export { BundledWellKnownClient } from "./BundledWellKnownClient.js";
 export { ChainedAbiRegistryClient } from "./ChainedAbiRegistryClient.js";
