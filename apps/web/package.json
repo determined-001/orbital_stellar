@@ -24,7 +24,7 @@
     "framer-motion": "^13.2.0",
     "geist": "^1.7.2",
     "gray-matter": "^4.0.3",
-    "marked": "^18.0.11",
+    "marked": "^18.0.12",
     "next": "~16.3.4",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
