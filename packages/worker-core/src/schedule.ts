@@ -1,4 +1,4 @@
-import { parseExpression } from "cron-parser";
+import { CronExpressionParser } from "cron-parser";
 
 export interface IntervalSchedule {
   type: "interval";
@@ -40,7 +40,7 @@ export function nextDue(
   if (schedule.type === "interval") {
     due = new Date(after.getTime() + schedule.intervalMs);
   } else {
-    const interval = parseExpression(schedule.expression, {
+    const interval = CronExpressionParser.parse(schedule.expression, {
       currentDate: after,
       ...(schedule.timezone ? { tz: schedule.timezone } : {}),
     });
@@ -79,7 +79,7 @@ export function dueTimesBetween(
       current = new Date(current.getTime() + schedule.intervalMs);
     }
   } else {
-    const interval = parseExpression(schedule.expression, {
+    const interval = CronExpressionParser.parse(schedule.expression, {
       currentDate: after,
       ...(schedule.timezone ? { tz: schedule.timezone } : {}),
     });
