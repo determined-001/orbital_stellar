@@ -28,13 +28,13 @@
     "@eslint/js": "^10.0.1",
     "@orbital-stellar/abi-registry": "workspace:*",
     "@stellar/stellar-sdk": "^16.2.0",
-    "eslint": "^10.9.0",
+    "eslint": "^10.10.0",
     "eslint-config-prettier": "^10.1.8",
     "husky": "^9.1.7",
-    "lint-staged": "^17.3.0",
+    "lint-staged": "^17.5.1",
     "openapi-typescript": "^7.13.0",
     "prettier": "^3.9.6",
-    "typescript": "^6.0.3",
-    "typescript-eslint": "^8.67.0"
+    "typescript": "^7.0.2",
+    "typescript-eslint": "^8.70.0"
   }
 }
