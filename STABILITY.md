@@ -28,7 +28,9 @@ The public API surface of all five packages:
 - **`@orbital-stellar/abi-registry`** - client interfaces, the `decodedData`
   shape, the schema format, `RegistryPublisher`.
 - **`@orbital-stellar/worker-core`** - `WorkerNotifier`, `WorkerEvent`
-  discriminated union (`worker.fired`, `worker.missed`), worker event shapes.
+  discriminated union (`worker.fired`, `worker.missed`), worker event shapes,
+  `WorkerVerdictRecord`'s JSON shape (schema version 1 - see
+  `WorkerFireVerdictStore` and issue #1050).
 
 **Wire and data contracts are API.** This pledge is not limited to
 TypeScript signatures. The following are all covered, and a change to any of
@@ -41,6 +43,9 @@ TypeScript:
 - Retry semantics
 - The `NormalizedEvent` JSON shape on the wire
 - The `worker.fired` and `worker.missed` JSON shapes on the wire (see `@orbital-stellar/worker-core`)
+- The `WorkerVerdictRecord` JSON shape (`WorkerFireVerdictStore`, issue
+  #1050) - what an operator disputes, a subscriber audits, and a backstop
+  claim is assessed against
 - The cursor format (see [`docs/cursor-format.md`](./docs/cursor-format.md))
 - The registry schema format
 

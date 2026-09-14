@@ -295,6 +295,26 @@ export type {
   WorkerFireVerdictStatus,
   WorkerVerdictWindow,
 } from "./verification/workerFireVerdict.js";
+
+// Verdict persistence (issue #1050).
+export {
+  WorkerFireVerdictStore,
+  WORKER_VERDICT_SCHEMA_VERSION,
+  DuplicateVerdictRecordError,
+  MissingCorrectionReasonError,
+} from "./verification/WorkerFireVerdictStore.js";
+export type {
+  WorkerVerdictRecord,
+  WorkerVerdictSchemaVersion,
+  RecordVerdictInput,
+  WorkerVerdictQueryOptions,
+} from "./verification/WorkerFireVerdictStore.js";
+export { MemoryWorkerVerdictStore } from "./verification/MemoryWorkerVerdictStore.js";
+export {
+  PostgresWorkerVerdictStore,
+  type PgLike as WorkerVerdictPgLike,
+} from "./verification/PostgresWorkerVerdictStore.js";
+export { toBackstopVerdictStore } from "./verification/backstopVerdictStoreAdapter.js";
 // Backstop readiness cost metering (issue #1063).
 export type {
   CostBreakdown,
