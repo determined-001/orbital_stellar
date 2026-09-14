@@ -26,6 +26,13 @@ export type StarterConfig = {
   databaseUrl: string | undefined;
   /** Path used by the file-backed cursor store. */
   cursorFile: string;
+  /** Soroban RPC endpoint, for the demo-emitter/USDC contract subscription (see demoContracts.ts). */
+  sorobanRpcUrl: string;
+};
+
+const DEFAULT_SOROBAN_RPC: Record<Network, string> = {
+  testnet: "https://soroban-testnet.stellar.org",
+  mainnet: "https://mainnet.sorobanrpc.com",
 };
 
 export class MissingConfigError extends Error {
@@ -61,14 +68,17 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): StarterConfig 
     throw new MissingConfigError("PORT", `Expected a positive integer, received "${env.PORT}".`);
   }
 
+  const network: Network = env.STELLAR_NETWORK === "mainnet" ? "mainnet" : "testnet";
+
   return {
-    network: env.STELLAR_NETWORK === "mainnet" ? "mainnet" : "testnet",
+    network,
     addresses,
     webhookUrl: env.WEBHOOK_URL ?? `http://127.0.0.1:${port}/hooks/stellar`,
     webhookSecret,
     port,
     databaseUrl: env.DATABASE_URL,
     cursorFile: env.CURSOR_FILE ?? ".orbital-cursor.json",
+    sorobanRpcUrl: env.SOROBAN_RPC_URL ?? DEFAULT_SOROBAN_RPC[network],
   };
 }
 

@@ -163,7 +163,13 @@ importers:
       '@stellar/stellar-sdk':
         specifier: ^16.1.0
         version: 16.2.0
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
     devDependencies:
+      '@orbital-stellar/abi-registry':
+        specifier: workspace:*
+        version: link:../../packages/abi-registry
       '@orbital-stellar/pulse-core':
         specifier: workspace:*
         version: link:../../packages/pulse-core
@@ -203,7 +209,13 @@ importers:
       pg:
         specifier: ^8.22.0
         version: 8.22.0
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
     devDependencies:
+      '@orbital-stellar/abi-registry':
+        specifier: workspace:*
+        version: link:../../packages/abi-registry
       '@types/express':
         specifier: ^5.0.6
         version: 5.0.6
@@ -228,9 +240,6 @@ importers:
 
   examples/next-starter:
     dependencies:
-      '@orbital-stellar/abi-registry':
-        specifier: ^0.1.0
-        version: 0.1.0
       '@orbital-stellar/pulse-core':
         specifier: ^0.1.0
         version: 0.1.0
@@ -246,6 +255,9 @@ importers:
       react-dom:
         specifier: ^19.2.8
         version: 19.2.8(react@19.2.8)
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
     devDependencies:
       '@types/node':
         specifier: ^26.2.0
@@ -1093,9 +1105,6 @@ packages:
   '@opentelemetry/api@1.9.1':
     resolution: {integrity: sha512-gLyJlPHPZYdAk1JENA9LeHejZe1Ti77/pTeFm/nMXmQH/HFZlcS/O2XJB+L8fkbrNSqhdtlvjBVjxwUYanNH5Q==}
     engines: {node: '>=8.0.0'}
-
-  '@orbital-stellar/abi-registry@0.1.0':
-    resolution: {integrity: sha512-C8X6BG6Ujc3+wjDt/A/uhm9/eK/3bv6FSIDwTI31V5ufzYp9jansnj8BP29V02eQ4y7ZtrgP6061i9DD5Elgug==}
 
   '@orbital-stellar/pulse-core@0.1.0':
     resolution: {integrity: sha512-s0kq8o/ZkjGoSB6ZlaW8+Dunz5wWB3PVFNIUYkTCfXntVm14wI3+0EKkMjufxmNvBYrgHmR/VlW7yn6wYH+Lyw==}
@@ -4211,13 +4220,6 @@ snapshots:
   '@noble/hashes@2.2.0': {}
 
   '@opentelemetry/api@1.9.1': {}
-
-  '@orbital-stellar/abi-registry@0.1.0':
-    dependencies:
-      '@stellar/stellar-sdk': 15.1.0
-    transitivePeerDependencies:
-      - debug
-      - supports-color
 
   '@orbital-stellar/pulse-core@0.1.0':
     dependencies:

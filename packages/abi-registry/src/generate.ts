@@ -210,7 +210,7 @@ function generateFromXdrContractSpec(spec: XdrContractSpec): GeneratedContractAr
   }
   if (entries.length > 0) {
     guards.push(`    default: {`);
-    guards.push(`      const _exhaustive: never = event;`);
+    guards.push(`      const _exhaustive: never = event.topics[0];`);
     guards.push(`      return _exhaustive;`);
     guards.push(`    }`);
   }
@@ -228,7 +228,7 @@ function generateFromXdrContractSpec(spec: XdrContractSpec): GeneratedContractAr
   }
   if (entries.length > 0) {
     testDts.push(`    default: {`);
-    testDts.push(`      const _exhaustive: never = event;`);
+    testDts.push(`      const _exhaustive: never = event.topics[0];`);
     testDts.push(`      return _exhaustive;`);
     testDts.push(`    }`);
   }
@@ -481,7 +481,7 @@ function generateEventDeclarations(events: ReadonlyArray<EventSpec>): {
   }
   if (events.length > 0) {
     guards.push(`    default: {`);
-    guards.push(`      const _exhaustive: never = event;`);
+    guards.push(`      const _exhaustive: never = event.topics[0];`);
     guards.push(`      return _exhaustive;`);
     guards.push(`    }`);
   }
@@ -499,7 +499,7 @@ function generateEventDeclarations(events: ReadonlyArray<EventSpec>): {
   }
   if (events.length > 0) {
     testDts.push(`    default: {`);
-    testDts.push(`      const _exhaustive: never = event;`);
+    testDts.push(`      const _exhaustive: never = event.topics[0];`);
     testDts.push(`      return _exhaustive;`);
     testDts.push(`    }`);
   }
@@ -579,6 +579,17 @@ function generateFromContractSpec(spec: ContractSpec): GeneratedContractArtifact
   declarations.push(...generateFunctionDeclarations(spec.functions));
 
   const events = generateEventDeclarations(spec.events);
+  // The event guards/union below reference `ContractEmittedEvent` - without
+  // this import present whenever a spec declares at least one event, the
+  // generated file doesn't compile. `generateFromXdrContractSpec` (the raw-
+  // XDR sibling of this function) already does this; specs resolved from the
+  // registry, well-known bundle, or WASM discovery all go through *this*
+  // path via `generateContractArtifacts`, so it needs the same import.
+  if (spec.events.length > 0) {
+    declarations.unshift(
+      'import type { ContractEmittedEvent } from "@orbital-stellar/pulse-core";',
+    );
+  }
   declarations.push(...events.declarations);
   schemas.push(...events.schemas);
 

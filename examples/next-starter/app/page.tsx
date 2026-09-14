@@ -1,4 +1,5 @@
 import EventFeed from "./EventFeed";
+import ContractEventFeed from "./ContractEventFeed";
 import { loadConfig, StarterConfigError } from "@/lib/config";
 
 /**
@@ -34,6 +35,7 @@ export default function Home() {
         engine over SSE.
       </p>
       <EventFeed addresses={config.addresses} />
+      <ContractEventFeed />
     </>
   );
 }

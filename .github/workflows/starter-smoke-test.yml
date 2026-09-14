@@ -40,6 +40,23 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: 20
+      - uses: pnpm/action-setup@v6.0.10
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 20
+          cache: pnpm
+
+      # Checked in-workspace, before the npm-only copy below: abi-registry's
+      # npm-published version (0.1.0) predates the per-contract network
+      # override orbital.config.ts here relies on (mixing a testnet contract
+      # with a mainnet well-known one - see #1132), so `orbital codegen
+      # --check` can only run against this repo's own build for now, same
+      # interim compromise as express-starter-smoke/anchor-starter-smoke.
+      - run: pnpm install --frozen-lockfile
+      - name: Build abi-registry
+        run: pnpm tsc -p packages/abi-registry/tsconfig.json
+      - name: Codegen check (issue #908)
+        run: pnpm --filter orbital-next-starter codegen:check
 
       - name: Copy starter outside the workspace
         run: cp -r examples/next-starter "$RUNNER_TEMP/next-starter-smoke"
@@ -87,6 +104,9 @@ jobs:
 
       - name: Typecheck
         run: pnpm --filter orbital-express-starter typecheck
+
+      - name: Codegen check (issue #908)
+        run: pnpm --filter orbital-express-starter codegen:check
 
       - name: Build
         run: pnpm --filter orbital-express-starter build
@@ -138,6 +158,9 @@ jobs:
 
       - name: Typecheck
         run: pnpm --filter orbital-anchor-starter typecheck
+
+      - name: Codegen check (issue #908)
+        run: pnpm --filter orbital-anchor-starter codegen:check
 
       - name: Build
         run: pnpm --filter orbital-anchor-starter build

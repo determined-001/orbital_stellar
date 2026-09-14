@@ -1,0 +1,21 @@
+{
+  "version": "1.0.0",
+  "configHash": "3030c68e07679e9b290781dc479e5540e0825365f8f7735d28b79601989eb631",
+  "contracts": [
+    {
+      "contractId": "CBGPM7FULEXM2WO4USIPC6XDJXKFUODU3EFAOVUZTJRAW4EJ2ZUA7PBJ",
+      "name": "demoEmitter",
+      "specHash": "d8e380d38e63c74aed5cf9cfe9d06042cc4dba3d7dc46bcea750189953e54d7b",
+      "resolvedAt": "2026-09-14T11:37:13.858Z",
+      "source": "wasm"
+    },
+    {
+      "contractId": "CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75",
+      "name": "usdc",
+      "specHash": "7f8872ccbbe87797cbb26420f2d76d124b3eb3288ab969dc55e5771a80b7c508",
+      "resolvedAt": "2026-09-14T11:37:13.860Z",
+      "source": "well-known"
+    }
+  ],
+  "generatedAt": "2026-09-14T11:37:13.860Z"
+}

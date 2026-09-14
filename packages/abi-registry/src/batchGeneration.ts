@@ -8,6 +8,7 @@ import type { ContractSpec } from "./spec.js";
 import { generateContractTypes } from "./generate.js";
 import { discoverContractSpec } from "./discovery/discoverContract.js";
 import { OnChainAbiRegistryClient } from "./OnChainAbiRegistryClient.js";
+import { loadBundledWellKnownSpecs } from "./BundledWellKnownClient.js";
 import { Networks } from "@stellar/stellar-sdk";
 import {
   ORBITAL_REGISTRY_TESTNET_CONTRACT_ID,
@@ -42,7 +43,7 @@ export interface BatchGenerationResult {
     contractId: string;
     name: string;
     outputPath: string;
-    source: "registry" | "wasm";
+    source: "registry" | "well-known" | "wasm";
   }>;
   lockFileUpdated: boolean;
 }
@@ -89,7 +90,7 @@ export async function generateBatchTypes(
   const resolvedContracts: Array<{
     config: ContractConfig;
     spec: ContractSpec;
-    source: "registry" | "wasm";
+    source: "registry" | "well-known" | "wasm";
   }> = [];
 
   // Resolve all contract specs with detailed error context
@@ -207,7 +208,7 @@ export async function checkForDrift(
     const resolvedContracts: Array<{
       config: ContractConfig;
       spec: ContractSpec;
-      source: "registry" | "wasm";
+      source: "registry" | "well-known" | "wasm";
     }> = [];
 
     for (let i = 0; i < config.contracts.length; i++) {
@@ -295,9 +296,9 @@ function validateBatchConfig(config: OrbitalConfig, configDir: string): void {
 async function resolveContractSpec(
   config: OrbitalConfig,
   contractConfig: ContractConfig,
-): Promise<{ spec: ContractSpec; source: "registry" | "wasm" }> {
-  const network = config.network || "testnet";
-  const rpcUrl = config.rpcUrl || getDefaultRpcUrl(network);
+): Promise<{ spec: ContractSpec; source: "registry" | "well-known" | "wasm" }> {
+  const network = contractConfig.network || config.network || "testnet";
+  const rpcUrl = contractConfig.rpcUrl || config.rpcUrl || getDefaultRpcUrl(network);
   const networkPassphrase = getNetworkPassphrase(network);
 
   const registryContractId = config.registryContractId || ORBITAL_REGISTRY_TESTNET_CONTRACT_ID;
@@ -312,8 +313,17 @@ async function resolveContractSpec(
     );
   }
 
+  // The default registry (ORBITAL_REGISTRY_TESTNET_CONTRACT_ID) is deployed on
+  // testnet only. Trying it for a contract resolved on another network would
+  // just be a testnet lookup for a contract that was never published there -
+  // an always-fails detour, not a real fallback path. An explicit
+  // `registryContractId` override is assumed to actually live on `network`
+  // and is still tried.
+  const registryApplies =
+    registryContractId && (network === "testnet" || !!config.registryContractId);
+
   // Try registry first if configured
-  if (registryContractId) {
+  if (registryApplies) {
     try {
       const registryClient = new OnChainAbiRegistryClient({
         contractId: registryContractId,
@@ -334,6 +344,17 @@ async function resolveContractSpec(
         }`,
       );
     }
+  }
+
+  // Fall back to this repo's bundled well-known specs (USDC, EURC, AQUA, the
+  // native asset wrapper). These matter as a distinct step, not a registry
+  // substitute: a Stellar Asset Contract's WASM is the protocol's built-in
+  // asset wrapper, not a compiled Rust crate, so it carries no embedded
+  // `contractspecv0` section for WASM discovery below to find - a SAC can
+  // only ever resolve via the registry or here.
+  const bundled = loadBundledWellKnownSpecs().get(contractConfig.contractId);
+  if (bundled) {
+    return { spec: bundled, source: "well-known" };
   }
 
   // Fall back to WASM discovery

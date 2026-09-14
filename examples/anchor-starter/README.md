@@ -35,6 +35,15 @@ SEP, not a bug here. (As of this writing, the default reference anchor's
 against it will report that and stop; the code path is spec-correct and will
 complete against any anchor that has SEP-31 assets configured.)
 
+```bash
+pnpm dev balance GDESTINATION...
+```
+
+Reads a Stellar account's mainnet USDC balance via a read-only contract
+simulation - no anchor session, no `STELLAR_SECRET`, no transaction ever
+submitted. Real usage for a SEP-31 sender: confirm a cross-border send
+actually landed by checking the recipient's balance before and after.
+
 ## How it fits together
 
 | Piece | File | What it does |
@@ -42,7 +51,8 @@ complete against any anchor that has SEP-31 assets configured.)
 | Config | `src/config.ts` | Validates env at startup; refuses to boot without `STELLAR_SECRET` |
 | Connect | `src/anchor.ts` | SEP-1 discovery + SEP-10 authentication in one call, returns an `AnchorSession` |
 | Commands | `src/commands.ts` | `deposit()` (SEP-24 interactive + poll) and `send()` (SEP-31) |
-| CLI | `src/index.ts` | Argument parsing, dispatches to the two commands |
+| Balance | `src/balance.ts` | `checkUsdcBalance()` - mainnet USDC, typed with the generated `usdc.ts` |
+| CLI | `src/index.ts` | Argument parsing, dispatches to `deposit`/`send`/`balance` |
 
 ## Getting a funded testnet account
 
@@ -52,6 +62,28 @@ stellar keys show anchor-demo
 ```
 
 Use the printed secret key (`S...`) as `STELLAR_SECRET`.
+
+## Generated contract types
+
+`src/generated/` is `orbital codegen` output (`orbital.config.ts`), committed
+rather than built on the fly: typed params/returns, zod schemas, and event
+type guards for the deployed testnet demo-emitter contract and mainnet USDC
+(a well-known Stellar Asset Contract, resolved from this repo's bundled
+specs rather than on-chain WASM discovery — see the config's comments).
+`balance` above uses `usdc.ts`'s `BalanceParams`/`BalanceReturns` to type a
+real simulated `balance()` call.
+
+Regenerate after either contract's spec changes:
+
+```bash
+pnpm --filter orbital-anchor-starter codegen
+```
+
+Check for drift without writing (what CI runs):
+
+```bash
+pnpm --filter orbital-anchor-starter codegen:check
+```
 
 ## Extending it
 

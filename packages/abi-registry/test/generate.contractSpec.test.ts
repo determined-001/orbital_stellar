@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { writeFileSync, mkdtempSync } from "node:fs";
+import { writeFileSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
@@ -166,13 +166,17 @@ describe("generateContractArtifacts - canonical ContractSpec path", () => {
     const spec = wellKnownToContractSpec(USDC_RAW);
     // declarations only - schemas import zod, which isn't resolvable from a
     // bare temp dir with no node_modules; the interfaces/types are the
-    // hand-generated, error-prone half anyway.
+    // hand-generated, error-prone half anyway. Nothing in `declarations`
+    // itself references ContractEmittedEvent (only `guards` does, covered by
+    // the test below), so that import is dropped rather than stubbed here.
     const { declarations } = generateContractArtifacts(spec);
-    const withoutZodImport = declarations.replace('import { z } from "zod";', "");
+    const withoutImports = declarations
+      .replace('import { z } from "zod";', "")
+      .replace('import type { ContractEmittedEvent } from "@orbital-stellar/pulse-core";', "");
 
     const dir = mkdtempSync(join(tmpdir(), "orbital-typegen-"));
     const file = join(dir, "generated.ts");
-    writeFileSync(file, withoutZodImport, "utf-8");
+    writeFileSync(file, withoutImports, "utf-8");
 
     // Compiles with no output and no thrown error == no syntax/type errors.
     try {
@@ -198,6 +202,63 @@ describe("generateContractArtifacts - canonical ContractSpec path", () => {
     } catch (err) {
       const { stdout, stderr } = err as { stdout?: string; stderr?: string };
       throw new Error(`tsc failed:\n${stdout ?? ""}\n${stderr ?? ""}`, { cause: err });
+    }
+  }, 60_000);
+
+  it("the generated event guards + exhaustiveness check are syntactically valid, standalone-compilable TypeScript", () => {
+    // Regression test for issue #908: nothing previously compiled `guards`/
+    // `testDts` (the test above explicitly excludes them as "the interfaces/
+    // types are the hand-generated, error-prone half anyway"), so a missing
+    // `ContractEmittedEvent` import and a broken exhaustiveness-check pattern
+    // both shipped unnoticed until a real starter actually tried to build
+    // against generated event guards.
+    const spec = wellKnownToContractSpec(USDC_RAW);
+    const { declarations, schemas, guards } = generateContractArtifacts(spec);
+    const withoutPulseCoreImport = declarations.replace(
+      'import type { ContractEmittedEvent } from "@orbital-stellar/pulse-core";',
+      // Stands in for @orbital-stellar/pulse-core: abi-registry doesn't (and
+      // shouldn't) depend on its own downstream consumer just to compile a
+      // test fixture - structurally compatible with the real
+      // ContractEmittedEvent is all `guards` actually needs.
+      "type ContractEmittedEvent = { topics: string[]; decodedData: unknown };",
+    );
+
+    // Under node_modules (not system /tmp) so real `zod` resolves via this
+    // package's own dependency - `guards` calls `.safeParse()` on schemas
+    // that import it for real, and a hand-written zod stub would only prove
+    // the stub compiles, not that the generated code actually matches zod's
+    // real API.
+    const dir = mkdtempSync(join(process.cwd(), "node_modules", ".orbital-typegen-guards-"));
+    const file = join(dir, "generated.ts");
+    writeFileSync(file, [withoutPulseCoreImport, schemas, guards ?? ""].join("\n"), "utf-8");
+
+    try {
+      execFileSync(
+        process.execPath,
+        [
+          require.resolve("typescript/lib/tsc.js"),
+          "--noEmit",
+          "--strict",
+          "--target",
+          "ES2022",
+          "--module",
+          "NodeNext",
+          "--moduleResolution",
+          "NodeNext",
+          // Unlike the declarations-only test above, this fixture lives under
+          // packages/abi-registry/node_modules/ (so real `zod` resolves) -
+          // TS's config search walks up from there and finds this package's
+          // own tsconfig.json otherwise (TS5112).
+          "--ignoreConfig",
+          file,
+        ],
+        { stdio: "pipe", encoding: "utf-8", cwd: dir },
+      );
+    } catch (err) {
+      const { stdout, stderr } = err as { stdout?: string; stderr?: string };
+      throw new Error(`tsc failed:\n${stdout ?? ""}\n${stderr ?? ""}`, { cause: err });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
     }
   }, 60_000);
 });

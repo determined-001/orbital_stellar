@@ -76,7 +76,7 @@ export function createLockFile(
   contracts: Array<{
     config: { contractId: string; name?: string };
     spec: ContractSpec;
-    source: "registry" | "wasm";
+    source: "registry" | "well-known" | "wasm";
   }>,
 ): LockFile {
   const lockContracts: LockFileContract[] = contracts.map(({ config, spec, source }) => ({
@@ -123,7 +123,7 @@ export function detectDrift(
   contracts: Array<{
     config: { contractId: string; name?: string };
     spec: ContractSpec;
-    source: "registry" | "wasm";
+    source: "registry" | "well-known" | "wasm";
   }>,
 ): {
   hasChanges: boolean;
@@ -280,7 +280,9 @@ function isLockFile(value: unknown): value is LockFile {
         typeof contract.name === "string" &&
         typeof contract.specHash === "string" &&
         typeof contract.resolvedAt === "string" &&
-        (contract.source === "registry" || contract.source === "wasm"),
+        (contract.source === "registry" ||
+          contract.source === "well-known" ||
+          contract.source === "wasm"),
     )
   );
 }

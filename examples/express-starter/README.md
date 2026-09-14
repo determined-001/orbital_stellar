@@ -118,6 +118,29 @@ through. It uses `express-rate-limit`, whose counters are in-process by default;
 more than one replica, give it a shared store or each replica enforces its own
 budget.
 
+## Generated contract types
+
+`src/generated/` is `orbital codegen` output (`orbital.config.ts`), committed
+rather than built on the fly: typed params/returns, zod schemas, and event
+type guards for the deployed testnet demo-emitter contract and mainnet USDC
+(a well-known Stellar Asset Contract, resolved from this repo's bundled
+specs rather than on-chain WASM discovery — see the config's comments).
+`src/demoContracts.ts` uses the generated guards for real: `startService`
+subscribes to both contracts and logs a classified line — `isPingEvent`,
+`isTransferEvent`, `isMintEvent`, `isBurnEvent` — whenever one matches.
+
+Regenerate after either contract's spec changes:
+
+```bash
+pnpm --filter orbital-express-starter codegen
+```
+
+Check for drift without writing (what CI runs):
+
+```bash
+pnpm --filter orbital-express-starter codegen:check
+```
+
 ## Tests
 
 ```bash

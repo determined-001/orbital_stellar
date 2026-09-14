@@ -11,6 +11,18 @@ export interface ContractConfig {
   contractId: string;
   /** Optional custom name for the generated types (defaults to contractId) */
   name?: string;
+  /**
+   * Per-contract network override. A config's top-level `network`/`rpcUrl`
+   * apply to every contract that doesn't set its own - which is what lets
+   * one `orbital.config.ts` target a testnet contract (e.g. a deployed
+   * demo/dev contract) alongside a mainnet one (e.g. a well-known asset)
+   * in the same generation run, each resolved against its actual network
+   * instead of both being forced onto whichever network the config
+   * defaults to.
+   */
+  network?: "mainnet" | "testnet" | "futurenet";
+  /** Per-contract RPC URL override. See `network` above. */
+  rpcUrl?: string;
 }
 
 export interface OrbitalConfig {
@@ -49,7 +61,7 @@ export interface LockFileContract {
   /** Timestamp when this was last resolved */
   resolvedAt: string;
   /** Source of the spec (registry|wasm) */
-  source: "registry" | "wasm";
+  source: "registry" | "well-known" | "wasm";
 }
 
 export interface LockFile {

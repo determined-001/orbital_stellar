@@ -43,6 +43,34 @@ Set `STELLAR_ADDRESSES` in the project's environment variables. Note that
 for production, swap `FileCursorStore` in `lib/engine.ts` for a durable
 `CursorStore` (Postgres and Redis implementations ship in `@orbital-stellar/pulse-core`).
 
+## Generated contract types
+
+`lib/generated/` is `orbital codegen` output (`orbital.config.ts`), committed
+rather than built on the fly: typed params/returns, zod schemas, and event
+type guards for the deployed testnet demo-emitter contract and mainnet USDC
+(a well-known Stellar Asset Contract, resolved from this repo's bundled
+specs rather than on-chain WASM discovery — see the config's comments).
+`app/api/contract-events/route.ts` subscribes to both and streams a
+classified line — via `lib/demoContracts.ts`'s `isPingEvent`/
+`isTransferEvent`/`isMintEvent`/`isBurnEvent` — to the "Demo-emitter / USDC
+events" feed on the home page.
+
+`@orbital-stellar/abi-registry` isn't a dependency of this starter: this
+starter installs only from npm (its `package.json` dependencies are real
+published semver ranges, not workspace links), and the last published
+abi-registry predates the mixed-network config this relies on. Regeneration
+instead runs this repo's own workspace build directly by relative path:
+
+```bash
+pnpm --filter orbital-next-starter codegen
+```
+
+Check for drift without writing (what CI runs):
+
+```bash
+pnpm --filter orbital-next-starter codegen:check
+```
+
 ## Extending it
 
 `lib/config.ts` already reads an optional `DEMO_CONTRACT_ID` and rejects the

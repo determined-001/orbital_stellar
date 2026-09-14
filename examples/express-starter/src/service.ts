@@ -1,8 +1,18 @@
-import { EventEngine, type CursorStoreLike } from "@orbital-stellar/pulse-core";
+import {
+  EventEngine,
+  toContractAddress,
+  type ContractEmittedEvent,
+  type CursorStoreLike,
+} from "@orbital-stellar/pulse-core";
 import { WebhookDelivery } from "@orbital-stellar/pulse-webhooks";
 import type { Server } from "node:http";
 import { createReceiver } from "./receiver.js";
 import { createCursorStore, type StarterConfig } from "./config.js";
+import {
+  describeContractEvent,
+  DEMO_EMITTER_CONTRACT_ID,
+  USDC_CONTRACT_ID,
+} from "./demoContracts.js";
 
 /**
  * Wires the whole composition together and, importantly, takes it apart again.
@@ -39,6 +49,7 @@ export async function startService(config: StarterConfig): Promise<StarterServic
   const engine = new EventEngine({
     network: config.network,
     cursorStore: store as CursorStoreLike,
+    soroban: { rpcUrl: config.sorobanRpcUrl },
   });
 
   const deliveries: WebhookDelivery[] = [];
@@ -52,6 +63,24 @@ export async function startService(config: StarterConfig): Promise<StarterServic
       }),
     );
   }
+
+  // Demonstrates the generated types from orbital.config.ts (issue #908):
+  // real contract subscriptions, classified with the real generated guards.
+  // USDC is mainnet-only, so on the default testnet config only demo-emitter
+  // pings actually arrive here - describeContractEvent's USDC branches still
+  // run for real against every event, they just won't match one from a
+  // contract that isn't live on this network.
+  const contractWatcher = engine.subscribeContract("demo-contracts", {
+    filters: [
+      { contractIds: [toContractAddress(DEMO_EMITTER_CONTRACT_ID), toContractAddress(USDC_CONTRACT_ID)] },
+    ],
+  });
+  contractWatcher.on("contract.emitted", (event: ContractEmittedEvent) => {
+    const description = describeContractEvent(event);
+    if (description) {
+      console.log(`[demo-contracts] ${description}`);
+    }
+  });
 
   engine.start();
   console.log(

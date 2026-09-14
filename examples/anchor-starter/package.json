@@ -15,14 +15,18 @@
     "typecheck": "tsc --noEmit -p tsconfig.typecheck.json",
     "start": "node dist/index.js",
     "dev": "tsx src/index.ts",
+    "codegen": "orbital-codegen",
+    "codegen:check": "orbital-codegen --check",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
     "@orbital-stellar/anchor-sdk": "workspace:*",
-    "@stellar/stellar-sdk": "^16.1.0"
+    "@stellar/stellar-sdk": "^16.1.0",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@orbital-stellar/abi-registry": "workspace:*",
     "@orbital-stellar/pulse-core": "workspace:*",
     "@types/node": "^26.2.0",
     "@vitest/coverage-v8": "^4.1.10",
