@@ -282,6 +282,19 @@ export type {
 } from "./triggers/eventTrigger.js";
 export { TRADE_SIGNAL_REJECTION, compileEventCondition } from "./triggers/predicate.js";
 export type { CompileResult, EventConditionSpec, EventPredicate } from "./triggers/predicate.js";
+
+// Chain-derived worker verification (issue #1049).
+export {
+  WorkerVerificationEngine,
+  ArrayLedgerCloseTimeIndex,
+  TriggerVerificationNotImplementedError,
+} from "./verification/WorkerVerificationEngine.js";
+export type { LedgerCloseTimeIndex } from "./verification/WorkerVerificationEngine.js";
+export type {
+  WorkerFireVerdict,
+  WorkerFireVerdictStatus,
+  WorkerVerdictWindow,
+} from "./verification/workerFireVerdict.js";
 // Backstop readiness cost metering (issue #1063).
 export type {
   CostBreakdown,
