@@ -24,7 +24,7 @@
     "@orbital-stellar/pulse-core": "workspace:*",
     "@orbital-stellar/pulse-webhooks": "workspace:*",
     "express": "^5.2.0",
-    "express-rate-limit": "^8.6.2",
+    "express-rate-limit": "^8.7.0",
     "pg": "^8.22.0",
     "zod": "^4.4.3"
   },
