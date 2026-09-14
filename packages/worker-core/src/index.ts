@@ -287,14 +287,40 @@ export type { CompileResult, EventConditionSpec, EventPredicate } from "./trigge
 export {
   WorkerVerificationEngine,
   ArrayLedgerCloseTimeIndex,
-  TriggerVerificationNotImplementedError,
 } from "./verification/WorkerVerificationEngine.js";
 export type { LedgerCloseTimeIndex } from "./verification/WorkerVerificationEngine.js";
+export { EXCLUDED_FROM_SCORING } from "./verification/workerFireVerdict.js";
 export type {
   WorkerFireVerdict,
   WorkerFireVerdictStatus,
   WorkerVerdictWindow,
+  WorkerVerdictReason,
 } from "./verification/workerFireVerdict.js";
+
+// Off-chain-computation trigger class (issue #1061).
+export {
+  ComputationTriggerPlanner,
+  registerComputationTrigger,
+} from "./triggers/computationTrigger.js";
+export type {
+  ComputationTriggerDefinition,
+  ComputationConditionOccurrence,
+  ComputationWindow,
+  ComputationUnverifiableResult,
+  ComputationPlanResult,
+  RegisterComputationTriggerResult,
+} from "./triggers/computationTrigger.js";
+export {
+  signComputationAttestation,
+  verifyComputationAttestation,
+} from "./triggers/attestation.js";
+export type {
+  ComputationAttestation,
+  ComputationAttestationEnvelope,
+  ComputationAttestationInvalidReason,
+  VerifyComputationAttestationResult,
+  VerifyComputationAttestationOptions,
+} from "./triggers/attestation.js";
 
 // Verdict persistence (issue #1050).
 export {

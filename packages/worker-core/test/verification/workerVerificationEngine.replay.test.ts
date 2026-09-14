@@ -143,7 +143,7 @@ describe("WorkerVerificationEngine replay determinism", () => {
     expect(fromDuplicated).toHaveLength(1);
   });
 
-  it("is idempotent when replayed against a growing range (checking not-due, then missed, produces the same window identity)", () => {
+  it("is idempotent when replayed against a growing range (checking pending, then missed, produces the same window identity)", () => {
     const engine = new WorkerVerificationEngine();
     const conditionEvents = [emitted(100, "ev-1")];
     const invocationEvents: NormalizedEvent[] = [];
@@ -164,7 +164,38 @@ describe("WorkerVerificationEngine replay determinism", () => {
     );
 
     expect(early[0]!.windowId).toBe(late[0]!.windowId);
-    expect(early[0]!.status).toBe("not-due");
+    expect(early[0]!.status).toBe("pending");
     expect(late[0]!.status).toBe("missed");
+  });
+
+  it("a verdict computed once the horizon has cleared never changes on a later replay with a larger toLedger (§5.2)", () => {
+    const engine = new WorkerVerificationEngine();
+    const conditionEvents = [emitted(100, "ev-1")];
+    const invocationEvents = [invoked(105, "tx-a")];
+
+    // deadlineLedger is 110. toLedger=115 already clears it (default horizon 0),
+    // so this verdict is finalized, not pending.
+    const finalized = engine.verifyEventTrigger(
+      definition,
+      planner(),
+      conditionEvents,
+      invocationEvents,
+      115,
+    );
+    expect(finalized[0]!.status).toBe("fired");
+
+    // Replaying with a much larger toLedger - as a real verification run
+    // would, days later - must reproduce the exact same verdict for this
+    // window. This is the property `not-due`-as-a-placeholder violated
+    // before `pending` existed: a verdict computed once must never need to
+    // un-say itself later.
+    const replayed = engine.verifyEventTrigger(
+      definition,
+      planner(),
+      conditionEvents,
+      invocationEvents,
+      10_000,
+    );
+    expect(replayed[0]).toEqual(finalized[0]);
   });
 });

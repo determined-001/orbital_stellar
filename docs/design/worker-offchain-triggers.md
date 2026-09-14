@@ -7,7 +7,25 @@ finishes an analysis and a position must change.
 The issue is labelled `needs-design` and `type:security`, and its implementation
 notes say the label clears on this note: *"Decide the attestation model before
 writing code."* It is also the file the issue's own affected-files list names.
-No code is written here, and `packages/worker-core` is not scaffolded.
+
+**Implemented**, per §3's proposal: `AttestationEnvelope`/`signAttestation`/
+`verifyAttestation`/`canonicalizeAttestation` in
+`packages/abi-registry/src/attestation.ts` are now generic over the payload
+type (constrained to `{ attester: string }`), and
+`packages/worker-core/src/triggers/attestation.ts` defines
+`ComputationAttestation` (§3.1) and `verifyComputationAttestation` (the
+property-1/2/3 checks from §2, plus expiry) on top of that generic envelope
+- one signing concept, not two, per the issue's own instruction. `§3`'s
+open question of whether the envelope should move to `pulse-core` is not
+resolved here; it stays in `abi-registry` for now. `computationTrigger.ts`
+implements `ComputationTriggerPlanner` (§5's `fired`/`late`/`missed`/
+`unverifiable` mapping, `registerComputationTrigger`'s §8 gates) and
+`WorkerVerificationEngine.verifyComputationTrigger` (issue #1049) wires it
+in. Not implemented: the retrieval protocol for the reference form (§4,
+explicitly deferred by §9), quorum semantics beyond "any of the declared
+sources" (§9, T4), and detecting a fully-withheld window with zero on-chain
+evidence at all (T5 - needs an independent expectation source this engine
+has no access to, by design).
 
 This class is where verifiability gets hard, because **the condition is not on
 chain**. Everything below follows from taking that seriously rather than

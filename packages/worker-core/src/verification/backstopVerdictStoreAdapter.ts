@@ -8,12 +8,31 @@
  */
 import type {
   WorkerVerdictStore as BackstopWorkerVerdictStore,
+  WorkerWindowStatus,
   WorkerWindowVerdict,
 } from "../backstop/slo.js";
 import type { WorkerFireVerdictStore } from "./WorkerFireVerdictStore.js";
 import type { WorkerVerdictRecord } from "./WorkerFireVerdictStore.js";
 
-function toWindowVerdict(record: WorkerVerdictRecord): WorkerWindowVerdict {
+/**
+ * `WorkerWindowStatus` (backstop/slo.ts) predates this module's six-value
+ * taxonomy and only has room for the four that were scoreable when it was
+ * written. `pending` and `unverifiable` are excluded from scoring by
+ * definition (`EXCLUDED_FROM_SCORING` in `workerFireVerdict.ts`) - a
+ * backstop evaluator has nothing useful to do with them, so they are
+ * filtered out here rather than forced into a status the SLO evaluator
+ * would misinterpret.
+ */
+function isBackstopScoreable(
+  record: WorkerVerdictRecord,
+): record is WorkerVerdictRecord & { status: WorkerWindowStatus } {
+  const { status } = record;
+  return status === "fired" || status === "missed" || status === "late" || status === "not-due";
+}
+
+function toWindowVerdict(
+  record: WorkerVerdictRecord & { status: WorkerWindowStatus },
+): WorkerWindowVerdict {
   return {
     workerId: record.workerId,
     operatorId: record.operator,
@@ -53,7 +72,7 @@ export function toBackstopVerdictStore(
     },
     async getByOperator(operatorId: string): Promise<WorkerWindowVerdict[]> {
       const records = await store.queryByOperator(operatorId);
-      return records.map(toWindowVerdict);
+      return records.filter(isBackstopScoreable).map(toWindowVerdict);
     },
   };
 }

@@ -4,7 +4,7 @@ import {
   type WorkerVerdictRecord,
   type WorkerVerdictQueryOptions,
 } from "./WorkerFireVerdictStore.js";
-import type { WorkerFireVerdictStatus } from "./workerFireVerdict.js";
+import type { WorkerFireVerdictStatus, WorkerVerdictReason } from "./workerFireVerdict.js";
 
 /** Minimal interface required from a PostgreSQL client. Compatible with `pg` Pool or Client. */
 export interface PgLike {
@@ -23,6 +23,7 @@ type PgRow = {
   condition_ledger: string | number;
   deadline_ledger: string | number;
   status: WorkerFireVerdictStatus;
+  reason: WorkerVerdictReason | null;
   invocation_ledger: string | number | null;
   invocation_tx_hash: string | null;
   latency_ledgers: string | number | null;
@@ -42,6 +43,7 @@ function rowToRecord(row: PgRow): WorkerVerdictRecord {
     conditionLedger: Number(row.condition_ledger),
     deadlineLedger: Number(row.deadline_ledger),
     status: row.status,
+    ...(row.reason !== null ? { reason: row.reason } : {}),
     ...(row.invocation_ledger !== null ? { invocationLedger: Number(row.invocation_ledger) } : {}),
     ...(row.invocation_tx_hash !== null ? { invocationTxHash: row.invocation_tx_hash } : {}),
     ...(row.latency_ledgers !== null ? { latencyLedgers: Number(row.latency_ledgers) } : {}),
@@ -72,10 +74,10 @@ export class PostgresWorkerVerdictStore extends WorkerFireVerdictStore {
       await this.#pg.query(
         `INSERT INTO worker_verdicts
            (record_id, schema_version, window_id, worker_id, operator,
-            condition_ledger, deadline_ledger, status, invocation_ledger,
+            condition_ledger, deadline_ledger, status, reason, invocation_ledger,
             invocation_tx_hash, latency_ledgers, engine_version, recorded_at,
             supersedes, correction_reason)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
         [
           record.recordId,
           record.schemaVersion,
@@ -85,6 +87,7 @@ export class PostgresWorkerVerdictStore extends WorkerFireVerdictStore {
           record.conditionLedger,
           record.deadlineLedger,
           record.status,
+          record.reason ?? null,
           record.invocationLedger ?? null,
           record.invocationTxHash ?? null,
           record.latencyLedgers ?? null,

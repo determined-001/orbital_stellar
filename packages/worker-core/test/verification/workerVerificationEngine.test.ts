@@ -5,7 +5,6 @@ import type { WorkerDefinition } from "../../src/types.js";
 import {
   WorkerVerificationEngine,
   ArrayLedgerCloseTimeIndex,
-  TriggerVerificationNotImplementedError,
 } from "../../src/verification/WorkerVerificationEngine.js";
 
 const TARGET_CONTRACT = "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC";
@@ -165,7 +164,7 @@ describe("WorkerVerificationEngine - event-triggered workers", () => {
     expect(verdicts[0].invocationLedger).toBeUndefined();
   });
 
-  it("verdict: not-due - the deadline has not been reached within the queried range yet", () => {
+  it("verdict: pending - the deadline has not been reached within the queried range yet", () => {
     const engine = new WorkerVerificationEngine();
     const conditionEvents = [emitted({ ledger: 100 })];
     const invocationEvents: NormalizedEvent[] = [];
@@ -179,25 +178,46 @@ describe("WorkerVerificationEngine - event-triggered workers", () => {
       105,
     );
 
-    expect(verdicts[0]).toMatchObject({ status: "not-due" });
+    expect(verdicts[0]).toMatchObject({ status: "pending" });
   });
 
-  it("a rejected early call resolves to not-due, never missed (an unsuccessful invocation is not a match)", () => {
+  it("verdict: pending - the deadline has just cleared but is still within the verification horizon", () => {
     const engine = new WorkerVerificationEngine();
     const conditionEvents = [emitted({ ledger: 100 })];
-    // A failed attempt before the condition even landed - a contract legitimately
-    // rejecting a too-early call. It must never count as evidence of anything.
-    const invocationEvents = [invoked({ ledger: 95, inSuccessfulContractCall: false })];
+    const invocationEvents: NormalizedEvent[] = [];
+
+    // deadlineLedger is 110; toLedger is 115, past the deadline, but the
+    // horizon (10) means anything within 10 ledgers of the deadline stays
+    // pending rather than resolving to missed.
+    const verdicts = engine.verifyEventTrigger(
+      eventDefinition(),
+      planner(),
+      conditionEvents,
+      invocationEvents,
+      115,
+      10,
+    );
+
+    expect(verdicts[0]).toMatchObject({ status: "pending" });
+  });
+
+  it("verdict: not-due (reason: rejected-early-call) - a rejected invocation attempt is evidence of liveness, not a miss", () => {
+    const engine = new WorkerVerificationEngine();
+    const conditionEvents = [emitted({ ledger: 100 })];
+    // A failed attempt within the window - a contract legitimately rejecting
+    // a too-early call. Past the deadline (toLedger 200), with no successful
+    // invocation ever landing, this must resolve to not-due, not missed.
+    const invocationEvents = [invoked({ ledger: 103, inSuccessfulContractCall: false })];
 
     const verdicts = engine.verifyEventTrigger(
       eventDefinition(),
       planner(),
       conditionEvents,
       invocationEvents,
-      105,
+      200,
     );
 
-    expect(verdicts[0].status).toBe("not-due");
+    expect(verdicts[0]).toMatchObject({ status: "not-due", reason: "rejected-early-call" });
   });
 
   it("ignores an invocation of a different contract or function", () => {
@@ -279,7 +299,7 @@ describe("WorkerVerificationEngine - time-triggered workers", () => {
 });
 
 describe("WorkerVerificationEngine - computation-triggered workers", () => {
-  it("throws TriggerVerificationNotImplementedError, matching the codebase's present-as-type pattern", () => {
+  it("throws for a mismatched trigger kind", () => {
     const engine = new WorkerVerificationEngine();
     const definition: WorkerDefinition = {
       id: "w1",
@@ -288,11 +308,17 @@ describe("WorkerVerificationEngine - computation-triggered workers", () => {
       functionName: "disburse",
       buildArgs: () => [],
       network: "testnet",
-      trigger: { kind: "computation", description: "oracle resolution" },
+      trigger: { kind: "time", schedule: { kind: "interval", everyMs: 1000, timezone: "UTC" } },
     };
 
-    expect(() => engine.verifyComputationTrigger(definition)).toThrow(
-      TriggerVerificationNotImplementedError,
+    // @ts-expect-error - deliberately passing null/[] for the computation-specific
+    // params this branch never reaches, to isolate the kind guard itself.
+    expect(() => engine.verifyComputationTrigger(definition, null, [], [], 0)).toThrow(
+      /verifyComputationTrigger called with a "time" trigger/,
     );
   });
 });
+
+// Full fired/late/missed/unverifiable coverage for computation-triggered
+// workers lives in computationTrigger.test.ts, alongside the planner and
+// attestation-verification tests it depends on.

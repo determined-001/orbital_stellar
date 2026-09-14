@@ -4,16 +4,22 @@
  * by X". This module only concerns itself with the signature envelope -
  * proving who signed a given document and that it hasn't been tampered with
  * since. The document shape itself (`AttestationDocument`) is #20's
- * deliverable, imported from `types.ts`; everything here is shape-agnostic
- * (it only reads `attester`, `executableKind`, and `wasmHash` directly, and
- * otherwise treats the document as an opaque value to canonicalize/sign/verify).
+ * deliverable, imported from `types.ts`.
+ *
+ * Generic over the payload type (constrained only to carry `attester`) so
+ * the same signing/verification/canonicalization is reusable for a
+ * differently-shaped document - `worker-core`'s off-chain-computation
+ * trigger attestations (issue #1061) do exactly this, per that issue's own
+ * instruction to reuse this module's signature model rather than invent a
+ * second one. `T`'s default of `AttestationDocument` keeps every existing
+ * call site source-compatible without specifying a type argument.
  */
 import { Keypair, StrKey } from "@stellar/stellar-sdk";
 import type { AttestationDocument } from "./types.js";
 
-/** An {@link AttestationDocument} bundled with proof of who signed it. */
-export interface AttestationEnvelope {
-  payload: AttestationDocument;
+/** A signed document bundled with proof of who signed it. */
+export interface AttestationEnvelope<T extends { attester: string } = AttestationDocument> {
+  payload: T;
   /** The signer's Stellar account address (`G...`). */
   publicKey: string;
   /** Base64-encoded ed25519 signature over {@link canonicalizeAttestation}'s output for `payload`. */
@@ -27,7 +33,7 @@ export interface AttestationEnvelope {
  * Mirrors {@link canonicalizeSpec} in `spec.ts` for the same reason: a
  * verifier must be able to re-derive the exact bytes that were signed.
  */
-export function canonicalizeAttestation(document: AttestationDocument): string {
+export function canonicalizeAttestation<T extends { attester: string }>(document: T): string {
   return JSON.stringify(sortKeysDeep(document));
 }
 
@@ -70,10 +76,10 @@ export class AttestationSigningError extends Error {
  * @throws {AttestationSigningError} if `attesterSecret` isn't a valid Stellar
  *   secret key, or if it doesn't correspond to `document.attester`.
  */
-export function signAttestation(
-  document: AttestationDocument,
+export function signAttestation<T extends { attester: string }>(
+  document: T,
   attesterSecret: string,
-): AttestationEnvelope {
+): AttestationEnvelope<T> {
   let keypair: Keypair;
   try {
     keypair = Keypair.fromSecret(attesterSecret);
@@ -126,8 +132,8 @@ export type VerifyAttestationOptions = {
  * Rules are checked in the above order and verification short-circuits on
  * the first failure.
  */
-export function verifyAttestation(
-  envelope: AttestationEnvelope,
+export function verifyAttestation<T extends { attester: string }>(
+  envelope: AttestationEnvelope<T>,
   options: VerifyAttestationOptions = {},
 ): AttestationVerdict {
   if (!StrKey.isValidEd25519PublicKey(envelope.publicKey)) {
@@ -165,16 +171,21 @@ export function verifyAttestation(
   }
 
   if (options.expectedWasmHash !== undefined) {
-    if (envelope.payload.executableKind !== "wasm" || envelope.payload.wasmHash === undefined) {
+    // Only meaningful for the original AttestationDocument shape - a
+    // differently-shaped payload (e.g. a computation-trigger attestation)
+    // has no executableKind/wasmHash to check, so this option is a no-op
+    // for it rather than a type error, checked structurally at runtime.
+    const payload = envelope.payload as { executableKind?: unknown; wasmHash?: string };
+    if (payload.executableKind !== "wasm" || payload.wasmHash === undefined) {
       return {
         status: "invalid",
-        reason: `options.expectedWasmHash was provided, but payload.executableKind is "${envelope.payload.executableKind}" - only a "wasm" attestation has a wasmHash to verify against`,
+        reason: `options.expectedWasmHash was provided, but payload.executableKind is "${String(payload.executableKind)}" - only a "wasm" attestation has a wasmHash to verify against`,
       };
     }
-    if (options.expectedWasmHash.toLowerCase() !== envelope.payload.wasmHash.toLowerCase()) {
+    if (options.expectedWasmHash.toLowerCase() !== payload.wasmHash.toLowerCase()) {
       return {
         status: "invalid",
-        reason: `payload.wasmHash ("${envelope.payload.wasmHash}") does not match the on-chain WASM hash ("${options.expectedWasmHash}")`,
+        reason: `payload.wasmHash ("${payload.wasmHash}") does not match the on-chain WASM hash ("${options.expectedWasmHash}")`,
       };
     }
   }

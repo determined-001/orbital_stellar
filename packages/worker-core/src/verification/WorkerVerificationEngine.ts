@@ -28,6 +28,10 @@
 import type { NormalizedEvent } from "@orbital-stellar/pulse-core";
 import type { WorkerDefinition, Schedule as ManifestSchedule } from "../types.js";
 import type { EventTriggerPlanner } from "../triggers/eventTrigger.js";
+import type {
+  ComputationTriggerPlanner,
+  ComputationConditionOccurrence,
+} from "../triggers/computationTrigger.js";
 import { dueTimesBetween } from "../schedule.js";
 import type { Schedule as SchedulerSchedule } from "../schedule.js";
 import type { WorkerFireVerdict, WorkerFireVerdictStatus } from "./workerFireVerdict.js";
@@ -78,30 +82,7 @@ export class ArrayLedgerCloseTimeIndex implements LedgerCloseTimeIndex {
   }
 }
 
-/**
- * Thrown by `verify()` for a `WorkerDefinition` whose trigger kind has no
- * window-derivation source yet. Mirrors `TriggerNotImplementedError`'s
- * "present as a type, rejected at runtime" pattern in `types.ts`.
- *
- * Computation-trigger windows ship with issue #1061 (20.7), which owns
- * `computationTrigger.ts` - adding a second, narrower window source here
- * ahead of that design would be exactly the "second ingestion/planning
- * path" this module's own doc comment says not to build.
- */
-export class TriggerVerificationNotImplementedError extends Error {
-  readonly kind: "computation";
-  constructor() {
-    super(
-      'Verification for "computation" triggers ships with issue #1061 (20.7) - ' +
-        "an off-chain condition needs an attestation model before it can be verified " +
-        "from chain data at all, which is that issue's design question to answer.",
-    );
-    this.name = "TriggerVerificationNotImplementedError";
-    this.kind = "computation";
-  }
-}
-
-function isSuccessfulInvocationOf(
+function isInvocationOf(
   event: NormalizedEvent,
   contractId: string,
   functionName: string,
@@ -109,8 +90,7 @@ function isSuccessfulInvocationOf(
   return (
     event.type === "contract.invoked" &&
     event.contractId === contractId &&
-    event.function === functionName &&
-    event.inSuccessfulContractCall !== false
+    event.function === functionName
   );
 }
 
@@ -125,6 +105,16 @@ function ledgerOf(event: NormalizedEvent): number | undefined {
  * ledger this verification run has actually observed - not necessarily
  * "now"). Shared by both trigger kinds once a window's `conditionLedger`/
  * `deadlineLedger` are known, which is the only thing that differs between them.
+ *
+ * Per `docs/design/worker-verification-verdicts.md`:
+ *
+ * - §5.2: a window whose deadline is within `verificationHorizonLedgers` of
+ *   `toLedger` is `pending`, computed before any match search - reorg/
+ *   re-delivery risk this close to the tip means any verdict computed now
+ *   could need to un-say itself later, which an immutable verdict must never do.
+ * - §3 case 1: a *rejected* invocation attempt within the window is evidence
+ *   the worker was awake, not asleep - it turns what would otherwise be
+ *   `missed` into `not-due` rather than being silently ignored.
  */
 function resolveWindow(
   window: { windowId: string; workerId: string; conditionLedger: number; deadlineLedger: number },
@@ -132,12 +122,23 @@ function resolveWindow(
   functionName: string,
   events: ReadonlyArray<NormalizedEvent>,
   toLedger: number,
+  verificationHorizonLedgers: number,
 ): WorkerFireVerdict {
+  if (toLedger - window.deadlineLedger < verificationHorizonLedgers) {
+    return { ...window, status: "pending" };
+  }
+
   let best: { ledger: number; txHash?: string } | undefined;
+  let sawRejectedAttempt = false;
   for (const event of events) {
-    if (!isSuccessfulInvocationOf(event, targetContractId, functionName)) continue;
+    if (!isInvocationOf(event, targetContractId, functionName)) continue;
     const ledger = ledgerOf(event);
     if (ledger === undefined || ledger < window.conditionLedger) continue;
+
+    if (event.inSuccessfulContractCall === false) {
+      sawRejectedAttempt = true;
+      continue;
+    }
     if (best === undefined || ledger < best.ledger) {
       best = { ledger, txHash: event.txHash };
     }
@@ -154,11 +155,11 @@ function resolveWindow(
     };
   }
 
-  // No matching invocation observed anywhere in the queried range. Whether
-  // that means "missed" or merely "not checked yet" depends on whether the
-  // deadline itself falls within what this run actually looked at.
-  const status: WorkerFireVerdictStatus = toLedger < window.deadlineLedger ? "not-due" : "missed";
-  return { ...window, status };
+  if (sawRejectedAttempt) {
+    return { ...window, status: "not-due", reason: "rejected-early-call" };
+  }
+
+  return { ...window, status: "missed" };
 }
 
 export class WorkerVerificationEngine {
@@ -175,7 +176,12 @@ export class WorkerVerificationEngine {
     definition: WorkerDefinition,
     events: ReadonlyArray<NormalizedEvent>,
     range: { fromLedger: number; toLedger: number },
-    options: { latencyBoundLedgers: number; ledgerCloseTimes: LedgerCloseTimeIndex },
+    options: {
+      latencyBoundLedgers: number;
+      ledgerCloseTimes: LedgerCloseTimeIndex;
+      /** See `resolveWindow`'s doc comment. Defaults to `0` - no reorg-safety delay. */
+      verificationHorizonLedgers?: number;
+    },
   ): WorkerFireVerdict[] {
     if (definition.trigger.kind !== "time") {
       throw new Error(`verifyTimeTrigger called with a "${definition.trigger.kind}" trigger`);
@@ -215,6 +221,7 @@ export class WorkerVerificationEngine {
           definition.functionName,
           events,
           range.toLedger,
+          options.verificationHorizonLedgers ?? 0,
         ),
       );
     }
@@ -234,6 +241,8 @@ export class WorkerVerificationEngine {
     conditionEvents: ReadonlyArray<NormalizedEvent>,
     invocationEvents: ReadonlyArray<NormalizedEvent>,
     toLedger: number,
+    /** See `resolveWindow`'s doc comment. Defaults to `0` - no reorg-safety delay. */
+    verificationHorizonLedgers = 0,
   ): WorkerFireVerdict[] {
     if (definition.trigger.kind !== "event") {
       throw new Error(`verifyEventTrigger called with a "${definition.trigger.kind}" trigger`);
@@ -246,20 +255,58 @@ export class WorkerVerificationEngine {
         definition.functionName,
         invocationEvents,
         toLedger,
+        verificationHorizonLedgers,
       ),
     );
   }
 
   /**
-   * Verifies a computation-triggered worker. Always throws - see
-   * {@link TriggerVerificationNotImplementedError}.
+   * Verifies a computation-triggered worker (issue #1061, "20.7") over the
+   * windows `planner` resolves from `occurrences`. An occurrence with no
+   * retrievable attestation, or an invalid/misbound one, resolves directly
+   * to `unverifiable` - `ComputationTriggerPlanner.plan` does that
+   * resolution, not this method, mirroring `verifyEventTrigger`'s split
+   * between planning and invocation-matching.
    */
-  verifyComputationTrigger(definition: WorkerDefinition): never {
+  verifyComputationTrigger(
+    definition: WorkerDefinition,
+    planner: ComputationTriggerPlanner,
+    occurrences: ReadonlyArray<ComputationConditionOccurrence>,
+    invocationEvents: ReadonlyArray<NormalizedEvent>,
+    toLedger: number,
+    verificationHorizonLedgers = 0,
+    now?: Date,
+  ): WorkerFireVerdict[] {
     if (definition.trigger.kind !== "computation") {
       throw new Error(
         `verifyComputationTrigger called with a "${definition.trigger.kind}" trigger`,
       );
     }
-    throw new TriggerVerificationNotImplementedError();
+    const { windows, unverifiable } = planner.plan(occurrences, now);
+
+    const resolved = windows.map((window) =>
+      resolveWindow(
+        window,
+        definition.targetContractId,
+        definition.functionName,
+        invocationEvents,
+        toLedger,
+        verificationHorizonLedgers,
+      ),
+    );
+
+    // `u.detail` (a free-text explanation) is not carried into the stored
+    // verdict - `reason` alone is, matching how `not-due`'s `reason` (not a
+    // free-text message) is what persists elsewhere in this taxonomy.
+    const unverifiableVerdicts: WorkerFireVerdict[] = unverifiable.map((u) => ({
+      windowId: u.windowId,
+      workerId: u.workerId,
+      conditionLedger: u.conditionLedger,
+      deadlineLedger: u.deadlineLedger,
+      status: "unverifiable",
+      reason: u.reason,
+    }));
+
+    return [...resolved, ...unverifiableVerdicts];
   }
 }

@@ -3,8 +3,17 @@
 Design note for issue 19.1 (`21.1`'s and W3's foundation). The issue is labelled
 `needs-design` and says so explicitly: *"Get the verdict taxonomy reviewed before
 implementing — `needs-design` clears on the taxonomy, not on the code."* This
-document is that taxonomy. No engine is implemented here, and
-`packages/worker-core` is not scaffolded.
+document is that taxonomy.
+
+**Implemented.** The six-value taxonomy here (§2) is
+`WorkerFireVerdictStatus` in `packages/worker-core/src/verification/workerFireVerdict.ts`,
+the engine is `WorkerVerificationEngine` in the same directory (issue #1049),
+and persistence is `WorkerFireVerdictStore` (issue #1050). The `not-due`
+causes in §3 and the `unverifiable` rule for a missing `ledger` in §4.1 are
+implemented; §4.2 (decode-unavailable) and §4.3 (spec-as-of-ledger) are not
+yet - both need `EventEngine` plumbing (`event.decode_failed` notifications,
+`getSpecAt`) beyond this engine's current `NormalizedEvent`-array input, and
+are tracked as follow-up rather than silently assumed done.
 
 The structural claim (§C.3, §C.6) is that because Orbital already decodes and
 normalizes the same events, it can verify **from the chain itself** whether a
