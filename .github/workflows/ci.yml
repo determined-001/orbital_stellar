@@ -147,7 +147,10 @@ jobs:
       - uses: pnpm/action-setup@v6.0.10
       - uses: actions/setup-node@v7
         with:
-          node-version: 20
+          # size-limit 13's get-config.js imports `glob` from node:fs/promises,
+          # which doesn't exist until Node 22.13 - Node 20 (used everywhere
+          # else in this workflow) throws SyntaxError on import.
+          node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - name: Build abi-registry
