@@ -1,27 +1,40 @@
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
 import { wellKnownToContractSpec } from "./wellKnown.js";
 import type { WellKnownSpecRaw } from "./wellKnown.js";
 import type { ContractSpec } from "./spec.js";
 
+// Static imports (not a runtime `readFileSync` relative to `import.meta.url`,
+// which this file used until it was found to break under any bundler:
+// Turbopack and webpack both rewrite `import.meta.url` to the *bundle's* own
+// location, not this source file's - the well-known JSON was never actually
+// there, so every bundled consumer (apps/web's API routes, via
+// `createDefaultAbiRegistryClient`) 500'd with an ENOENT no local,
+// unbundled `pnpm test` run ever surfaced. Static imports are what every
+// bundler (and real Node ESM, via the `with` import attribute) can resolve
+// correctly regardless of how the importing code gets relocated.
+//
 // sac-interface.json is deliberately excluded - its contract_id is a
 // placeholder reference address, not a real deployed contract.
-const WELL_KNOWN_FILES = ["usdc.json", "eurc.json", "aqua.json", "native-asset-wrapper.json"];
+import usdcRaw from "../specs/well-known/usdc.json" with { type: "json" };
+import eurcRaw from "../specs/well-known/eurc.json" with { type: "json" };
+import aquaRaw from "../specs/well-known/aqua.json" with { type: "json" };
+import nativeAssetWrapperRaw from "../specs/well-known/native-asset-wrapper.json" with { type: "json" };
 
-// Lazy-loaded so tests/consumers that never call getSpec don't touch the filesystem.
+const WELL_KNOWN_RAW: ReadonlyArray<WellKnownSpecRaw> = [
+  usdcRaw as WellKnownSpecRaw,
+  eurcRaw as WellKnownSpecRaw,
+  aquaRaw as WellKnownSpecRaw,
+  nativeAssetWrapperRaw as WellKnownSpecRaw,
+];
+
+// Computed once at module load - four small specs, not worth lazying behind
+// a function call the way a filesystem read was.
 let cachedByContractId: Map<string, ContractSpec> | null = null;
 
 function loadBundle(): Map<string, ContractSpec> {
   if (cachedByContractId) return cachedByContractId;
 
-  const wellKnownDir = resolve(
-    new URL(".", import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1"),
-    "../specs/well-known",
-  );
-
   const map = new Map<string, ContractSpec>();
-  for (const file of WELL_KNOWN_FILES) {
-    const raw = JSON.parse(readFileSync(resolve(wellKnownDir, file), "utf-8")) as WellKnownSpecRaw;
+  for (const raw of WELL_KNOWN_RAW) {
     const spec = wellKnownToContractSpec(raw);
     if (spec.contractId) map.set(spec.contractId, spec);
   }

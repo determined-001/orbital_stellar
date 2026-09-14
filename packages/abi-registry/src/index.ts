@@ -43,6 +43,8 @@ export type {
   UnionCaseSpec,
   UserDefinedType,
   ValidationResult,
+  SpecSource,
+  ResolvedSpec,
 } from "./spec.js";
 export { validateSpec, canonicalizeSpec } from "./spec.js";
 
