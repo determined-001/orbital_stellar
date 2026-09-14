@@ -54,7 +54,7 @@ import { writeFileSync, mkdirSync, existsSync, readFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { Networks, StrKey } from "@stellar/stellar-sdk";
+import { Networks, StrKey, Keypair } from "@stellar/stellar-sdk";
 import { wellKnownToContractSpec } from "../src/wellKnown.js";
 import { validateSpec, canonicalizeSpec } from "../src/spec.js";
 import { OnChainRegistryPublisher } from "../src/OnChainRegistryPublisher.js";
@@ -64,6 +64,7 @@ import type { ContractSpec } from "../src/spec.js";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const WELL_KNOWN_DIR = resolve(__dirname, "../specs/well-known");
 const PUBLISHED_DIR = resolve(__dirname, "../specs/published");
+const DEPLOYED_TESTNET_JSON = resolve(__dirname, "../../../contracts/deployed.testnet.json");
 
 // sac-interface.json is deliberately excluded - its contract_id is a
 // placeholder reference address, not a real deployed contract.
@@ -176,6 +177,39 @@ function isAlreadyPublished(err: unknown): boolean {
   return /Error\(Contract, #1\)/.test(msg);
 }
 
+/**
+ * Records each seeded asset's spec hash into `contracts/deployed.testnet.json`
+ * under `contracts.registry.seededSpecs`, keyed by contract_id (issue #890).
+ * Merges rather than replaces, so a partial re-run only updates the assets it
+ * actually touched this time.
+ *
+ * `path` defaults to the real file; tests pass a temp copy so a test run
+ * never writes to the repo's actual deployment record.
+ */
+export function recordSeededSpecs(
+  entries: ReadonlyArray<{ contractId: string; name: string; version: string; specHash: string }>,
+  publisher: string,
+  path: string = DEPLOYED_TESTNET_JSON,
+): void {
+  const deployed = JSON.parse(readFileSync(path, "utf-8"));
+  const registry = deployed.contracts?.registry;
+  if (!registry) {
+    throw new Error(`${path}: contracts.registry is missing`);
+  }
+
+  registry.seededSpecs ??= {};
+  for (const entry of entries) {
+    registry.seededSpecs[entry.contractId] = {
+      name: entry.name,
+      version: entry.version,
+      specHash: entry.specHash,
+      publisher,
+    };
+  }
+
+  writeFileSync(path, JSON.stringify(deployed, null, 2) + "\n", "utf-8");
+}
+
 async function publish(dryRun: boolean): Promise<void> {
   const contractId = process.env.SOROBAN_CONTRACT_ID;
   const invokerSecret = process.env.SOROBAN_INVOKER_SECRET;
@@ -202,10 +236,17 @@ async function publish(dryRun: boolean): Promise<void> {
   const published: string[] = [];
   const skipped: string[] = [];
   const failed: { name: string; reason: string }[] = [];
+  const seeded: { contractId: string; name: string; version: string; specHash: string }[] = [];
+  const publisherAddress = Keypair.fromSecret(invokerSecret).publicKey();
 
   for (const file of WELL_KNOWN_FILES) {
     const spec = buildSpec(file);
     const label = `${spec.name} (${spec.contractId}) v${spec.version}`;
+    // Same algorithm OnChainRegistryPublisher.publish hashes with - computed
+    // once here so both the published and already-published paths below can
+    // record it without needing publisher.publish()'s return value, which
+    // the already-published path never gets (publish() throws first).
+    const specHash = createHash("sha256").update(canonicalizeSpec(spec)).digest("hex");
 
     if (!existsSync(specPath(spec))) {
       failed.push({
@@ -230,6 +271,14 @@ async function publish(dryRun: boolean): Promise<void> {
       console.log(
         `  ✓ ${label}\n      etag=${result.etag}${result.txHash ? ` tx=${result.txHash}` : " (simulated)"}`,
       );
+      if (!dryRun) {
+        seeded.push({
+          contractId: spec.contractId!,
+          name: spec.name,
+          version: spec.version,
+          specHash,
+        });
+      }
     } catch (err) {
       // Immutability per (contract_id, publisher, version) means a version
       // already on chain is the desired end state, not a failure - this is
@@ -237,6 +286,12 @@ async function publish(dryRun: boolean): Promise<void> {
       if (isAlreadyPublished(err)) {
         skipped.push(label);
         console.log(`  = ${label}\n      already published, skipping`);
+        seeded.push({
+          contractId: spec.contractId!,
+          name: spec.name,
+          version: spec.version,
+          specHash,
+        });
         continue;
       }
       const reason = err instanceof Error ? err.message : String(err);
@@ -259,6 +314,9 @@ async function publish(dryRun: boolean): Promise<void> {
 
   if (dryRun) {
     console.log("\nNothing was signed or sent. Re-run without --dry-run to publish.");
+  } else if (seeded.length > 0) {
+    recordSeededSpecs(seeded, publisherAddress);
+    console.log(`\nRecorded ${seeded.length} spec hash(es) in ${DEPLOYED_TESTNET_JSON}.`);
   }
 }
 
@@ -283,7 +341,12 @@ async function main(): Promise<void> {
   }
 }
 
-main().catch((err) => {
-  console.error(err);
-  process.exit(1);
-});
+// Only run as a CLI entrypoint, not when imported (e.g. by tests that need
+// recordSeededSpecs without triggering the argv-driven generate/publish flow
+// and its process.exit calls).
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  main().catch((err) => {
+    console.error(err);
+    process.exit(1);
+  });
+}

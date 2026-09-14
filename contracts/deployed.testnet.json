@@ -5,7 +5,33 @@
   "contracts": {
     "registry": {
       "contractId": "CDJGK3KJMLQK6EVGOMIOQT35IFT2BTDVWC4ICEAXR7WBFTDGOP7FGXCV",
-      "wasmHash": "5c800423976a353fd06eb37f2d1c7fba63b3c15dc11fcfe90ec05787523d7662"
+      "wasmHash": "5c800423976a353fd06eb37f2d1c7fba63b3c15dc11fcfe90ec05787523d7662",
+      "seededSpecs": {
+        "CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75": {
+          "name": "USD Coin (USDC)",
+          "version": "1.0.0",
+          "specHash": "5300e7f2f1d52c91cf978326a4b49d7a9f0e15ce85b5b7c72d27cd2e78d83790",
+          "publisher": "GBBHYIMKT43UAFUG2F4QHSJK25Q2AZSA3RRB6JSHUABDAXMQARGJZYHG"
+        },
+        "CDTKPWPLOURQA2SGTKTUQOWRCBZEORB4BWBOMJ3D3ZTQQSGE5F6JBQLV": {
+          "name": "Euro Coin (EURC)",
+          "version": "1.0.0",
+          "specHash": "d459841519bc4118a4f1d5fdc1607652daaa59e1f11f1be34baab05b1a79bc08",
+          "publisher": "GBBHYIMKT43UAFUG2F4QHSJK25Q2AZSA3RRB6JSHUABDAXMQARGJZYHG"
+        },
+        "CAUIKL3IYGMERDRUN6YSCLWVAKIFG5Q4YJHUKM4S4NJZQIA3BAS6OJPK": {
+          "name": "Aquarius (AQUA)",
+          "version": "1.0.0",
+          "specHash": "17759921f03853a566cbfe60cff3eb17a350c306df20ab97210c41880021a32b",
+          "publisher": "GBBHYIMKT43UAFUG2F4QHSJK25Q2AZSA3RRB6JSHUABDAXMQARGJZYHG"
+        },
+        "CAS3J7GYLGXMF6TDJBBYYSE3HQ6BBSMLNUQ34T6TZMYMW2EVH34XOWMA": {
+          "name": "Native Asset Wrapper (XLM SAC)",
+          "version": "1.0.0",
+          "specHash": "4608bdd4aff7fd14ce4633d41f47d4d8e461bb94edc8d000882a2069981dd1c4",
+          "publisher": "GBBHYIMKT43UAFUG2F4QHSJK25Q2AZSA3RRB6JSHUABDAXMQARGJZYHG"
+        }
+      }
     },
     "demoEmitter": {
       "contractId": "CBGPM7FULEXM2WO4USIPC6XDJXKFUODU3EFAOVUZTJRAW4EJ2ZUA7PBJ",
