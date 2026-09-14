@@ -8,7 +8,19 @@ export default defineConfig({
     coverage: {
       provider: "v8",
       include: ["src/**/*.ts"],
-      exclude: ["node_modules/", "dist/", "test/", "**/*.test.ts", "**/*.config.*", "src/index.ts"],
+      exclude: [
+        "node_modules/",
+        "dist/",
+        "test/",
+        "**/*.test.ts",
+        "**/*.config.*",
+        "src/index.ts",
+        // orbital-codegen output (issue #908) - typed declarations, zod
+        // schemas, and event guards generated from a contract spec, not
+        // hand-written logic; correctness is covered by abi-registry's own
+        // generator test suite, not this starter's.
+        "src/generated/**",
+      ],
       // service.ts wires a live EventEngine against Horizon, so only its
       // shutdown ordering is unit-testable; the rest is exercised by running
       // the starter, not by CI. Floors reflect what is genuinely covered.
