@@ -32,6 +32,16 @@ export type {
   CursorStore as SorobanCursorStore,
 } from "./SorobanSubscriber.js";
 
+// Long-range replay beyond RPC retention (issue #920).
+export {
+  RpcHistoricalSource,
+  OutOfRetentionError,
+  isOutOfRetentionError,
+  parseRetentionBoundary,
+  withHistoricalFallback,
+} from "./HistoricalSource.js";
+export type { HistoricalSource } from "./HistoricalSource.js";
+
 export { validateContractFilters } from "./contractFilters.js";
 export { Watcher } from "./Watcher.js";
 export { toStellarAmount, toBigInt } from "./amount.js";
