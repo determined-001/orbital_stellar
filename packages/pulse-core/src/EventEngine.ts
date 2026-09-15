@@ -23,6 +23,8 @@ import { resolveSorobanPageLimit, SorobanSubscriber } from "./SorobanSubscriber.
 import { SorobanRpcClient, rpcSupportsUnifiedEvents } from "./SorobanRpcClient.js";
 import type { SorobanNetworkInfo, SorobanRpcEvent } from "./SorobanRpcClient.js";
 import type { SorobanRpcLike, SorobanEvent } from "./SorobanSubscriber.js";
+import { withHistoricalFallback } from "./HistoricalSource.js";
+import type { HistoricalSource } from "./HistoricalSource.js";
 import { toAccountAddress, toContractAddress } from "./address.js";
 import { toStellarAmount, fromBigInt } from "./amount.js";
 import { validateContractFilters } from "./contractFilters.js";
@@ -1016,13 +1018,20 @@ export class EventEngine {
    * - The `CursorStore` is **not** consulted or updated during replay: cursors
    *   are ephemeral and progress is intentionally discarded when the run ends.
    *
-   * @param options.rpc         - A Soroban RPC client compatible with `SorobanRpcLike`.
-   * @param options.filters     - Optional contract subscription filters (same semantics as `subscribeContract`).
-   * @param options.startLedger - Ledger sequence to begin replay from (passed as initial cursor hint).
-   * @param options.endLedger   - Ledger sequence at which replay stops (exclusive).
-   * @param options.onEvent     - Called for every event in range.
-   * @param options.onDone      - Called once when replay is complete.
-   * @param options.pageSize    - Optional page size override (default 100).
+   * @param options.rpc               - A Soroban RPC client compatible with `SorobanRpcLike`.
+   * @param options.filters           - Optional contract subscription filters (same semantics as `subscribeContract`).
+   * @param options.startLedger       - Ledger sequence to begin replay from (passed as initial cursor hint).
+   * @param options.endLedger         - Ledger sequence at which replay stops (exclusive).
+   * @param options.onEvent           - Called for every event in range.
+   * @param options.onDone            - Called once when replay is complete.
+   * @param options.pageSize          - Optional page size override (default 100).
+   * @param options.historicalSource  - Optional fallback for a `startLedger` older than `rpc`'s
+   *   retention window (issue #920). When `rpc.getEvents` fails with Soroban RPC's out-of-retention
+   *   shape and `historicalSource.covers(startLedger)`, replay transparently continues against it
+   *   instead of failing - see `docs/design/long-range-replay.md` §4 for the fallback's scope and
+   *   `HistoricalSource.ts`'s `withHistoricalFallback` for the mechanism. Omitted (or a range still
+   *   out of retention with no covering source) throws `OutOfRetentionError`, naming the parsed
+   *   retention boundary and whether a historical source was configured.
    */
   replayContracts(options: {
     rpc: SorobanRpcLike;
@@ -1032,6 +1041,7 @@ export class EventEngine {
     onEvent: (event: SorobanEvent) => Promise<void>;
     onDone: () => void;
     pageSize?: number;
+    historicalSource?: HistoricalSource;
   }): SorobanSubscriber {
     // A no-op CursorStore: replay never reads from or writes to persistent storage.
     const noCursorStore = {
@@ -1043,8 +1053,10 @@ export class EventEngine {
       },
     };
 
+    const rpc = withHistoricalFallback(options.rpc, options.historicalSource, options.startLedger);
+
     const subscriber = new SorobanSubscriber({
-      rpc: options.rpc,
+      rpc,
       cursorStore: noCursorStore,
       onEvent: options.onEvent,
       endLedger: options.endLedger,
