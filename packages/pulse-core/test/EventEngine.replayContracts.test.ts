@@ -10,6 +10,8 @@
 
 import { describe, it, expect, beforeEach } from "vitest";
 import { EventEngine } from "../src/EventEngine.js";
+import { SorobanRpcError } from "../src/errors.js";
+import { OutOfRetentionError, type HistoricalSource } from "../src/HistoricalSource.js";
 import type { SorobanRpcLike, SorobanEvent } from "../src/SorobanSubscriber.js";
 
 // ---------------------------------------------------------------------------
@@ -290,5 +292,136 @@ describe("EventEngine.replayContracts", () => {
     expect(received).toHaveLength(25);
     expect(received[0].id).toBe("1-0");
     expect(received[24].id).toBe("25-0");
+  });
+
+  describe("historicalSource fallback (issue #920)", () => {
+    /** An RPC stub whose getEvents always fails with Soroban RPC's real out-of-retention shape. */
+    class OutOfRetentionRpc implements SorobanRpcLike {
+      constructor(private readonly retainedFrom: number) {}
+
+      async getEvents(): Promise<{ events: SorobanEvent[] }> {
+        throw new SorobanRpcError(
+          `startLedger must be within the ledger range: ${this.retainedFrom} - 999999`,
+          { code: "invalid_request", retryable: false },
+        );
+      }
+    }
+
+    function makeHistoricalSource(
+      events: SorobanEvent[],
+      earliestLedger?: number,
+    ): HistoricalSource {
+      const stub = new StubRpc(events);
+      return {
+        covers: (ledger: number) => earliestLedger === undefined || ledger >= earliestLedger,
+        getEvents: (...args: Parameters<SorobanRpcLike["getEvents"]>) => stub.getEvents(...args),
+      };
+    }
+
+    it("replays a startLedger older than the primary's retention via the historical source, with identical event output", async () => {
+      const historicalEvents = [1, 2, 3].map((l) => makeEvent(l));
+      const rpc = new OutOfRetentionRpc(500); // primary only retains from ledger 500
+      const historicalSource = makeHistoricalSource(historicalEvents, 0);
+
+      const received: SorobanEvent[] = [];
+      let done = false;
+
+      await new Promise<void>((resolve) => {
+        const subscriber = engine.replayContracts({
+          rpc,
+          historicalSource,
+          startLedger: 1,
+          endLedger: 4,
+          onEvent: async (evt) => {
+            received.push(evt);
+          },
+          onDone: () => {
+            done = true;
+            resolve();
+          },
+        });
+
+        (async () => {
+          for (let i = 0; i < 20; i++) {
+            if (done) break;
+            await subscriber.pollOnce();
+          }
+          resolve();
+        })();
+      });
+
+      expect(done).toBe(true);
+      // Same ids/values the primary RPC would have produced, in the same
+      // order - the caller cannot tell which source actually answered.
+      // (Not a full toEqual: SorobanSubscriber's own normalization adds
+      // fields like `decodedData` regardless of which source supplied the
+      // raw event - that pipeline behavior is unrelated to this fallback.)
+      expect(received.map((e) => e.id)).toEqual(historicalEvents.map((e) => e.id));
+      expect(received.map((e) => e.value)).toEqual(historicalEvents.map((e) => e.value));
+    });
+
+    it("throws OutOfRetentionError, naming the boundary, when no historicalSource is configured", async () => {
+      const rpc = new OutOfRetentionRpc(500);
+      const subscriber = engine.replayContracts({
+        rpc,
+        startLedger: 1,
+        endLedger: 4,
+        onEvent: async () => {},
+        onDone: () => {},
+      });
+
+      await expect(subscriber.pollOnce()).rejects.toMatchObject({
+        name: "OutOfRetentionError",
+        requestedLedger: 1,
+        retentionBoundaryLedger: 500,
+        historicalSourceConfigured: false,
+      });
+    });
+
+    it("throws OutOfRetentionError when the configured historicalSource does not cover startLedger either", async () => {
+      const rpc = new OutOfRetentionRpc(500);
+      const historicalSource = makeHistoricalSource([], 2000); // covers nothing this old
+
+      const subscriber = engine.replayContracts({
+        rpc,
+        historicalSource,
+        startLedger: 1,
+        endLedger: 4,
+        onEvent: async () => {},
+        onDone: () => {},
+      });
+
+      await expect(subscriber.pollOnce()).rejects.toBeInstanceOf(OutOfRetentionError);
+    });
+
+    it("does not touch the historicalSource when startLedger is within the primary's retention", async () => {
+      const events = [600, 601].map((l) => makeEvent(l));
+      const rpc = new StubRpc(events);
+      let coversCalled = false;
+      const historicalSource: HistoricalSource = {
+        covers: () => {
+          coversCalled = true;
+          return true;
+        },
+        getEvents: async () => ({ events: [] }),
+      };
+
+      const received: SorobanEvent[] = [];
+      const subscriber = engine.replayContracts({
+        rpc,
+        historicalSource,
+        startLedger: 600,
+        endLedger: 602,
+        onEvent: async (evt) => {
+          received.push(evt);
+        },
+        onDone: () => {},
+      });
+
+      await subscriber.pollOnce();
+
+      expect(received.map((e) => e.id)).toEqual(["600-0", "601-0"]);
+      expect(coversCalled).toBe(false);
+    });
   });
 });
