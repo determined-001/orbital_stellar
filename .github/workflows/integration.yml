@@ -71,6 +71,15 @@ jobs:
           BACKFILL_CONTRACT_ID: ${{ secrets.BACKFILL_CONTRACT_ID }}
           BACKFILL_START_LEDGER: ${{ secrets.BACKFILL_START_LEDGER }}
           BACKFILL_END_LEDGER: ${{ secrets.BACKFILL_END_LEDGER }}
+          # Beyond-retention backfill/replay e2e (issue #920): a second RPC
+          # endpoint configured with deeper retention than BACKFILL_RPC_URL,
+          # plus a ledger window genuinely older than that primary's
+          # retention window. Unset until those repo secrets are added, in
+          # which case the beyond-retention live case in the same file
+          # self-skips with a clear message.
+          BACKFILL_HISTORICAL_RPC_URL: ${{ secrets.BACKFILL_HISTORICAL_RPC_URL }}
+          BACKFILL_OUT_OF_RETENTION_START_LEDGER: ${{ secrets.BACKFILL_OUT_OF_RETENTION_START_LEDGER }}
+          BACKFILL_OUT_OF_RETENTION_END_LEDGER: ${{ secrets.BACKFILL_OUT_OF_RETENTION_END_LEDGER }}
         run: pnpm test:integration
         timeout-minutes: 10
 
